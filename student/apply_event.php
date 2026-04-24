@@ -179,7 +179,7 @@ function validateForm() {
 <body>
 
 <div class="sidebar">
-    <h2>課外活動組</h2>
+    <h2>課指組</h2>
     <div class="menu">
         <div>首頁</div>
         <div class="active">活動申請</div>
