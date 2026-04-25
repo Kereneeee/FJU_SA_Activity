@@ -92,7 +92,7 @@ echo json_encode(['success' => false, 'message' => '只支援 POST 請求']);
                 </div>
             </div>
         </div>
-        <?php endforeach; ?>
+        <?php endforeach;?>
     <?php endif; ?>
 </div>
 
