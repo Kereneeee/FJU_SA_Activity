@@ -27,6 +27,7 @@ foreach ($equipment_list as $eq) {
     $available_quantity += intval($eq['available_quantity']);
 }
 $borrowed_quantity = $total_quantity - $available_quantity;
+
 ?>
 
 <!DOCTYPE html>
