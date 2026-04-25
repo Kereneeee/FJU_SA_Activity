@@ -32,7 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             if ($password === $user["password"]) {
 
                 $_SESSION["user_id"] = $user["user_id"];
-                $_SESSION["user"] = $user["name"];
+                $_SESSION["user_name"] = $user["name"];
                 $_SESSION["role"] = $user["role"];
                 $_SESSION["student_name"] = $user["name"];
                 $_SESSION["student_id"] = $email;

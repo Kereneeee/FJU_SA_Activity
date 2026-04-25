@@ -87,14 +87,14 @@ $borrowed_quantity = $total_quantity - $available_quantity;
 
 <div class="sidebar">
     <h3>EAMS 系統</h3>
-    <a href="dashboard.php">🏠 首頁控制台</a>
-    <a href="calendar.php">📅 完整行事曆</a>
-    <a href="apply_event.php">📝 申請借用</a>
+    <a href="dashboard.php"> 首頁控制台</a>
+    <a href="../student/calendar.php"> 完整行事曆</a>
+    <a href="apply_event.php"> 申請借用</a>
     
     <div class="admin-section">
         <span class="admin-label">⚙️ 後台管理介面</span>
-        <a href="event_mgmt.php">📋 活動管理</a>
-        <a href="equipment_mgmt.php">🔧 器材管理</a>
+        <a href="event_mgmt.php"> 活動管理</a>
+        <a href="equipment_mgmt.php"> 器材管理</a>
     </div>
 
     <div style="margin-top: auto; padding-top: 20px;">

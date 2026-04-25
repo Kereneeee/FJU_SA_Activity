@@ -29,6 +29,9 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
         th { background: #b0c4b1; color: white; }
+        
+        /* 器材借用標籤 */
+        .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -149,13 +152,27 @@ function showDetails(date, dayEvents) {
         body.innerHTML = '<tr><td colspan="5">當日無活動預約</td></tr>';
     } else {
         dayEvents.forEach(e => {
-            body.innerHTML += `<tr>
-                <td>${e.event_name}</td>
-                <td>${e.space_name || '未指定'}</td>
-                <td>${e.start_time.split(' ')[1].substring(0,5)} - ${e.end_time.split(' ')[1].substring(0,5)}</td>
-                <td>${e.user_name}</td>
-                <td>${e.description || ''}</td>
-            </tr>`;
+            const startTime = e.start_time ? e.start_time.split(' ')[1].substring(0,5) : '';
+            const endTime = e.end_time ? e.end_time.split(' ')[1].substring(0,5) : '';
+            
+            // 判斷是活動還是器材借用
+            if (e.type === 'equipment') {
+                body.innerHTML += `<tr>
+                    <td>${e.event_name} <span class="badge bg-warning text-dark">器材借用</span></td>
+                    <td>${e.equipment_name || '-'}</td>
+                    <td>${startTime} - ${endTime}</td>
+                    <td>${e.user_name}</td>
+                    <td>${e.description || ''}</td>
+                </tr>`;
+            } else {
+                body.innerHTML += `<tr>
+                    <td>${e.event_name}</td>
+                    <td>${e.space_name || '未指定'}</td>
+                    <td>${startTime} - ${endTime}</td>
+                    <td>${e.user_name}</td>
+                    <td>${e.description || ''}</td>
+                </tr>`;
+            }
         });
     }
 }
