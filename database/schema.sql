@@ -7,7 +7,7 @@ INSERT IGNORE INTO `users` (`name`, `email`, `password`, `role`, `username`) VAL
 
 -- 插入測試資料
 INSERT IGNORE INTO `users` (`name`, `email`, `password`, `role`, `username`) VALUES
-('廖同學', '410123456', '1234', 'student', 'student')
+('廖同學', '410123456', '1234', 'student', 'student');
 
 -- 插入測試場地
 INSERT IGNORE INTO `spaces` (`space_id`, `space_name`, `capacity`, `status`) VALUES
