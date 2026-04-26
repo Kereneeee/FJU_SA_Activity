@@ -187,7 +187,7 @@ function validateForm() {
         <div>器材管理</div>
     </div>
 </div>
-<?php include "sidebar.php"; ?>
+
 <div class="main">
 
 <h2>活動申請</h2>
