@@ -1,5 +1,4 @@
 <?php
-session_start();
 $method = $_GET['method'] ?? 'home';
 
 // 1. 引入 Header
