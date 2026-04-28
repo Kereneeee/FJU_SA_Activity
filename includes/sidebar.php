@@ -4,6 +4,19 @@
 $current_page = $current_page ?? 'dashboard';
 ?>
 
+<?php
+// 動態計算 logout 的相對根目錄路徑，支援 root、student、admin 等位置
+$scriptDir = dirname($_SERVER['SCRIPT_NAME']);
+$baseDir = basename($scriptDir);
+if ($baseDir === 'student' || $baseDir === 'admin') {
+    $scriptDir = dirname($scriptDir);
+}
+$logoutHref = rtrim($scriptDir, '/\\') . '/logout.php';
+if ($logoutHref === '') {
+    $logoutHref = '/logout.php';
+}
+?>
+
 <aside class="sidebar">
     <div class="brand">
         <h4>輔仁大學<br>課外活動指導組</h4>
@@ -33,7 +46,7 @@ $current_page = $current_page ?? 'dashboard';
     </nav>
     <div class="sidebar-section">
         <p class="mb-2">快捷操作</p>
-        <a class="nav-link" href="../logout.php">
+        <a class="nav-link" href="<?php echo htmlspecialchars($logoutHref, ENT_QUOTES, 'UTF-8'); ?>">
             <i class="bi bi-box-arrow-right"></i> 登出系統
         </a>
     </div>
