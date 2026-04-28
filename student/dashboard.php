@@ -14,6 +14,9 @@ $student_name = $_SESSION['student_name'] ?? '學生';
 $student_id = $_SESSION['student_id'];
 $user_id = $_SESSION['user_id'] ?? null;
 
+// 設置當前頁面用於側邊欄高亮
+$current_page = 'dashboard';
+
 // 獲取用戶的社團及幹部身分
 $is_officer = false;
 $current_club = null;
@@ -320,24 +323,7 @@ if ($user_id) {
     </style>
 </head>
 <body>
-    <aside class="sidebar">
-        <div class="brand">
-            <h4>輔仁大學<br>課外活動指導組</h4>
-        </div>
-        <nav class="nav flex-column">
-            <a class="nav-link active" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
-            <a class="nav-link" href="apply_event.php"><i class="bi bi-calendar-plus"></i> 活動申請</a>
-            <a class="nav-link" href="calendar.php"><i class="bi bi-calendar-check"></i> 空間申請</a>
-            <a class="nav-link" href="equipment.php"><i class="bi bi-tools"></i> 器材借用</a>
-            <a class="nav-link" href="field_coord.php"><i class="bi bi-people"></i> 場地協助</a>
-            <a class="nav-link" href="my_applications.php"><i class="bi bi-card-list"></i> 我的申請</a>
-            <a class="nav-link" href="edit_application.php"><i class="bi bi-pencil-square"></i> 編輯申請</a>
-        </nav>
-        <div class="sidebar-section">
-            <p class="mb-2">快捷操作</p>
-            <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> 登出系統</a>
-        </div>
-    </aside>
+    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
         <header class="top-navbar">
