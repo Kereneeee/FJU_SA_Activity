@@ -41,3 +41,4 @@ INSERT IGNORE INTO `equipment_borrow` (`borrow_id`, `event_id`, `equipment_id`, 
 (3, 2, 3, 30),
 (4, 2, 4, 5),
 (5, 3, 3, 20);
+-- 插入測試器材借用
