@@ -1,7 +1,7 @@
 <?php
 $method = $_GET['method'] ?? 'home';
 
-// 1. 引入 Header1
+// 1. 引入 Header
 include "includes/header.php"; 
 ?>
 
