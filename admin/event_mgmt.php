@@ -1,13 +1,16 @@
 <?php
-require_once '../DB/db_config.php';
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 
-global $conn;
+require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!$conn || $conn->connect_error) {
-    die("錯誤：無法連接資料庫 - " . ($conn->connect_error ?? '未知錯誤'));
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../login.php');
+    exit();
 }
 
-$conn->set_charset("utf8mb4");
+$user_name = $_SESSION['user_name'] ?? '管理員';
+$user_id = $_SESSION['user_id'];
 
 // 處理審核動作
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -65,163 +68,386 @@ foreach ($events as $e) {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>活動管理 - EAMS 系統</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>活動管理 - 輔仁大學課外活動指導組</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+
     <style>
-        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f1de; margin: 0; }
-        
-        /* 側邊欄 */
-        .sidebar { width: 260px; background: #646d8a; color: white; padding: 30px 20px; position: fixed; height: 100%; box-sizing: border-box; }
-        .sidebar h3 { margin-top: 0; }
-        .sidebar a { color: white; text-decoration: none; padding: 12px; margin: 5px 0; border-radius: 8px; display: block; transition: 0.3s; }
-        .sidebar a:hover { background: #8d9da5; }
-        .sidebar .admin-section { margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.3); }
-        .sidebar .admin-label { color: #ddbea9; font-size: 12px; padding: 12px 12px 5px; display: block; }
-        
-        /* 主內容 */
-        .main-content { margin-left: 260px; padding: 25px; min-height: 100vh; box-sizing: border-box; }
-        .main-content { margin-left: 260px; padding: 25px; }
-        
-        /* 統計卡片 */
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .stat-card h4 { margin: 0 0 10px 0; color: #6b705c; font-size: 14px; }
-        .stat-card .number { font-size: 32px; font-weight: bold; color: #646d8a; }
-        .stat-card.pending { border-left: 4px solid #f4a261; }
-        .stat-card.approved { border-left: 4px solid #2a9d8f; }
-        .stat-card.rejected { border-left: 4px solid #e76f51; }
-        .stat-card.total { border-left: 4px solid #646d8a; }
-        
-        /* 表格 */
-        .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        :root {
+            --primary: #8B1538;
+            --sidebar: #4c0f2a;
+            --sidebar-hover: #6a1d43;
+            --bg: #f4f6fb;
+            --card: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: #1f2937;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 260px;
+            height: 100vh;
+            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            color: white;
+            padding: 1.5rem 0.8rem;
+            overflow-y: auto;
+            box-shadow: 3px 0 15px rgba(0,0,0,0.12);
+            z-index: 1200;
+        }
+        .sidebar .brand {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .brand h4 {
+            margin: 0;
+            font-size: 1.1rem;
+            line-height: 1.4;
+            font-weight: 700;
+        }
+        .sidebar .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: rgba(255,255,255,0.9);
+            padding: 0.85rem 1rem;
+            margin: 0.2rem 0;
+            border-radius: 16px;
+            transition: background 0.25s ease, transform 0.15s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.12);
+            color: #ffffff;
+            transform: translateX(4px);
+        }
+        .sidebar .nav-link i { font-size: 1.1rem; }
+        .sidebar .sidebar-section {
+            padding: 1rem 0.5rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        .main-content {
+            margin-left: 260px;
+            min-height: 100vh;
+            transition: margin-left 0.25s ease;
+        }
+        .top-navbar {
+            background: white;
+            border-bottom: 1px solid #e9ecef;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1100;
+        }
+        .top-navbar .breadcrumb {
+            margin: 0;
+            background: transparent;
+            padding: 0;
+        }
+        .dashboard-grid {
+            padding: 1.5rem 2rem 2rem;
+        }
+        .summary-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+        .card-panel {
+            background: var(--card);
+            border-radius: 18px;
+            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+            padding: 1.5rem;
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .card-panel .icon-box {
+            width: 50px;
+            height: 50px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            color: white;
+            font-size: 1.25rem;
+        }
+        .card-panel.total .icon-box { background: #6f42c1; }
+        .card-panel.pending .icon-box { background: #fd7e14; }
+        .card-panel.approved .icon-box { background: #198754; }
+        .card-panel.rejected .icon-box { background: #dc3545; }
+        .card-panel .value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 1rem;
+        }
+        .card-panel .label { color: #6b7280; }
+        .panel-row {
+            background: var(--card);
+            border-radius: 18px;
+            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+            padding: 1.5rem;
+        }
+        .panel-row h5 {
+            margin-bottom: 1rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; color: #6b705c; font-weight: 600; }
-        tr:hover { background: #f8f9fa; }
-        
-        /* 狀態標籤 */
-        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; }
-        .status-pending { background: #fef3c7; color: #d97706; }
-        .status-approved { background: #d1fae5; color: #059669; }
-        .status-rejected { background: #fee2e2; color: #dc2626; }
-        
-        /* 按鈕 */
-        .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; margin-right: 5px; }
-        .btn-approve { background: #2a9d8f; color: white; }
-        .btn-reject { background: #e76f51; color: white; }
-        .btn-view { background: #646d8a; color: white; }
-        
-        /* 審核表單 */
-        .review-form { display: inline; }
-        .review-note { width: 150px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
-        
-        h2 { color: #6b705c; margin-top: 0; }
+        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f3f4f6; color: #374151; font-weight: 600; }
+        tbody tr:hover { background: #f9fafb; }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.45rem 0.85rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .status-pending { background: #fff3cd; color: #664d03; }
+        .event-link { color: #0d6efd; text-decoration: none; }
+        .event-link:hover { text-decoration: underline; }
+        .status-approved { background: #d1e7dd; color: #0f5132; }
+        .status-rejected { background: #f8d7da; color: #842029; }
+        .btn {
+            padding: 0.5rem 0.95rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.25s ease;
+            margin-right: 0.35rem;
+        }
+        .btn-approve {
+            background: #198754;
+            color: white;
+        }
+        .btn-approve:hover {
+            background: #157347;
+            transform: translateY(-2px);
+        }
+        .btn-reject {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-reject:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+        .review-form {
+            display: inline-flex;
+            gap: 0.35rem;
+            align-items: center;
+        }
+        .review-note {
+            padding: 0.35rem 0.6rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+        .action-cell {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .time-badge {
+            background: #f3f4f6;
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+        @media (max-width: 1100px) {
+            .summary-row { grid-template-columns: repeat(2, 1fr); }
+            .main-content { margin-left: 0; }
+        }
+        @media (max-width: 768px) {
+            .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
+            .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
+            .summary-row { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
+    <aside class="sidebar">
+        <div class="brand">
+            <h4>輔仁大學<br>課外活動指導組</h4>
+        </div>
+        <nav class="nav flex-column">
+            <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
+            <a class="nav-link active" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
+            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
+            <a class="nav-link" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
+            <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
+            <a class="nav-link" href="../student/calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
+        </nav>
+        <div class="sidebar-section">
+            <p class="mb-2">快捷操作</p>
+            <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> 登出系統</a>
+        </div>
+    </aside>
 
-<div class="sidebar">
-    <h3>EAMS 系統</h3>
-    <a href="dashboard.php"> 首頁控制台</a>
-    <a href="../student/calendar.php"> 完整行事曆</a>
-    <a href="apply_event.php"> 申請借用</a>
-    
-    <div class="admin-section">
-        <span class="admin-label">⚙️ 後台管理介面</span>
-        <a href="event_mgmt.php"> 活動管理</a>
-        <a href="equipment_mgmt.php"> 器材管理</a>
-    </div>
+    <main class="main-content">
+        <header class="top-navbar">
+            <div>
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">活動管理</li>
+                </ol>
+                <h4 class="mt-2 mb-0">活動管理</h4>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <span class="text-muted"><?php echo htmlspecialchars($user_name); ?></span>
+                <div class="user-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">
+                    <?php echo substr($user_name, 0, 1); ?>
+                </div>
+            </div>
+        </header>
 
-    <div style="margin-top: auto; padding-top: 20px;">
-        <a href="../logout.php" style="color: #ddbea9;">🚪 登出系統</a>
-    </div>
-</div>
+        <section class="dashboard-grid">
+            <!-- 統計卡片 -->
+            <div class="summary-row">
+                <div class="card-panel total">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="label">總申請件數</div>
+                            <div class="value"><?php echo $total_count; ?></div>
+                        </div>
+                        <div class="icon-box"><i class="bi bi-calendar2"></i></div>
+                    </div>
+                </div>
+                <div class="card-panel pending">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="label">待審核</div>
+                            <div class="value"><?php echo $pending_count; ?></div>
+                        </div>
+                        <div class="icon-box"><i class="bi bi-clock"></i></div>
+                    </div>
+                </div>
+                <div class="card-panel approved">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="label">已通過</div>
+                            <div class="value"><?php echo $approved_count; ?></div>
+                        </div>
+                        <div class="icon-box"><i class="bi bi-check-circle"></i></div>
+                    </div>
+                </div>
+                <div class="card-panel rejected">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="label">已駁回</div>
+                            <div class="value"><?php echo $rejected_count; ?></div>
+                        </div>
+                        <div class="icon-box"><i class="bi bi-x-circle"></i></div>
+                    </div>
+                </div>
+            </div>
 
-<div class="main-content">
-    <h2>📋 活動管理</h2>
-    
-    <!-- 統計卡片 -->
-    <div class="stats-grid">
-        <div class="stat-card total">
-            <h4>📊 總申請件數</h4>
-            <div class="number"><?php echo $total_count; ?></div>
-        </div>
-        <div class="stat-card pending">
-            <h4>⏳ 待審核</h4>
-            <div class="number"><?php echo $pending_count; ?></div>
-        </div>
-        <div class="stat-card approved">
-            <h4>✅ 已通過</h4>
-            <div class="number"><?php echo $approved_count; ?></div>
-        </div>
-        <div class="stat-card rejected">
-            <h4>❌ 已駁回</h4>
-            <div class="number"><?php echo $rejected_count; ?></div>
-        </div>
-    </div>
-    
-    <!-- 活動列表 -->
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th>活動名稱</th>
-                    <th>申請人</th>
-                    <th>聯絡Email</th>
-                    <th>社團名稱</th>
-                    <th>借用場地</th>
-                    <th>活動時間</th>
-                    <th>狀態</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($events as $event): ?>
-                <tr>
-                    <td><?php echo htmlspecialchars($event['event_name']); ?></td>
-                    <td><?php echo htmlspecialchars($event['applicant_name']); ?> (<?php echo htmlspecialchars($event['username']); ?>)</td>
-                    <td><?php echo htmlspecialchars($event['applicant_email']); ?></td>
-                    <td><?php echo htmlspecialchars($event['club_name']); ?></td>
-                    <td><?php echo htmlspecialchars($event['space_name'] ?? '未指定'); ?></td>
-                    <td>
-                        <?php 
-                        if ($event['start_time']) {
-                            echo date('Y/m/d H:i', strtotime($event['start_time'])) . '<br>';
-                            echo '~ ' . date('H:i', strtotime($event['end_time']));
-                        }
-                        ?>
-                    </td>
-                    <td>
-                        <span class="status-badge status-<?php echo $event['status']; ?>">
-                            <?php 
-                            $status_text = ['pending' => '待審核', 'approved' => '已通過', 'rejected' => '已駁回'];
-                            echo $status_text[$event['status']] ?? $event['status'];
-                            ?>
-                        </span>
-                    </td>
-                    <td>
-                        <?php if ($event['status'] === 'pending'): ?>
-                        <form method="POST" class="review-form">
-                            <input type="hidden" name="event_id" value="<?php echo $event['event_id']; ?>">
-                            <input type="text" name="review_note" class="review-note" placeholder="審核備註">
-                            <button type="submit" name="action" value="approve" class="btn btn-approve">通過</button>
-                            <button type="submit" name="action" value="reject" class="btn btn-reject">駁回</button>
-                        </form>
-                        <?php else: ?>
-                        <span style="color: #999; font-size: 12px;"><?php echo htmlspecialchars($event['review_note'] ?? '無'); ?></span>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                
-                <?php if (empty($events)): ?>
-                <tr>
-                    <td colspan="8" style="text-align: center; color: #999; padding: 30px;">目前沒有活動申請記錄</td>
-                </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
+            <!-- 活動列表 -->
+            <div class="panel-row">
+                <h5><i class="bi bi-list-ul"></i> 活動申請列表</h5>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>活動名稱</th>
+                                <th>申請人</th>
+                                <th>社團</th>
+                                <th>場地</th>
+                                <th>時間</th>
+                                <th>狀態</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($events as $event): ?>
+                            <tr>
+                                <td>
+                                    <a href="review.php?event_id=<?php echo intval($event['event_id']); ?>" class="event-link">
+                                        <strong><?php echo htmlspecialchars($event['event_name']); ?></strong>
+                                    </a>
+                                    <br>
+                                    <small style="color: #6b7280;"><?php echo htmlspecialchars($event['description'] ?? ''); ?></small>
+                                </td>
+                                <td>
+                                    <?php echo htmlspecialchars($event['applicant_name']); ?>
+                                    <br>
+                                    <small style="color: #6b7280;"><?php echo htmlspecialchars($event['applicant_email']); ?></small>
+                                </td>
+                                <td><?php echo htmlspecialchars($event['club_name']); ?></td>
+                                <td><?php echo htmlspecialchars($event['space_name'] ?? '未指定'); ?></td>
+                                <td>
+                                    <?php 
+                                    if ($event['start_time']) {
+                                        echo '<span class="time-badge">';
+                                        echo date('Y/m/d<br>H:i', strtotime($event['start_time']));
+                                        echo '</span>';
+                                    }
+                                    ?>
+                                </td>
+                                <td>
+                                    <span class="status-badge status-<?php echo $event['status']; ?>">
+                                        <i class="bi bi-<?php 
+                                        if ($event['status'] === 'pending') echo 'clock';
+                                        elseif ($event['status'] === 'approved') echo 'check-lg';
+                                        else echo 'x-lg';
+                                        ?>"></i>
+                                        <?php 
+                                        $status_text = ['pending' => '待審核', 'approved' => '已通過', 'rejected' => '已駁回'];
+                                        echo $status_text[$event['status']] ?? $event['status'];
+                                        ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="action-cell">
+                                        <?php if ($event['status'] === 'pending'): ?>
+                                        <form method="POST" class="review-form">
+                                            <input type="hidden" name="event_id" value="<?php echo $event['event_id']; ?>">
+                                            <input type="text" name="review_note" class="review-note" placeholder="審核備註" maxlength="50">
+                                            <button type="submit" name="action" value="approve" class="btn btn-approve" title="批准申請"><i class="bi bi-check"></i> 通過</button>
+                                            <button type="submit" name="action" value="reject" class="btn btn-reject" title="拒絕申請"><i class="bi bi-x"></i> 駁回</button>
+                                        </form>
+                                        <?php else: ?>
+                                        <span style="color: #6b7280; font-size: 0.85rem;">
+                                            <strong><?php echo htmlspecialchars($event['review_note'] ?? '無備註'); ?></strong>
+                                        </span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                            
+                            <?php if (empty($events)): ?>
+                            <tr>
+                                <td colspan="7" style="text-align: center; color: #999; padding: 30px;">
+                                    <i class="bi bi-inbox"></i> 目前沒有活動申請記錄
+                                </td>
+                            </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
 
 </body>
 </html>

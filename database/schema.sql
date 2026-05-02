@@ -3,7 +3,7 @@ ALTER TABLE `users` ADD COLUMN `username` VARCHAR(100) UNIQUE NULL DEFAULT NULL;
 
 -- 插入管理員帳號
 INSERT IGNORE INTO `users` (`name`, `email`, `password`, `role`, `username`) VALUES
-('系統管理員', 'admin', 'admin123', 'admin', 'admin');
+('系統管理員', 'admin@test.com', '12345678', 'admin', 'admin');
 
 -- 插入測試資料
 INSERT IGNORE INTO `users` (`name`, `email`, `password`, `role`, `username`) VALUES
