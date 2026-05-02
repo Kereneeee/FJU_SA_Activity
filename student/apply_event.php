@@ -21,7 +21,7 @@ if ($result_spaces) {
 }
 
 // 從資料庫獲取器材
-$sql_equipment = "SELECT equipment_id, name, total_quantity, available_quantity FROM equipment WHERE status = 'available'";
+$sql_equipment = "SELECT equipment_id, name, borrowing_limit, total_quantity, available_quantity FROM equipment WHERE status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
 $equipment = [];
 if ($result_equipment) {
@@ -33,6 +33,7 @@ if ($result_equipment) {
             'name' => $eq['name'],
             'total' => $eq['total_quantity'],
             'available' => $eq['available_quantity'],
+            'limit' => $eq['borrowing_limit'],
             'unit' => '件'
         ];
     }
@@ -108,10 +109,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 
                 foreach ($_POST['equipment'] as $equip_id => $quantity) {
                     $quantity = intval($quantity);
+
+                    // ⭐ 查詢器材限制
+                    $stmt_check = $conn->prepare(
+                        "SELECT available_quantity, borrow_limit FROM equipment WHERE equipment_id = ?"
+                    );
+                    $stmt_check->bind_param("i", $equip_id);
+                    $stmt_check->execute();
+                    $result = $stmt_check->get_result()->fetch_assoc();
+
+                    if (!$result) {
+                        throw new Exception("找不到器材資料");
+                    }
+
+                    // ⭐ 計算最大可借
+                    $maxAllowed = ($result['borrow_limit'] > 0)
+                        ? min($result['available_quantity'], $result['borrow_limit'])
+                        : $result['available_quantity'];
+
+                    // ❌ 超過限制 → 擋掉
+                    if ($quantity > $maxAllowed) {
+                        throw new Exception("器材ID {$equip_id} 超過可借上限（最多 {$maxAllowed}）");
+                    }
+
+                    // ✅ 正常寫入
                     if ($quantity > 0) {
-                        // 使用 equipment_id 查詢器材
                         $stmt_borrow->bind_param("iii", $event_id, $equip_id, $quantity);
-                        
+
                         if (!$stmt_borrow->execute()) {
                             throw new Exception("器材借用記錄插入失敗: " . $stmt_borrow->error);
                         }
@@ -543,15 +567,32 @@ function getEquipmentIcon($equipId) {
                                         <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
                                         <?= htmlspecialchars($item['name']) ?>
                                     </div>
-                                    <div class="equipment-stock">
+                                    <div class="equipment-stock" style="text-align: right; line-height: 1.4;">
                                         <div class="stock-<?= $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty' ?>">
                                             剩餘: <?= $item['available'] ?>/<?= $item['total'] ?>
                                         </div>
+
+                                        <div style="font-size: 0.8rem; color: #6b7280;">
+                                            上限: <?= $item['limit'] > 0 ? $item['limit'] : '不限' ?>
+                                        </div>
                                     </div>
+                                        
                                 </div>
                                 <div class="counter">
                                     <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
-                                    <input type="number" id="qty_<?= $item['id'] ?>" name="equipment[<?= $item['id'] ?>]" value="0" min="0" max="<?= $item['available'] ?>" readonly>
+                                    
+                                    <?php
+                                    $maxBorrow = ($item['limit'] > 0) 
+                                        ? min($item['available'], $item['limit']) 
+                                        : $item['available'];
+                                    ?>
+
+                                    <input type="number" id="qty_<?= $item['id'] ?>" 
+                                    name="equipment[<?= $item['id'] ?>]" 
+                                    value="0" min="0" 
+                                    max="<?= $maxBorrow ?>" 
+                                    readonly>
+
                                     <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
                                 </div>
                             </div>
