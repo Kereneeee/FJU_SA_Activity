@@ -2,12 +2,35 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
 require_once(__DIR__ . "/../DB/db_config.php");
 
 if (!isset($_SESSION['student_id'])) {
     header('Location: ../login.php');
     exit();
+}
+
+$message = "";
+$message_type = "";
+
+// 取得器材資料
+$sql = "SELECT * FROM equipment WHERE status = 'available'";
+$result_equipment = $conn->query($sql);
+
+$equipment = [];
+
+if ($result_equipment) {
+    $equipment_list = $result_equipment->fetch_all(MYSQLI_ASSOC);
+
+    foreach ($equipment_list as $eq) {
+        $equipment[] = [
+            'equipment_id' => $eq['equipment_id'],
+            'name' => $eq['name'],
+            'description' => $eq['description'],
+            'borrowing_limit' => $eq['borrowing_limit'],
+            'total_quantity' => $eq['total_quantity'],
+            'available_quantity' => $eq['available_quantity']
+        ];
+    }
 }
 
 // 設置當前頁面用於側邊欄高亮
@@ -153,6 +176,7 @@ $current_page = 'equipment';
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
+            flex-shrink: 0; 
         }
         .equipment-info h4 {
             margin: 0 0 0.25rem;
@@ -256,130 +280,49 @@ $current_page = 'equipment';
 
                 <form id="equipmentForm">
                     <div class="equipment-grid">
+                    <?php foreach ($equipment as $item): ?>
                         <div class="equipment-card">
                             <div class="equipment-header">
                                 <div class="equipment-icon">
-                                    <i class="bi bi-mic"></i>
+                                    <i class="bi bi-tools"></i>
                                 </div>
                                 <div class="equipment-info">
-                                    <h4>麥克風</h4>
-                                    <div class="status">剩餘: 8 個</div>
+                                    <h4><?= htmlspecialchars($item['name']) ?></h4>
+                                    <div class="status">
+                                        剩餘: <?= $item['available_quantity'] ?>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="equipment-details">
-                                <p><strong>規格:</strong> 無線手持麥克風</p>
-                                <p><strong>借用期間:</strong> 每次借用最多7天</p>
-                                <p><strong>注意事項:</strong> 需歸還電池</p>
-                            </div>
-                            <div class="quantity-controls">
-                                <span>借用數量:</span>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQty('mic', -1)">-</button>
-                                    <input id="qty_mic" name="qty_mic" value="0" readonly>
-                                    <button type="button" onclick="changeQty('mic', 1)">+</button>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="equipment-card">
-                            <div class="equipment-header">
-                                <div class="equipment-icon">
-                                    <i class="bi bi-projector"></i>
-                                </div>
-                                <div class="equipment-info">
-                                    <h4>投影機</h4>
-                                    <div class="status">剩餘: 3 台</div>
-                                </div>
-                            </div>
                             <div class="equipment-details">
-                                <p><strong>規格:</strong> 3000流明 LED投影機</p>
-                                <p><strong>配件:</strong> 含遙控器、電源線</p>
-                                <p><strong>注意事項:</strong> 需專業人員安裝</p>
+                                <p><?= htmlspecialchars($item['description']) ?></p>
+                                <p>上限: <?= $item['borrowing_limit'] > 0 ? $item['borrowing_limit'] : '不限' ?></p>
                             </div>
-                            <div class="quantity-controls">
-                                <span>借用數量:</span>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQty('projector', -1)">-</button>
-                                    <input id="qty_projector" name="qty_projector" value="0" readonly>
-                                    <button type="button" onclick="changeQty('projector', 1)">+</button>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="equipment-card">
-                            <div class="equipment-header">
-                                <div class="equipment-icon">
-                                    <i class="bi bi-speaker"></i>
-                                </div>
-                                <div class="equipment-info">
-                                    <h4>音響設備</h4>
-                                    <div class="status">剩餘: 2 組</div>
-                                </div>
-                            </div>
-                            <div class="equipment-details">
-                                <p><strong>規格:</strong> 2.1聲道音響系統</p>
-                                <p><strong>配件:</strong> 含音源線、電源線</p>
-                                <p><strong>注意事項:</strong> 音量請勿超過80%</p>
-                            </div>
-                            <div class="quantity-controls">
-                                <span>借用數量:</span>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQty('speaker', -1)">-</button>
-                                    <input id="qty_speaker" name="qty_speaker" value="0" readonly>
-                                    <button type="button" onclick="changeQty('speaker', 1)">+</button>
-                                </div>
-                            </div>
-                        </div>
+                            <?php
+                            $maxBorrow = ($item['borrowing_limit'] > 0)
+                                ? min($item['available_quantity'], $item['borrowing_limit'])
+                                : $item['available_quantity'];
+                            ?>
 
-                        <div class="equipment-card">
-                            <div class="equipment-header">
-                                <div class="equipment-icon">
-                                    <i class="bi bi-table"></i>
-                                </div>
-                                <div class="equipment-info">
-                                    <h4>桌椅</h4>
-                                    <div class="status">剩餘: 50 組</div>
-                                </div>
-                            </div>
-                            <div class="equipment-details">
-                                <p><strong>規格:</strong> 折疊桌椅一組</p>
-                                <p><strong>數量:</strong> 每組含1桌4椅</p>
-                                <p><strong>注意事項:</strong> 請小心搬運</p>
-                            </div>
                             <div class="quantity-controls">
                                 <span>借用數量:</span>
                                 <div class="counter">
-                                    <button type="button" onclick="changeQty('table_chair', -1)">-</button>
-                                    <input id="qty_table_chair" name="qty_table_chair" value="0" readonly>
-                                    <button type="button" onclick="changeQty('table_chair', 1)">+</button>
-                                </div>
-                            </div>
-                        </div>
+                                    <button type="button" onclick="changeQty(<?= $item['equipment_id'] ?>, -1)">-</button>
 
-                        <div class="equipment-card">
-                            <div class="equipment-header">
-                                <div class="equipment-icon">
-                                    <i class="bi bi-plug"></i>
-                                </div>
-                                <div class="equipment-info">
-                                    <h4>延長線</h4>
-                                    <div class="status">剩餘: 15 條</div>
-                                </div>
-                            </div>
-                            <div class="equipment-details">
-                                <p><strong>規格:</strong> 5米延長線，4孔</p>
-                                <p><strong>額定電流:</strong> 10A</p>
-                                <p><strong>注意事項:</strong> 請勿超載使用</p>
-                            </div>
-                            <div class="quantity-controls">
-                                <span>借用數量:</span>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQty('extension', -1)">-</button>
-                                    <input id="qty_extension" name="qty_extension" value="0" readonly>
-                                    <button type="button" onclick="changeQty('extension', 1)">+</button>
+                                    <input 
+                                        id="qty_<?= $item['equipment_id'] ?>"
+                                        name="equipment[<?= $item['equipment_id'] ?>]"
+                                        value="0"
+                                        data-max="<?= $maxBorrow ?>"
+                                        readonly
+                                    >
+
+                                    <button type="button" onclick="changeQty(<?= $item['equipment_id'] ?>, 1)">+</button>
                                 </div>
                             </div>
                         </div>
+                        <?php endforeach; ?>
                     </div>
 
                     <div style="margin-top: 2rem; text-align: center;">
@@ -392,19 +335,11 @@ $current_page = 'equipment';
 
     <script>
         // 器材數量控制
-        const stocks = {
-            mic: 8,
-            projector: 3,
-            speaker: 2,
-            table_chair: 50,
-            extension: 15
-        };
-
-        function changeQty(item, delta) {
-            const input = document.getElementById("qty_" + item);
+        function changeQty(id, delta) {
+            const input = document.getElementById("qty_" + id);
             let value = parseInt(input.value) + delta;
 
-            const max = stocks[item];
+            const max = parseInt(input.getAttribute("data-max"));
 
             if (value < 0) value = 0;
             if (value > max) value = max;
