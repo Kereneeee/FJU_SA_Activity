@@ -330,16 +330,6 @@ $user_id = $_SESSION['user_id'];
                 </div>
             </div>
             <div class="summary-row">
-                <div class="card-panel events">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">本月活動申請</div>
-                            <div class="value">18</div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-calendar-event"></i></div>
-                    </div>
-                    <p class="footer-note">查看最新申請狀態與提醒。</p>
-                </div>
                 <div class="card-panel pending">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
@@ -349,26 +339,6 @@ $user_id = $_SESSION['user_id'];
                         <div class="icon-box"><i class="bi bi-hourglass-split"></i></div>
                     </div>
                     <p class="footer-note">提醒您處理未決申請。</p>
-                </div>
-                <div class="card-panel spaces">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">可用空間</div>
-                            <div class="value">9</div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-geo-alt"></i></div>
-                    </div>
-                    <p class="footer-note">快速前往場地申請頁面。</p>
-                </div>
-                <div class="card-panel equipment">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">可借器材</div>
-                            <div class="value">26</div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-tools"></i></div>
-                    </div>
-                    <p class="footer-note">檢視器材庫存與借用紀錄。</p>
                 </div>
             </div>
 
