@@ -18,8 +18,9 @@ $user_id = $_SESSION['user_id'] ?? null;
 $success_msg = "";
 $error_msg = "";
 
-// 獲取用戶基本信息
-$sql = "SELECT u.* FROM users u WHERE u.email = ?";
+// 獲取用戶基本信息 
+// [修改點]：fjusa 的 users 表主鍵是 user_id，且欄位僅有 user_id, name, email, phone, password, role, created_at[cite: 2]
+$sql = "SELECT * FROM users WHERE email = ?";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
@@ -39,66 +40,63 @@ $user_id = $user['user_id'];
 
 // 獲取用戶所屬的所有社團
 $user_clubs = array();
-$sql = "SELECT cm.*, c.club_name, c.founded_date, c.advisor
-        FROM club_members cm
-        JOIN clubs c ON cm.club_id = c.club_id
-        WHERE cm.user_id = ?
-        ORDER BY cm.join_date DESC";
-
+$sql = "SELECT cm.*, c.club_name 
+        FROM club_members cm 
+        JOIN clubs c ON cm.club_id = c.club_id 
+        WHERE cm.user_id = ?";
 $stmt = $conn->prepare($sql);
-if (!$stmt) {
-    die("SQL 準備失敗: " . $conn->error);
-}
-
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
-
 while ($row = $result->fetch_assoc()) {
     $user_clubs[] = $row;
 }
 
-// 處理身分切換
+// 2. 決定目前的 current_club_id
+if (isset($_SESSION['current_club_id'])) {
+    $current_club_id = $_SESSION['current_club_id'];
+} elseif (!empty($user_clubs)) {
+    // 如果 Session 沒值，預設為第一個社團
+    $current_club_id = $user_clubs[0]['club_id'];
+    $_SESSION['current_club_id'] = $current_club_id;
+}
+
+// 3. 處理身分切換
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'switch_club' && isset($_POST['club_id'])) {
-        $new_club_id = intval($_POST['club_id']);
+        $new_club_id = $_POST['club_id']; // 不要用 intval()，因為有英文字母
         
-        // 檢查用戶是否屬於該社團
+        // 修正：表名改為 club_members，型態改為 "is" (Integer, String)
         $check_sql = "SELECT club_id FROM club_members WHERE user_id = ? AND club_id = ?";
         $check_stmt = $conn->prepare($check_sql);
         if ($check_stmt) {
-            $check_stmt->bind_param("ii", $user_id, $new_club_id);
+            $check_stmt->bind_param("is", $user_id, $new_club_id);
             $check_stmt->execute();
             
             if ($check_stmt->get_result()->num_rows > 0) {
-                // 嘗試更新，如果不存在則插入
-                $update_sql = "UPDATE user_current_role SET current_club_id = ? WHERE user_id = ?";
-                $update_stmt = $conn->prepare($update_sql);
-                if ($update_stmt) {
-                    $update_stmt->bind_param("ii", $new_club_id, $user_id);
-                    
-                    if ($update_stmt->execute()) {
-                        // 檢查是否真的更新了記錄
-                        if ($conn->affected_rows == 0) {
-                            // 沒有記錄被更新，插入新記錄
-                            $insert_sql = "INSERT INTO user_current_role (user_id, current_club_id) VALUES (?, ?)";
-                            $insert_stmt = $conn->prepare($insert_sql);
-                            if ($insert_stmt) {
-                                $insert_stmt->bind_param("ii", $user_id, $new_club_id);
-                                $insert_stmt->execute();
-                            }
-                        }
-                        $_SESSION['current_club_id'] = $new_club_id;
-                        $current_club_id = $new_club_id;
-                        $success_msg = "已切換身分";
-                    }
-                }
+                // 更新 Session 即可，若你有 user_current_role 表則繼續保留更新邏輯
+                $_SESSION['current_club_id'] = $new_club_id;
+                $current_club_id = $new_club_id;
+                
+                // 重新載入頁面以更新資料，防止 POST 重複提交
+                header("Location: " . $_SERVER['PHP_SELF']);
+                exit();
             }
         }
     }
+}
+
+// 4. 最後：根據目前的 current_club_id 抓取要在「目前身分」顯示的資料
+$officer_status = null;
+foreach ($user_clubs as $club) {
+    if ($club['club_id'] == $current_club_id) {
+        $officer_status = $club;
+        break;
+    }
+}
     
     // 更新密碼
-    if ($_POST['action'] === 'change_password') {
+    if (isset($_POST['action']) && $_POST['action'] === 'change_password') {
         $old_password = $_POST['old_password'] ?? '';
         $new_password = $_POST['new_password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
@@ -110,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } elseif ($user['password'] !== $old_password) {
             $error_msg = "原密碼不正確";
         } else {
-            $update_sql = "UPDATE users SET password = ? WHERE id = ?";
+            $update_sql = "UPDATE users SET password = ? WHERE user_id = ?";
             $update_stmt = $conn->prepare($update_sql);
             if ($update_stmt) {
                 $update_stmt->bind_param("si", $new_password, $user_id);
@@ -125,46 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
     }
-}
 
-// 獲取當前社團幹部身分確認狀態
-$current_club_id = null;
-$officer_status = null;
 
-// 先從 session 或 user_current_role 表獲取當前社團
-if (isset($_SESSION['current_club_id'])) {
-    $current_club_id = $_SESSION['current_club_id'];
-} else {
-    // 從資料庫查詢預設社團
-    $role_sql = "SELECT current_club_id FROM user_current_role WHERE user_id = ?";
-    $role_stmt = $conn->prepare($role_sql);
-    if ($role_stmt) {
-        $role_stmt->bind_param("i", $user_id);
-        $role_stmt->execute();
-        $role_result = $role_stmt->get_result();
-        if ($role_row = $role_result->fetch_assoc()) {
-            $current_club_id = $role_row['current_club_id'];
-        }
-    }
-}
 
-// 如果還是沒有，就用第一個社團
-if (!$current_club_id && !empty($user_clubs)) {
-    $current_club_id = $user_clubs[0]['club_id'];
-}
-
-// 獲取當前社團的幹部身分
-if ($current_club_id) {
-    $officer_sql = "SELECT is_officer, officer_title, officer_confirmation_date, join_date
-                    FROM club_members
-                    WHERE user_id = ? AND club_id = ?";
-    $officer_stmt = $conn->prepare($officer_sql);
-    if ($officer_stmt) {
-        $officer_stmt->bind_param("ii", $user_id, $current_club_id);
-        $officer_stmt->execute();
-        $officer_status = $officer_stmt->get_result()->fetch_assoc();
-    }
-}
 ?>
 
 <!DOCTYPE html>
@@ -424,7 +385,22 @@ if ($current_club_id) {
                 <div class="profile-info">
                     <h2><?php echo htmlspecialchars($student_name); ?></h2>
                     <p><i class="bi bi-person-badge"></i> 學號：<?php echo htmlspecialchars($student_id); ?></p>
-                    <p><i class="bi bi-calendar-event"></i> 加入時間：<?php echo date('Y 年 m 月 d 日', strtotime($user['created_at'])); ?></p>
+                    
+                    <!-- 修改此處：顯示目前的社團名稱與職稱 -->
+                    <p>
+                        <i class="bi bi-briefcase"></i> 目前身分：
+                        <?php 
+                        if ($officer_status && $current_club_id) {
+                            // 取得社團名稱
+                            echo htmlspecialchars($officer_status['club_name'] ?? ''); 
+                            echo " ";
+                            // 判斷是否為幹部，若是則顯示職稱，否則顯示一般成員
+                            echo htmlspecialchars($officer_status['is_officer'] ? ($officer_status['officer_title'] ?: '幹部') : '一般成員');
+                        } else {
+                            echo "尚未選擇社團";
+                        }
+                        ?>
+                    </p>
                 </div>
             </div>
 
@@ -432,14 +408,14 @@ if ($current_club_id) {
                 <!-- 基本資訊 -->
                 <div class="info-section">
                     <h5>基本資訊</h5>
-                    <div class="info-row">
-                        <div class="info-item">
-                            <div class="info-label">系級</div>
-                            <div class="info-value"><?php echo htmlspecialchars($user['department'] ?? '未填寫'); ?> <?php echo htmlspecialchars($user['grade'] ?? ''); ?></div>
-                        </div>
+                    <div class="info-row">                        
                         <div class="info-item">
                             <div class="info-label">信箱</div>
-                            <div class="info-value" style="font-size: 0.95rem;"><?php echo htmlspecialchars($student_id); ?></div>
+                            <div class="info-value" style="font-size: 0.95rem;"><?php echo htmlspecialchars($user['email'] ?? '未填寫'); ?></div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">電話</div>
+                            <div class="info-value"><?php echo htmlspecialchars($user['phone'] ?? '未填寫'); ?></div>
                         </div>
                     </div>
                 </div>
@@ -457,7 +433,13 @@ if ($current_club_id) {
                                     <input type="hidden" name="action" value="switch_club">
                                     <input type="hidden" name="club_id" value="<?php echo $club['club_id']; ?>">
                                     <button type="submit" class="club-btn <?php echo ($current_club_id == $club['club_id']) ? 'active' : ''; ?>">
-                                        <?php echo htmlspecialchars($club['club_name']); ?>
+                                        <i class="bi bi-shield-check"></i> 
+                                        <?php 
+                                        // 顯示格式：[社團名稱] [職稱/成員]
+                                        echo htmlspecialchars($club['club_name']); 
+                                        echo " ";
+                                        echo htmlspecialchars($club['is_officer'] ? ($club['officer_title'] ?: '幹部') : '一般成員');
+                                        ?>
                                     </button>
                                 </form>
                             <?php endforeach; ?>
@@ -487,7 +469,7 @@ if ($current_club_id) {
                                     <?php if ($officer_status['is_officer']): ?>
                                         <span class="officer-badge">
                                             <i class="bi bi-star"></i>
-                                            <?php echo htmlspecialchars($officer_status['officer_title'] ?? '幹部'); ?>
+                                            <?php echo htmlspecialchars($officer_status['officer_title'] ?: '社團幹部'); ?>
                                         </span>
                                     <?php else: ?>
                                         <span class="officer-badge non-officer">

@@ -22,13 +22,21 @@ $is_officer = false;
 $current_club = null;
 $officer_title = null;
 
-if ($user_id) {
-    // 先查詢用戶的所有社團
-    $club_sql = "SELECT cm.*, c.club_name
-                 FROM club_members cm
-                 JOIN clubs c ON cm.club_id = c.club_id
-                 WHERE cm.user_id = ?
-                 ORDER BY cm.join_date DESC
+// 獲取用戶的社團及幹部身分
+$is_officer = false;
+$current_club = $_SESSION['active_club_name'] ?? null;
+$officer_title = $_SESSION['active_position'] ?? null;
+
+// 1. 如果 Session 裡已經有身分了，直接設定 $is_officer 為 true
+if ($current_club) {
+    $is_officer = true;
+} 
+// 2. 如果 Session 是空的，且 user_id 存在，則去資料庫抓取預設身分
+elseif ($user_id) {
+    $club_sql = "SELECT r.*, c.club_name
+                 FROM user_club_roles r
+                 JOIN clubs c ON r.club_id = c.club_id
+                 WHERE r.user_id = ?
                  LIMIT 1";
     
     $club_stmt = $conn->prepare($club_sql);
@@ -38,19 +46,15 @@ if ($user_id) {
         $club_result = $club_stmt->get_result();
         
         if ($club_row = $club_result->fetch_assoc()) {
+            // 設定變數供頁面顯示
             $current_club = $club_row['club_name'];
-            $officer_title = $club_row['officer_title'];
-            
-            // 檢查幹部身分是否有效（未超過一年）
-            if ($club_row['is_officer'] && $club_row['officer_confirmation_date']) {
-                $confirm_date = strtotime($club_row['officer_confirmation_date']);
-                $today = time();
-                $days_diff = floor(($today - $confirm_date) / (60 * 60 * 24));
-                
-                if ($days_diff < 365) {
-                    $is_officer = true;
-                }
-            }
+            $officer_title = $club_row['position'];
+            $is_officer = true;
+
+            // 同時存入 Session，下次就不用再查資料庫[cite: 2]
+            $_SESSION['active_club_id'] = $club_row['club_id'];
+            $_SESSION['active_club_name'] = $club_row['club_name'];
+            $_SESSION['active_position'] = $club_row['position'];
         }
     }
 }
