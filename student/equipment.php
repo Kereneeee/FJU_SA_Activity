@@ -372,3 +372,4 @@ $current_page = 'equipment';
     </script>
 </body>
 </html>
+//test
