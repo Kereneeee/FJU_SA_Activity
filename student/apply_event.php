@@ -278,13 +278,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 // 輔助函數
 function getEquipmentIcon($equipId) {
-    $icons = [
-        1 => 'mic-fill',        // 投影機
-        2 => 'speaker-fill',    // 音響設備
-        3 => 'chair',           // 折疊椅
-        4 => 'table'            // 長桌
-    ];
-    return $icons[$equipId] ?? 'tools';
+    return 'tools'; // 或你想要的 icon
 }
 
 ?>
