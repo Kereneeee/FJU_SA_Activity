@@ -9,16 +9,68 @@ if (!isset($_SESSION['student_id'])) {
     exit();
 }
 
+// 設置當前頁面用於側邊欄高亮
+$current_page = 'apply_event';
+
 $message = "";
 $message_type = "";
 
-// 從資料庫獲取場地
-$sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available'";
+// 從資料庫獲取學校場地
+$sql_spaces = "SELECT space_id, space_name FROM spaces WHERE status = 'available'";
 $result_spaces = $conn->query($sql_spaces);
 $venues = [];
 if ($result_spaces) {
     $venues = $result_spaces->fetch_all(MYSQLI_ASSOC);
 }
+
+// 從資料庫獲取場地預約資料，用於顯示各場地可用時間
+$sql_reservations = "SELECT r.space_id, r.start_time, r.end_time, e.club_name
+                     FROM reservations r
+                     JOIN events e ON r.event_id = e.event_id";
+$reservation_data = [];
+$result_reservations = $conn->query($sql_reservations);
+if ($result_reservations) {
+    while ($row = $result_reservations->fetch_assoc()) {
+        $reservation_data[] = $row;
+    }
+}
+
+function categorizeVenues(array $venues): array {
+    $groups = [
+        'A焯炤館' => [],
+        'B進修部' => [],
+        'C仁愛學苑' => [],
+        'D文開 / D真善美' => [],
+        'E課指組' => [],
+        'H校門口' => [],
+        '其他場地' => []
+    ];
+
+    foreach ($venues as $venue) {
+        $name = $venue['space_name'];
+        if (strpos($name, 'A焯炤館') === 0) {
+            $groups['A焯炤館'][] = $venue;
+        } elseif (strpos($name, 'B進修部') === 0) {
+            $groups['B進修部'][] = $venue;
+        } elseif (strpos($name, 'C仁愛學苑') === 0) {
+            $groups['C仁愛學苑'][] = $venue;
+        } elseif (strpos($name, 'D文開') === 0 || strpos($name, 'D真善美聖廣場') === 0) {
+            $groups['D文開 / D真善美'][] = $venue;
+        } elseif (strpos($name, 'E課指組') === 0) {
+            $groups['E課指組'][] = $venue;
+        } elseif (strpos($name, 'H校門口') === 0) {
+            $groups['H校門口'][] = $venue;
+        } else {
+            $groups['其他場地'][] = $venue;
+        }
+    }
+
+    return array_filter($groups, function($items) {
+        return !empty($items);
+    });
+}
+
+$venue_categories = categorizeVenues($venues);
 
 // 從資料庫獲取器材
 $sql_equipment = "SELECT equipment_id, name, borrowing_limit, total_quantity, available_quantity FROM equipment WHERE status = 'available'";
@@ -39,13 +91,30 @@ if ($result_equipment) {
     }
 }
 
+// 定義校園節次時間
+$time_periods = [
+    'D1' => ['name' => '第一節', 'start' => '08:10', 'end' => '09:00'],
+    'D2' => ['name' => '第二節', 'start' => '09:10', 'end' => '10:00'],
+    'D3' => ['name' => '第三節', 'start' => '10:10', 'end' => '11:00'],
+    'D4' => ['name' => '第四節', 'start' => '11:10', 'end' => '12:00'],
+    'DN' => ['name' => '特午節', 'start' => '12:40', 'end' => '13:30'],
+    'D5' => ['name' => '第五節', 'start' => '13:40', 'end' => '14:30'],
+    'D6' => ['name' => '第六節', 'start' => '14:40', 'end' => '15:30'],
+    'D7' => ['name' => '第七節', 'start' => '15:40', 'end' => '16:30'],
+    'D8' => ['name' => '第八節', 'start' => '16:40', 'end' => '17:30'],
+    'E0' => ['name' => '第九節', 'start' => '17:40', 'end' => '18:30'],
+    'E1' => ['name' => '夜一節', 'start' => '18:40', 'end' => '19:30'],
+    'E2' => ['name' => '夜二節', 'start' => '19:35', 'end' => '20:20'],
+    'E3' => ['name' => '夜三節', 'start' => '20:30', 'end' => '21:20']
+];
+
 // 處理表單提交
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $club_name = $_POST['club_name'] ?? '';
     $event_name = $_POST['event_name'] ?? '';
     $event_date = $_POST['event_date'] ?? '';
-    $start_time = $_POST['start_time'] ?? '';
-    $end_time = $_POST['end_time'] ?? '';
+    $start_period = $_POST['start_period'] ?? '';
+    $end_period = $_POST['end_period'] ?? '';
     $venue_id = $_POST['venue_id'] ?? '';
     $expected_attendees = $_POST['expected_attendees'] ?? '';
     $description = $_POST['description'] ?? '';
@@ -56,19 +125,53 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($event_name)) $errors[] = "請填寫活動名稱";
     if (empty($club_name)) $errors[] = "請填寫社團名稱";
     if (empty($event_date)) $errors[] = "請選擇活動日期";
-    if (empty($start_time) || empty($end_time)) $errors[] = "請填寫活動時間";
+    if (empty($start_period) || empty($end_period)) $errors[] = "請選擇活動時間";
     if (empty($venue_id)) $errors[] = "請選擇場地";
-    if ($start_time >= $end_time) $errors[] = "結束時間必須晚於開始時間";
+    
+    // 驗證節次選擇
+    if (!empty($start_period) && !empty($end_period)) {
+        if (!isset($time_periods[$start_period]) || !isset($time_periods[$end_period])) {
+            $errors[] = "選擇的時間節次無效";
+        }
+    }
 
     if (empty($errors)) {
         // 開始事務
         $conn->begin_transaction();
         
         try {
-            // 組合完整的開始和結束時間
-            $event_start = $event_date . " " . $start_time . ":00";
-            $event_end = $event_date . " " . $end_time . ":00";
+            // 組合完整的開始和結束時間（從節次轉換）
+            $event_start = $event_date . " " . $time_periods[$start_period]['start'] . ":00";
+            $event_end = $event_date . " " . $time_periods[$end_period]['end'] . ":00";
+            $venue_id = intval($venue_id);
             
+            // 驗證開始時間不晚於結束時間（基於結束節次）
+            $start_seconds = strtotime($time_periods[$start_period]['start']);
+            $end_seconds = strtotime($time_periods[$end_period]['end']);
+            if ($start_seconds >= $end_seconds) {
+                throw new Exception("開始節次必須早於結束節次");
+            }
+
+            // 檢查場地是否與其他社團已發生衝突（精確到秒）
+            $stmt_conflict = $conn->prepare(
+                "SELECT e.club_name, r.created_at
+                 FROM reservations r
+                 JOIN events e ON r.event_id = e.event_id
+                 WHERE r.space_id = ?
+                   AND NOT (r.end_time <= ? OR r.start_time >= ?)
+                   AND e.club_name != ?
+                 ORDER BY r.created_at ASC
+                 LIMIT 1"
+            );
+            $stmt_conflict->bind_param("isss", $venue_id, $event_start, $event_end, $club_name);
+            $stmt_conflict->execute();
+            $conflict_result = $stmt_conflict->get_result();
+
+            if ($conflict_result && $conflict_result->num_rows > 0) {
+                throw new Exception("該時段場地已被其他社團預約，請選擇其他時間或場地。如果是同社團，該時段仍可保留使用權。");
+            }
+            $stmt_conflict->close();
+
             // 插入活動記錄
             $stmt_event = $conn->prepare(
                 "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status) 
@@ -110,26 +213,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 foreach ($_POST['equipment'] as $equip_id => $quantity) {
                     $quantity = intval($quantity);
 
-                    // ⭐ 查詢器材限制
+                    // ⭐ 查詢器材限制與已借用數量（精確到秒的先搶先贏）
                     $stmt_check = $conn->prepare(
-                        "SELECT available_quantity, borrow_limit FROM equipment WHERE equipment_id = ?"
+                        "SELECT eq.available_quantity, eq.borrowing_limit, eq.total_quantity,
+                                COALESCE(SUM(eb.quantity), 0) as already_borrowed
+                         FROM equipment eq
+                         LEFT JOIN equipment_borrow eb ON eq.equipment_id = eb.equipment_id
+                         WHERE eq.equipment_id = ?
+                         GROUP BY eq.equipment_id"
                     );
+                    if (!$stmt_check) {
+                        throw new Exception("資料庫錯誤：" . $conn->error);
+                    }
                     $stmt_check->bind_param("i", $equip_id);
                     $stmt_check->execute();
                     $result = $stmt_check->get_result()->fetch_assoc();
+                    $stmt_check->close();
 
                     if (!$result) {
                         throw new Exception("找不到器材資料");
                     }
 
-                    // ⭐ 計算最大可借
-                    $maxAllowed = ($result['borrow_limit'] > 0)
-                        ? min($result['available_quantity'], $result['borrow_limit'])
-                        : $result['available_quantity'];
+                    // ⭐ 計算最大可借（基於已借用的實時統計）
+                    $actualAvailable = $result['total_quantity'] - $result['already_borrowed'];
+                    $maxAllowed = ($result['borrowing_limit'] > 0)
+                        ? min($actualAvailable, $result['borrowing_limit'])
+                        : $actualAvailable;
 
                     // ❌ 超過限制 → 擋掉
                     if ($quantity > $maxAllowed) {
-                        throw new Exception("器材ID {$equip_id} 超過可借上限（最多 {$maxAllowed}）");
+                        throw new Exception("器材 {$equip_id} 超過可借上限（最多 {$maxAllowed}）。因為先搶先贏機制，請重新提交或選擇其他器材。");
                     }
 
                     // ✅ 正常寫入
@@ -320,6 +433,42 @@ function getEquipmentIcon($equipId) {
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 1rem;
         }
+        .category-block {
+            margin-bottom: 1.5rem;
+        }
+        .category-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.95rem 1rem;
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .category-header:hover {
+            background: #faf9ff;
+        }
+        .category-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #4b1a38;
+        }
+        .category-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.95rem;
+            color: #6b7280;
+        }
+        .category-body {
+            margin-top: 1rem;
+            display: none;
+        }
+        .category-body.open {
+            display: block;
+        }
         .venue-card {
             border: 2px solid #e5e7eb;
             border-radius: 12px;
@@ -353,9 +502,12 @@ function getEquipmentIcon($equipId) {
             background: #d1e7dd;
             color: #0f5132;
         }
-        .venue-capacity {
-            color: #6b7280;
+        .venue-availability {
+            margin-top: 0.9rem;
             font-size: 0.9rem;
+            color: #475569;
+            line-height: 1.5;
+            min-height: 1.8rem;
         }
         .equipment-grid {
             display: grid;
@@ -464,21 +616,7 @@ function getEquipmentIcon($equipId) {
     </style>
 </head>
 <body>
-    <aside class="sidebar">
-        <div class="brand">
-            <h4>輔仁大學<br>課外活動指導組</h4>
-        </div>
-        <nav class="nav flex-column">
-            <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
-            <a class="nav-link" href="calendar.php"><i class="bi bi-calendar3"></i> 行事曆</a>
-            <a class="nav-link" href="my_applications.php"><i class="bi bi-bookmark"></i> 我的申請</a>
-            <a class="nav-link active" href="apply_event.php"><i class="bi bi-calendar-plus"></i> 新增申請</a>
-        </nav>
-        <div class="sidebar-section">
-            <p class="mb-2">快捷操作</p>
-            <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> 登出系統</a>
-        </div>
-    </aside>
+    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
         <header class="top-navbar">
@@ -520,12 +658,26 @@ function getEquipmentIcon($equipId) {
                                 <input type="date" id="event_date" name="event_date" class="form-control" required>
                             </div>
                             <div class="form-group">
-                                <label>開始時間 *</label>
-                                <input type="time" id="start_time" name="start_time" class="form-control" required>
+                                <label for="start_period">開始節次 *</label>
+                                <select id="start_period" name="start_period" class="form-control" required>
+                                    <option value="">-- 請選擇開始節次 --</option>
+                                    <?php foreach ($time_periods as $code => $period): ?>
+                                        <option value="<?= $code ?>">
+                                            <?= $period['name'] ?> (<?= $period['start'] ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="form-group">
-                                <label>結束時間 *</label>
-                                <input type="time" id="end_time" name="end_time" class="form-control" required>
+                                <label for="end_period">結束節次 *</label>
+                                <select id="end_period" name="end_period" class="form-control" required>
+                                    <option value="">-- 請選擇結束節次 --</option>
+                                    <?php foreach ($time_periods as $code => $period): ?>
+                                        <option value="<?= $code ?>">
+                                            <?= $period['name'] ?> (<?= $period['end'] ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                         </div>
 
@@ -540,19 +692,29 @@ function getEquipmentIcon($equipId) {
                 <div class="card">
                     <h3><i class="bi bi-geo-alt"></i> 場地選擇</h3>
                     <div class="form-section">
-                        <div class="venue-grid">
-                            <?php foreach ($venues as $venue): ?>
-                            <div class="venue-card" data-venue-id="<?= $venue['space_id'] ?>" onclick="selectVenue(<?= $venue['space_id'] ?>)">
-                                <div class="venue-header">
-                                    <div class="venue-name"><?= htmlspecialchars($venue['space_name']) ?></div>
-                                    <div class="venue-status">可預約</div>
-                                </div>
-                                <div class="venue-capacity"><i class="bi bi-people"></i> 容納：<?= $venue['capacity'] ?> 人</div>
-                                <input type="radio" name="venue_id" value="<?= $venue['space_id'] ?>" style="display: none;">
+                    <?php foreach ($venue_categories as $category => $categoryVenues): ?>
+                        <div class="category-block">
+                            <div class="category-header" onclick="toggleCategory(this)">
+                                <div class="category-title"><?= htmlspecialchars($category) ?></div>
+                                <div class="category-toggle"><span>展開</span> <i class="bi bi-chevron-down"></i></div>
                             </div>
-                            <?php endforeach; ?>
+                            <div class="category-body">
+                                <div class="venue-grid">
+                                    <?php foreach ($categoryVenues as $venue): ?>
+                                        <div class="venue-card" data-venue-id="<?= $venue['space_id'] ?>" onclick="selectVenue(<?= $venue['space_id'] ?>)">
+                                            <div class="venue-header">
+                                                <div class="venue-name"><?= htmlspecialchars($venue['space_name']) ?></div>
+                                                <div class="venue-status">可預約</div>
+                                            </div>
+                                            <div class="venue-availability" id="availability-<?= $venue['space_id'] ?>">請先選擇日期查看可用時間。</div>
+                                            <input type="radio" name="venue_id" value="<?= $venue['space_id'] ?>" style="display: none;">
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
                         </div>
-                    </div>
+                    <?php endforeach; ?>
+                </div>
                 </div>
 
                 <!-- 器材借用 -->
@@ -607,30 +769,97 @@ function getEquipmentIcon($equipId) {
     </main>
 
     <script>
+        const reservationData = <?= json_encode($reservation_data, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+
+        function toggleCategory(header) {
+            const body = header.nextElementSibling;
+            const toggleText = header.querySelector('.category-toggle span');
+            const icon = header.querySelector('.category-toggle i');
+            if (!body) return;
+            const open = body.classList.toggle('open');
+            toggleText.textContent = open ? '收合' : '展開';
+            icon.className = open ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+        }
+
         function selectVenue(venueId) {
             document.querySelectorAll('.venue-card').forEach(card => card.classList.remove('selected'));
             const selectedCard = document.querySelector(`[data-venue-id="${venueId}"]`);
-            selectedCard.classList.add('selected');
-            document.querySelector(`input[name="venue_id"][value="${venueId}"]`).checked = true;
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+            }
+            const input = document.querySelector(`input[name="venue_id"][value="${venueId}"]`);
+            if (input) {
+                input.checked = true;
+            }
         }
 
         function changeQuantity(equipId, delta) {
             const input = document.getElementById('qty_' + equipId);
-            const max = parseInt(input.getAttribute('max'));
+            const max = parseInt(input.getAttribute('max')) || 0;
             let value = parseInt(input.value) + delta;
             if (value < 0) value = 0;
             if (value > max) value = max;
             input.value = value;
         }
 
+        function parseDateTime(dateTime) {
+            return new Date(dateTime.replace(' ', 'T'));
+        }
+
+        function formatTime(dateTime) {
+            const date = parseDateTime(dateTime);
+            return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function getAvailabilityText(venueId, dateValue) {
+            if (!dateValue) {
+                return '請先選擇日期查看可用時間。';
+            }
+
+            const reservations = reservationData.filter(r => {
+                const dt = parseDateTime(r.start_time);
+                return dt.toISOString().slice(0, 10) === dateValue && r.space_id == venueId;
+            }).map(r => ({
+                start: parseDateTime(r.start_time),
+                end: parseDateTime(r.end_time),
+                club: r.club_name
+            }));
+
+            if (!reservations.length) {
+                return '當日全天可用。';
+            }
+
+            reservations.sort((a, b) => a.start - b.start);
+            const reservedText = reservations.map(r => `${formatTime(r.start)} - ${formatTime(r.end)}`).join('，');
+            return `已被預約：${reservedText}`;
+        }
+
+        function updateAvailability() {
+            const dateValue = document.getElementById('event_date').value;
+            document.querySelectorAll('.venue-card').forEach(card => {
+                const venueId = card.getAttribute('data-venue-id');
+                const availability = document.getElementById(`availability-${venueId}`);
+                if (availability) {
+                    availability.textContent = getAvailabilityText(venueId, dateValue);
+                }
+            });
+        }
+
+        document.getElementById('event_date').addEventListener('change', updateAvailability);
+        document.getElementById('start_period').addEventListener('change', updateAvailability);
+        document.getElementById('end_period').addEventListener('change', updateAvailability);
+        document.addEventListener('DOMContentLoaded', function() {
+            updateAvailability();
+        });
+
         document.getElementById('applicationForm').addEventListener('submit', function(e) {
-            const startTime = document.getElementById('start_time').value;
-            const endTime = document.getElementById('end_time').value;
+            const startPeriod = document.getElementById('start_period').value;
+            const endPeriod = document.getElementById('end_period').value;
             const venueSelected = document.querySelector('input[name="venue_id"]:checked');
 
-            if (startTime && endTime && startTime >= endTime) {
+            if (!startPeriod || !endPeriod) {
                 e.preventDefault();
-                alert('結束時間必須晚於開始時間！');
+                alert('請選擇開始和結束節次！');
                 return false;
             }
 

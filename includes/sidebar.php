@@ -35,7 +35,7 @@ if ($logoutHref === '') {
             <i class="bi bi-tools"></i> 器材借用
         </a>
         <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="field_coord.php">
-            <i class="bi bi-people"></i> 場地協助
+            <i class="bi bi-people"></i> 場地協調
         </a>
         <a class="nav-link <?php echo ($current_page === 'my_applications') ? 'active' : ''; ?>" href="my_applications.php">
             <i class="bi bi-card-list"></i> 我的申請

@@ -13,7 +13,27 @@ INSERT IGNORE INTO `users` (`name`, `email`, `password`, `role`, `username`) VAL
 INSERT IGNORE INTO `spaces` (`space_id`, `space_name`, `capacity`, `status`) VALUES
 (1, '活動中心大廳', 200, 'available'),
 (2, '會議室 A', 50, 'available'),
-(3, '戶外操場', 500, 'available');
+(3, '戶外操場', 500, 'available'),
+(4, 'A焯炤館－地下演講廳', 0, 'available'),
+(5, 'A焯炤館－旋律廣場－冷氣損壞', 0, 'available'),
+(6, 'A焯炤館－夢幻電影院', 0, 'available'),
+(7, 'A焯炤館－鏡鏡屋', 0, 'available'),
+(8, 'B進修部地下室教室（一）ES002', 0, 'available'),
+(9, 'B進修部地下室教室（二）ES003', 0, 'available'),
+(10, 'B進修部地下室教室（三）ES004', 0, 'available'),
+(11, 'B進修部地下室教室（四）ES005', 0, 'available'),
+(12, 'B進修部地下室教室（五）ES006', 0, 'available'),
+(13, 'B進修部地下室演講廳', 0, 'available'),
+(14, 'C仁愛學苑－一樓半空間', 0, 'available'),
+(15, 'C仁愛學苑－二樓半空間', 0, 'available'),
+(16, 'C仁愛學苑－三樓半空間', 0, 'available'),
+(17, 'D文開地下舞蹈空間中間', 0, 'available'),
+(18, 'D文開地下舞蹈空間右側（軟墊）', 0, 'available'),
+(19, 'D文開地下舞蹈空間左側', 0, 'available'),
+(20, 'D真善美聖廣場', 0, 'available'),
+(21, 'E課指組204會議室', 0, 'available'),
+(22, 'H校門口左側（AB）', 0, 'available'),
+(23, 'H校門口左側（CD）', 0, 'available');
 
 -- 插入測試器材
 INSERT IGNORE INTO `equipment` (`equipment_id`, `name`, `total_quantity`, `available_quantity`, `status`) VALUES
