@@ -395,11 +395,11 @@ elseif ($user_id) {
                 </div>
                 <div class="action-card" onclick="location.href='field_coord.php'">
                     <div class="action-top">
-                        <span>場協意願</span>
+                        <span>場地協調</span>
                         <div class="action-icon"><i class="bi bi-people-fill"></i></div>
                     </div>
-                    <h6>登記場地協助</h6>
-                    <p>加入場協團隊並管理您的可協助時段。</p>
+                    <h6>登記場地協調</h6>
+                    <p>代表社團登記多個教室與例行練習時間。</p>
                 </div>
                 <?php else: ?>
                 <div class="action-card" style="opacity: 0.6; cursor: not-allowed;">

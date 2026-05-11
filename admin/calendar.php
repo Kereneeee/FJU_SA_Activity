@@ -2,15 +2,14 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
 require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id'])) {
     header('Location: ../login.php');
     exit();
 }
 
-$current_page = 'calendar';
+$user_name = $_SESSION['user_name'] ?? '管理員';
 
 $selected_year = intval($_GET['year'] ?? date('Y'));
 $selected_month = intval($_GET['month'] ?? date('m'));
@@ -73,13 +72,11 @@ $buildings = [
     ],
 ];
 
-// 檢查是否有直接指定場地
 $direct_space_id = intval($_GET['space_id'] ?? 0);
 $selectedBuildingId = null;
 $selectedRoomId = null;
 
 if ($direct_space_id > 0) {
-    // 根據 space_id 找到對應的建築和房間
     foreach ($buildings as $building) {
         foreach ($building['rooms'] as $room) {
             if ($room['id'] == $direct_space_id) {
@@ -145,7 +142,7 @@ if ($stmt) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>場地協調日曆 - 輔仁大學課外活動指導組</title>
+    <title>完整行事曆 - 輔仁大學課外活動指導組</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
@@ -154,6 +151,7 @@ if ($stmt) {
         :root {
             --primary: #8B1538;
             --sidebar: #4c0f2a;
+            --sidebar-hover: #6a1d43;
             --bg: #f4f6fb;
             --card: #ffffff;
             --success: #10b981;
@@ -192,6 +190,7 @@ if ($stmt) {
             margin: 0.2rem 0;
             border-radius: 16px;
             transition: background 0.25s ease, transform 0.15s ease;
+            text-decoration: none;
         }
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
@@ -201,6 +200,31 @@ if ($stmt) {
         }
         .sidebar .nav-link i { font-size: 1.1rem; }
         .sidebar .sidebar-section { padding: 1rem 0.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.12); }
+        .dropdown {
+            position: relative;
+        }
+        .dropdown-content {
+            display: block;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            margin-top: 0.2rem;
+        }
+        .dropdown:hover .dropdown-content {
+            max-height: 200px;
+        }
+        .dropdown-content a {
+            color: rgba(255,255,255,0.9);
+            padding: 0.75rem 1rem;
+            text-decoration: none;
+            display: block;
+            border-radius: 0;
+        }
+        .dropdown-content a:hover {
+            background-color: rgba(255,255,255,0.2);
+        }
         .main-content { margin-left: 260px; min-height: 100vh; transition: margin-left 0.25s ease; }
         .top-navbar { background: white; border-bottom: 1px solid #e9ecef; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
         .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
@@ -233,7 +257,6 @@ if ($stmt) {
         .btn-action.primary:hover { background: #5a0f29; }
         .btn-action.secondary { background: #e5e7eb; color: #1f2937; }
         .btn-action.secondary:hover { background: #d1d5db; }
-        .btn-action.danger { background: var(--danger); color: white; }
         .booked-list { margin-top: 1rem; }
         .booked-card { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; }
         .booked-card .booked-left { display: grid; gap: 0.3rem; }
@@ -253,16 +276,43 @@ if ($stmt) {
     </style>
 </head>
 <body>
-    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
+    <aside class="sidebar">
+        <div class="brand">
+            <h4>輔仁大學<br>課外活動指導組</h4>
+        </div>
+        <nav class="nav flex-column">
+            <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
+            <div class="dropdown">
+                <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
+                <div class="dropdown-content">
+                    <a href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
+                    <a href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
+                    <a href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
+                </div>
+            </div>
+            <a class="nav-link active" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
+        </nav>
+        <div class="sidebar-section">
+            <p class="mb-2">快捷操作</p>
+            <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> 登出系統</a>
+        </div>
+    </aside>
 
     <main class="main-content">
         <header class="top-navbar">
             <div>
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">場地協調</li>
+                    <li class="breadcrumb-item active" aria-current="page">完整行事曆</li>
                 </ol>
-                <h4 class="mt-2 mb-0">場地協調</h4>
+                <h4 class="mt-2 mb-0">完整行事曆</h4>
+            </div>
+            <div class="user-card">
+                <div class="user-avatar"><?= htmlspecialchars(substr($user_name, 0, 1)) ?></div>
+                <div>
+                    <div><?= htmlspecialchars($user_name) ?></div>
+                    <small class="text-muted">管理員</small>
+                </div>
             </div>
         </header>
 
@@ -316,7 +366,6 @@ if ($stmt) {
         let selectedBuildingId = <?php echo $selectedBuildingId ? $selectedBuildingId : 'null'; ?>;
         let selectedRoomId = <?php echo $selectedRoomId ? $selectedRoomId : 'null'; ?>;
         let selectedDate = null;
-        let selectedSlot = null;
 
         function initPage() {
             const buildingSelect = document.getElementById('buildingSelect');
@@ -325,7 +374,6 @@ if ($stmt) {
             const filterRow = document.querySelector('.filter-row');
             const searchButton = document.getElementById('searchButton');
 
-            // 如果有直接指定場地，隱藏選擇介面
             if (selectedRoomId !== null) {
                 filterRow.style.display = 'none';
                 searchButton.style.display = 'none';
@@ -333,7 +381,6 @@ if ($stmt) {
                 return;
             }
 
-            // 顯示選擇介面
             filterRow.style.display = 'grid';
             searchButton.style.display = 'block';
 
@@ -516,38 +563,50 @@ if ($stmt) {
             slotList.innerHTML = '';
             bookingDetails.innerHTML = '';
 
-            const summary = document.createElement('div');
-            summary.className = 'slot-row';
-            summary.innerHTML = `<div class="slot-label">今日共 ${roomBookings.length} 筆登記</div>`;
-            slotList.appendChild(summary);
+            timeSlots.forEach(slot => {
+                const row = document.createElement('div');
+                row.className = 'slot-row' + (roomBookings.some(b => b.start_time.includes(slot.label.split(' - ')[0])) ? ' booked' : '');
+                const label = document.createElement('div');
+                label.className = 'slot-label';
+                label.textContent = slot.label;
+                row.appendChild(label);
+
+                const status = document.createElement('div');
+                status.className = 'slot-meta';
+                const matching = roomBookings.filter(b => b.start_time.includes(slot.label.split(' - ')[0]));
+                if (matching.length > 0) {
+                    status.innerHTML = `<span class="badge-status confirmed">${matching.length} 筆預約</span>`;
+                } else {
+                    status.innerHTML = '<span class="badge-status pending">可預約</span>';
+                }
+                row.appendChild(status);
+                slotList.appendChild(row);
+            });
 
             if (roomBookings.length === 0) {
-                bookingDetails.innerHTML = '<p class="text-muted">該日期尚未有場地登記，代表目前可用。</p>';
+                bookingDetails.innerHTML = '<div class="booked-card"><div class="booked-left"><div class="booked-label">今日尚無預約</div></div></div>';
                 return;
             }
 
-            bookingDetails.innerHTML = '<h4 style="margin-bottom:0.8rem; color:#374151;">當日登記清單</h4>';
-            roomBookings.forEach(item => {
+            roomBookings.forEach(booking => {
                 const card = document.createElement('div');
                 card.className = 'booked-card';
                 card.innerHTML = `
                     <div class="booked-left">
-                        <div class="booking-time" style="font-weight:700;">${new Date(item.start_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })} - ${new Date(item.end_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
-                        <div class="booking-title">${item.event_name}</div>
-                        <div class="booking-club">社團：${item.club_name}</div>
-                        <div class="booking-organizer">申請人：${item.organizer}</div>
+                        <div class="booked-label">${booking.event_name}</div>
+                        <div>${booking.club_name}</div>
+                        <div>${booking.organizer}</div>
                     </div>
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; justify-content:center; align-items:flex-end;">
-                        <span class="badge-status ${item.status}">${item.status === 'approved' ? '已核准' : '待審核'}</span>
+                    <div style="text-align:right;">
+                        <div>${booking.start_time.slice(11,16)} - ${booking.end_time.slice(11,16)}</div>
+                        <div class="badge-status confirmed">${booking.status}</div>
                     </div>
                 `;
                 bookingDetails.appendChild(card);
             });
         }
 
-        window.addEventListener('DOMContentLoaded', () => {
-            initPage();
-        });
+        initPage();
     </script>
 </body>
 </html>

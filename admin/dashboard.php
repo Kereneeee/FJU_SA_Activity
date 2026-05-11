@@ -84,6 +84,31 @@ $user_id = $_SESSION['user_id'];
             margin-top: 1.5rem;
             border-top: 1px solid rgba(255,255,255,0.12);
         }
+        .dropdown {
+            position: relative;
+        }
+        .dropdown-content {
+            display: block;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background-color: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            margin-top: 0.2rem;
+        }
+        .dropdown:hover .dropdown-content {
+            max-height: 200px;
+        }
+        .dropdown-content a {
+            color: rgba(255,255,255,0.9);
+            padding: 0.75rem 1rem;
+            text-decoration: none;
+            display: block;
+            border-radius: 0;
+        }
+        .dropdown-content a:hover {
+            background-color: rgba(255,255,255,0.2);
+        }
         .main-content {
             margin-left: 260px;
             min-height: 100vh;
@@ -286,11 +311,15 @@ $user_id = $_SESSION['user_id'];
         </div>
         <nav class="nav flex-column">
             <a class="nav-link active" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
-            <a class="nav-link" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
-            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
-            <a class="nav-link" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
-            <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
-            <a class="nav-link" href="../student/calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
+            <div class="dropdown">
+                <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
+                <div class="dropdown-content">
+                    <a href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
+                    <a href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
+                    <a href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
+                </div>
+            </div>
+            <a class="nav-link" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
         </nav>
         <div class="sidebar-section">
             <p class="mb-2">快捷操作</p>

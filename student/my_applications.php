@@ -2,7 +2,6 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
 require_once(__DIR__ . "/../DB/db_config.php");
 
 if (!isset($_SESSION['student_id'])) {
@@ -12,6 +11,65 @@ if (!isset($_SESSION['student_id'])) {
 
 // 設置當前頁面用於側邊欄高亮
 $current_page = 'my_applications';
+
+// 獲取當前學生的申請
+$student_email = $_SESSION['student_id'];
+$applications = [];
+
+// 先獲取學生ID
+$user_sql = "SELECT user_id FROM users WHERE email = ?";
+$user_stmt = $conn->prepare($user_sql);
+$user_stmt->bind_param("s", $student_email);
+$user_stmt->execute();
+$user_result = $user_stmt->get_result();
+$student_user_id = null;
+
+if ($user_result && $user_result->num_rows > 0) {
+    $user_row = $user_result->fetch_assoc();
+    $student_user_id = $user_row['user_id'];
+}
+$user_stmt->close();
+
+$sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, 
+               e.start_time, e.end_time, e.status, e.review_note,
+               e.created_at, r.space_id, s.space_name
+        FROM events e
+        LEFT JOIN reservations r ON e.event_id = r.event_id
+        LEFT JOIN spaces s ON r.space_id = s.space_id
+        WHERE e.user_id = ?
+        ORDER BY e.created_at DESC";
+
+$stmt = $conn->prepare($sql);
+if (!$stmt) {
+    die("準備SQL語句失敗: " . $conn->error);
+}
+
+$stmt->bind_param("i", $student_user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+if ($result) {
+    $applications = $result->fetch_all(MYSQLI_ASSOC);
+}
+$stmt->close();
+
+// 狀態中文對應
+$status_map = [
+    'pending' => '審核中',
+    'approved' => '已通過',
+    'rejected' => '已拒絕',
+    'completed' => '已完成',
+    'cancelled' => '已取消'
+];
+
+// 狀態樣式對應
+$status_class_map = [
+    'pending' => 'status-pending',
+    'approved' => 'status-approved',
+    'rejected' => 'status-rejected',
+    'completed' => 'status-completed',
+    'cancelled' => 'status-rejected'
+];
 ?>
 
 <!DOCTYPE html>
@@ -292,101 +350,67 @@ $current_page = 'my_applications';
                 </div>
 
                 <div id="applicationsList">
-                    <!-- 申請卡片將動態生成 -->
-                    <div class="application-card">
-                        <div class="application-header">
-                            <div>
-                                <div class="application-title">社團聯歡活動</div>
-                                <div class="application-meta">申請日期：2024-01-15 | 申請編號：APP2024001</div>
-                            </div>
-                            <span class="status-badge status-approved">已通過</span>
+                    <?php if (empty($applications)): ?>
+                        <div class="empty-state">
+                            <i class="bi bi-inbox"></i>
+                            <h4>目前沒有申請記錄</h4>
+                            <p>您還沒有提交任何申請，點擊下方按鈕開始申請吧！</p>
+                            <a href="apply_event.php" class="btn-action btn-edit" style="display: inline-block; margin-top: 1rem;">前往申請</a>
                         </div>
-                        <div class="application-details">
-                            <div class="detail-item">
-                                <div class="detail-label">活動日期</div>
-                                <div class="detail-value">2024-01-20</div>
+                    <?php else: ?>
+                        <?php foreach ($applications as $app): ?>
+                            <div class="application-card" data-status="<?php echo htmlspecialchars($app['status']); ?>">
+                                <div class="application-header">
+                                    <div>
+                                        <div class="application-title"><?php echo htmlspecialchars($app['event_name']); ?></div>
+                                        <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'])); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
+                                    </div>
+                                    <span class="status-badge <?php echo $status_class_map[$app['status']] ?? 'status-pending'; ?>">
+                                        <?php echo $status_map[$app['status']] ?? '未知'; ?>
+                                    </span>
+                                </div>
+                                <div class="application-details">
+                                    <div class="detail-item">
+                                        <div class="detail-label">活動日期</div>
+                                        <div class="detail-value"><?php echo date('Y-m-d', strtotime($app['start_time'])); ?></div>
+                                    </div>
+                                    <div class="detail-item">
+                                        <div class="detail-label">活動時間</div>
+                                        <div class="detail-value"><?php echo date('H:i', strtotime($app['start_time'])); ?> - <?php echo date('H:i', strtotime($app['end_time'])); ?></div>
+                                    </div>
+                                    <div class="detail-item">
+                                        <div class="detail-label">場地</div>
+                                        <div class="detail-value"><?php echo htmlspecialchars($app['space_name'] ?? '未指定'); ?></div>
+                                    </div>
+                                    <div class="detail-item">
+                                        <div class="detail-label">社團</div>
+                                        <div class="detail-value"><?php echo htmlspecialchars($app['club_name']); ?></div>
+                                    </div>
+                                </div>
+                                <div class="application-actions">
+                                    <?php 
+                                    // 根據申請狀態決定顯示的按鈕
+                                    // 審核中和已通過的申請不能編輯，只能取消
+                                    if ($app['status'] === 'pending'):
+                                    ?>
+                                        <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消</button>
+                                    <?php elseif ($app['status'] === 'approved'): ?>
+                                        <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消</button>
+                                    <?php elseif ($app['status'] === 'completed'): ?>
+                                        <button class="btn-action" onclick="viewDetails(<?php echo $app['event_id']; ?>)">查看詳情</button>
+                                    <?php elseif ($app['status'] === 'rejected'): ?>
+                                        <span style="color: #dc3545; font-size: 0.9rem;">
+                                            <?php if (!empty($app['review_note'])): ?>
+                                                審核意見：<?php echo htmlspecialchars($app['review_note']); ?>
+                                            <?php else: ?>
+                                                申請已拒絕
+                                            <?php endif; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
-                            <div class="detail-item">
-                                <div class="detail-label">活動時間</div>
-                                <div class="detail-value">14:00 - 17:00</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">場地</div>
-                                <div class="detail-value">大禮堂</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">狀態</div>
-                                <div class="detail-value">等待活動執行</div>
-                            </div>
-                        </div>
-                        <div class="application-actions">
-                            <button class="btn-action btn-edit" onclick="editApplication('APP2024001')">編輯</button>
-                            <button class="btn-action btn-cancel" onclick="cancelApplication('APP2024001')">取消</button>
-                        </div>
-                    </div>
-
-                    <div class="application-card">
-                        <div class="application-header">
-                            <div>
-                                <div class="application-title">音樂社表演</div>
-                                <div class="application-meta">申請日期：2024-01-10 | 申請編號：APP2024002</div>
-                            </div>
-                            <span class="status-badge status-pending">審核中</span>
-                        </div>
-                        <div class="application-details">
-                            <div class="detail-item">
-                                <div class="detail-label">活動日期</div>
-                                <div class="detail-value">2024-02-15</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">活動時間</div>
-                                <div class="detail-value">18:00 - 20:00</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">場地</div>
-                                <div class="detail-value">活動中心</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">狀態</div>
-                                <div class="detail-value">等待管理員審核</div>
-                            </div>
-                        </div>
-                        <div class="application-actions">
-                            <button class="btn-action btn-edit" onclick="editApplication('APP2024002')">編輯</button>
-                            <button class="btn-action btn-cancel" onclick="cancelApplication('APP2024002')">取消</button>
-                        </div>
-                    </div>
-
-                    <div class="application-card">
-                        <div class="application-header">
-                            <div>
-                                <div class="application-title">講座活動</div>
-                                <div class="application-meta">申請日期：2024-01-05 | 申請編號：APP2024003</div>
-                            </div>
-                            <span class="status-badge status-completed">已完成</span>
-                        </div>
-                        <div class="application-details">
-                            <div class="detail-item">
-                                <div class="detail-label">活動日期</div>
-                                <div class="detail-value">2024-01-08</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">活動時間</div>
-                                <div class="detail-value">15:00 - 17:00</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">場地</div>
-                                <div class="detail-value">會議室A</div>
-                            </div>
-                            <div class="detail-item">
-                                <div class="detail-label">狀態</div>
-                                <div class="detail-value">活動已結束</div>
-                            </div>
-                        </div>
-                        <div class="application-actions">
-                            <button class="btn-action" onclick="viewDetails('APP2024003')">查看詳情</button>
-                        </div>
-                    </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
 
                 <div id="emptyState" class="empty-state" style="display: none;">
@@ -411,27 +435,58 @@ $current_page = 'my_applications';
             });
             event.target.classList.add('active');
 
-            // 這裡可以添加實際的過濾邏輯
-            // 目前只是示例，實際應用中應該從資料庫獲取資料
-            console.log('Filtering applications by:', filter);
+            // 根據篩選條件顯示/隱藏申請卡片
+            const cards = document.querySelectorAll('.application-card');
+            cards.forEach(card => {
+                const status = card.getAttribute('data-status');
+                
+                if (filter === 'all') {
+                    card.style.display = 'block';
+                } else if (filter === 'pending' && status === 'pending') {
+                    card.style.display = 'block';
+                } else if (filter === 'approved' && status === 'approved') {
+                    card.style.display = 'block';
+                } else if (filter === 'completed' && status === 'completed') {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
         }
 
-        function editApplication(appId) {
-            window.location.href = `edit_application.php?id=${appId}`;
+        function editApplication(eventId) {
+            window.location.href = `edit_application.php?id=${eventId}`;
         }
 
-        function cancelApplication(appId) {
-            if (confirm('確定要取消此申請嗎？取消後無法恢復。')) {
-                // 這裡可以添加取消申請的邏輯
-                alert(`申請 ${appId} 已取消`);
-                // 重新載入頁面或更新UI
-                location.reload();
+        function cancelApplication(eventId, appNumber) {
+            if (confirm(`確定要取消申請 ${appNumber} 嗎？取消後無法恢復。`)) {
+                // 向服務器發送取消申請請求
+                fetch('../api/cancel_application.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `event_id=${eventId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('申請已取消');
+                        location.reload();
+                    } else {
+                        alert('取消失敗：' + (data.message || '未知錯誤'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('發生錯誤，請重試');
+                });
             }
         }
 
-        function viewDetails(appId) {
-            // 這裡可以跳轉到詳細頁面或打開模態框
-            alert(`查看申請 ${appId} 的詳細資訊`);
+        function viewDetails(eventId) {
+            // 跳轉到事件詳情頁面
+            window.location.href = `event_details.php?id=${eventId}`;
         }
     </script>
 </body>
