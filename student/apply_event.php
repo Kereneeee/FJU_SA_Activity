@@ -1,10 +1,12 @@
+<form method="POST" id="applicationForm" enctype="multipart/form-data">
+
 <?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id'])) {
     header('Location: ../login.php');
     exit();
 }
@@ -127,6 +129,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($event_date)) $errors[] = "請選擇活動日期";
     if (empty($start_period) || empty($end_period)) $errors[] = "請選擇活動時間";
     if (empty($venue_id)) $errors[] = "請選擇場地";
+    if (!isset($_FILES['event_document']) || $_FILES['event_document']['error'] == UPLOAD_ERR_NO_FILE) {
+        $errors[] = "請上傳已簽署的三單文件";
+    }
     
     // 驗證節次選擇
     if (!empty($start_period) && !empty($end_period)) {
@@ -138,21 +143,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($errors)) {
         // 開始事務
         $conn->begin_transaction();
-        
-        try {
-            // 組合完整的開始和結束時間（從節次轉換）
-            $event_start = $event_date . " " . $time_periods[$start_period]['start'] . ":00";
-            $event_end = $event_date . " " . $time_periods[$end_period]['end'] . ":00";
-            $venue_id = intval($venue_id);
-            
-            // 驗證開始時間不晚於結束時間（基於結束節次）
-            $start_seconds = strtotime($time_periods[$start_period]['start']);
-            $end_seconds = strtotime($time_periods[$end_period]['end']);
-            if ($start_seconds >= $end_seconds) {
-                throw new Exception("開始節次必須早於結束節次");
-            }
+    
+    try {
+        // --- 1. 處理檔案上傳 (放在最前面，失敗就直接進 catch) ---
+        $upload_dir = __DIR__ . "/../document/";
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0777, true);
+        }
 
-            // 檢查場地是否與其他社團已發生衝突（精確到秒）
+        $file_ext = pathinfo($_FILES['event_document']['name'], PATHINFO_EXTENSION);
+        $new_filename = "event_" . time() . "_" . uniqid() . "." . $file_ext;
+        $target_path = $upload_dir . $new_filename;
+
+        if (!move_uploaded_file($_FILES['event_document']['tmp_name'], $target_path)) {
+            throw new Exception("檔案上傳失敗，請檢查權限。");
+        }
+
+        // --- 2. 準備時間與變數 ---
+        $event_start = $event_date . " " . $time_periods[$start_period]['start'] . ":00";
+        $event_end = $event_date . " " . $time_periods[$end_period]['end'] . ":00";
+        $venue_id = intval($venue_id);
+        $user_id = $_SESSION['user_id'] ?? null; // 注意：確認你的 session 鍵名是 user_id 還是 student_id
+        $empty_note = ""; 
+        
+        if (!$user_id) throw new Exception("登入逾時，請重新登入。");
+        // --- 3. 場地衝突檢查 ---
             $stmt_conflict = $conn->prepare(
                 "SELECT e.club_name, r.created_at
                  FROM reservations r
@@ -172,35 +187,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
             $stmt_conflict->close();
 
-            // 插入活動記錄
-            $stmt_event = $conn->prepare(
-                "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status) 
-                 VALUES (?, ?, ?, ?, ?, ?, 'pending')"
+            // --- 4. 插入活動記錄 (修正欄位與 bind_param) ---
+            $sql_event = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, document_path, review_note, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+            $stmt_event = $conn->prepare($sql_event);
+            
+            // 總共 8 個 's' 或 'i' (isssssss)
+            $stmt_event->bind_param("isssssss", 
+                $user_id, 
+                $event_name, 
+                $club_name, 
+                $description, 
+                $event_start, 
+                $event_end, 
+                $new_filename, 
+                $empty_note
             );
-            $user_id = $_SESSION['user_id'] ?? null;
-            if (!$user_id) {
-                throw new Exception("尚未取得使用者識別碼，請重新登入。");
-            }
-            $stmt_event->bind_param("isssss", $user_id, $event_name, $club_name, $description, $event_start, $event_end);
             
             if (!$stmt_event->execute()) {
                 throw new Exception("活動記錄插入失敗: " . $stmt_event->error);
             }
-            
             $event_id = $conn->insert_id;
             $stmt_event->close();
             
-            // 插入預約記錄
-            $stmt_reserve = $conn->prepare(
-                "INSERT INTO reservations (event_id, space_id, start_time, end_time) 
-                 VALUES (?, ?, ?, ?)"
-            );
+            // --- 5. 插入預約記錄 ---
+            $stmt_reserve = $conn->prepare("INSERT INTO reservations (event_id, space_id, start_time, end_time) VALUES (?, ?, ?, ?)");
             $stmt_reserve->bind_param("iiss", $event_id, $venue_id, $event_start, $event_end);
-            
-            if (!$stmt_reserve->execute()) {
-                throw new Exception("預約記錄插入失敗: " . $stmt_reserve->error);
-            }
-            
+            if (!$stmt_reserve->execute()) throw new Exception("預約記錄失敗");
             $stmt_reserve->close();
             
             // 處理器材選擇
@@ -257,10 +270,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 
                 $stmt_borrow->close();
             }
-            
-            // 提交事務
-            $conn->commit();
-            
+           
             $message = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "。我們將在2個工作天內審核您的申請。";
             $message_type = "success";
             
@@ -647,7 +657,7 @@ function getEquipmentIcon($equipId) {
             </div>
             <?php endif; ?>
 
-            <form method="POST" id="applicationForm">
+            <form method="POST" id="applicationForm" enctype="multipart/form-data">
                 <!-- 基本資訊 -->
                 <div class="card">
                     <h3><i class="bi bi-info-circle"></i> 基本資訊</h3>
@@ -785,6 +795,28 @@ function getEquipmentIcon($equipId) {
                     </div>
                 </div>
 
+                <div class="card">
+                <h3><i class="bi bi-file-earmark-arrow-up"></i> 三單下載與上傳</h3>
+                <div class="form-section">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <p class="mb-2"><strong>第一步：下載空白三單</strong></p>
+                            <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
+                                <i class="bi bi-download"></i> 下載空白申請表 (範本)
+                            </a>
+                            <p class="text-muted small mt-2">請填寫完整並加蓋社團公章後掃描上傳。</p>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="event_document"><strong>第二步：上傳已簽署三單 *</strong></label>
+                                <input type="file" id="event_document" name="event_document" class="form-control" accept=".pdf" required>
+                                <div class="form-text">僅接受 PDF檔，檔案大小限制 5MB。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
                 <button type="submit" class="btn-submit"><i class="bi bi-send"></i> 提交申請</button>
             </form>
         </section>
@@ -907,3 +939,4 @@ function getEquipmentIcon($equipId) {
     </script>
 </body>
 </html>
+
