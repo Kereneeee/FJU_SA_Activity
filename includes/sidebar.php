@@ -32,7 +32,7 @@ if ($logoutHref === '') {
             <i class="bi bi-calendar-check"></i> 空間申請
         </a>
         <a class="nav-link <?php echo ($current_page === 'equipment') ? 'active' : ''; ?>" href="equipment.php">
-            <i class="bi bi-tools"></i> 器材借用
+            <i class="bi bi-tools"></i> 器材狀態
         </a>
         <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="field_coord.php">
             <i class="bi bi-people"></i> 場地協調
