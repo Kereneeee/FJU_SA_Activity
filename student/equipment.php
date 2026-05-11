@@ -42,7 +42,7 @@ $current_page = 'equipment';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>器材借用 - 輔仁大學課外活動指導組</title>
+    <title>器材狀態 - 輔仁大學課外活動指導組</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
@@ -259,6 +259,46 @@ $current_page = 'equipment';
         }
     </style>
 </head>
+<script>
+async function updateAvailability() {
+
+    const borrowTime =
+        document.getElementById('borrow_time').value;
+
+    const returnTime =
+        document.getElementById('return_time').value;
+
+    if (!borrowTime || !returnTime) {
+        return;
+    }
+
+    const response = await fetch(
+        `get_equipment_availability.php?borrow_time=${borrowTime}&return_time=${returnTime}`
+    );
+
+    const data = await response.json();
+
+    document.querySelectorAll('.equipment-card')
+        .forEach(card => {
+
+        const equipmentId =
+            card.dataset.equipmentId;
+
+        const qtySpan =
+            card.querySelector('.available-qty');
+
+        if (data[equipmentId] !== undefined) {
+            qtySpan.textContent = data[equipmentId];
+        }
+    });
+}
+
+document.getElementById('borrow_time')
+    .addEventListener('change', updateAvailability);
+
+document.getElementById('return_time')
+    .addEventListener('change', updateAvailability);
+</script>
 <body>
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
@@ -267,21 +307,31 @@ $current_page = 'equipment';
             <div>
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">器材借用</li>
+                    <li class="breadcrumb-item active" aria-current="page">器材狀態</li>
                 </ol>
-                <h4 class="mt-2 mb-0">器材借用</h4>
+                <h4 class="mt-2 mb-0">器材狀態</h4>
             </div>
         </header>
 
         <section class="content-wrapper">
             <div class="card">
                 <h3>可借用器材</h3>
-                <p class="text-muted">請選擇您需要的器材及數量，系統將自動計算可用庫存。</p>
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <label class="form-label">借用時間</label>
+                    <input type="datetime-local" id="borrow_time" class="form-control">
+                </div>
 
+                <div class="col-md-6">
+                    <label class="form-label">歸還時間</label>
+                    <input type="datetime-local" id="return_time" class="form-control">
+                </div>
+            </div>
                 <form id="equipmentForm">
                     <div class="equipment-grid">
                     <?php foreach ($equipment as $item): ?>
-                        <div class="equipment-card">
+                        <div class="equipment-card"
+                             data-equipment-id="<?= $item['equipment_id'] ?>">
                             <div class="equipment-header">
                                 <div class="equipment-icon">
                                     <i class="bi bi-tools"></i>
@@ -289,7 +339,10 @@ $current_page = 'equipment';
                                 <div class="equipment-info">
                                     <h4><?= htmlspecialchars($item['name']) ?></h4>
                                     <div class="status">
-                                        剩餘: <?= $item['available_quantity'] ?>
+                                        剩餘:
+                                        <span class="available-qty">
+                                            <?= $item['available_quantity'] ?>
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -305,70 +358,15 @@ $current_page = 'equipment';
                                 : $item['available_quantity'];
                             ?>
 
-                            <div class="quantity-controls">
-                                <span>借用數量:</span>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQty(<?= $item['equipment_id'] ?>, -1)">-</button>
-
-                                    <input 
-                                        id="qty_<?= $item['equipment_id'] ?>"
-                                        name="equipment[<?= $item['equipment_id'] ?>]"
-                                        value="0"
-                                        data-max="<?= $maxBorrow ?>"
-                                        readonly
-                                    >
-
-                                    <button type="button" onclick="changeQty(<?= $item['equipment_id'] ?>, 1)">+</button>
-                                </div>
-                            </div>
+                            
                         </div>
                         <?php endforeach; ?>
                     </div>
 
-                    <div style="margin-top: 2rem; text-align: center;">
-                        <button type="submit" class="btn-submit">提交借用申請</button>
-                    </div>
                 </form>
             </div>
         </section>
     </main>
 
-    <script>
-        // 器材數量控制
-        function changeQty(id, delta) {
-            const input = document.getElementById("qty_" + id);
-            let value = parseInt(input.value) + delta;
-
-            const max = parseInt(input.getAttribute("data-max"));
-
-            if (value < 0) value = 0;
-            if (value > max) value = max;
-
-            input.value = value;
-        }
-
-        // 表單提交處理
-        document.getElementById('equipmentForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            // 檢查是否至少選擇了一項器材
-            const inputs = document.querySelectorAll('input[name^="qty_"]');
-            let hasSelection = false;
-
-            inputs.forEach(input => {
-                if (parseInt(input.value) > 0) {
-                    hasSelection = true;
-                }
-            });
-
-            if (!hasSelection) {
-                alert('請至少選擇一件器材！');
-                return;
-            }
-
-            // 這裡可以添加實際的提交邏輯
-            alert('器材借用申請已提交！');
-        });
-    </script>
 </body>
 </html>
