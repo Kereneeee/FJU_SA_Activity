@@ -564,6 +564,23 @@ function getEquipmentIcon($equipId) {
             padding: 0.25rem;
             font-weight: 600;
         }
+        .equipment-content {
+            transition: all 0.3s ease;
+            max-height: 2000px;
+            overflow: hidden;
+        }
+        .equipment-content.collapsed {
+            max-height: 0;
+            overflow: hidden;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        .toggle-btn {
+            transition: transform 0.3s ease;
+        }
+        .toggle-btn.collapsed {
+            transform: rotate(-90deg);
+        }
         .message {
             padding: 1rem;
             border-radius: 12px;
@@ -711,48 +728,59 @@ function getEquipmentIcon($equipId) {
                 </div>
                 </div>
 
-                <!-- 器材借用 -->
+                <!-- 器材借用 (可選) -->
                 <div class="card">
-                    <h3><i class="bi bi-tools"></i> 器材借用</h3>
-                    <div class="form-section">
-                        <div class="equipment-grid">
-                            <?php foreach ($equipment as $item): ?>
-                            <div class="equipment-card">
-                                <div class="equipment-header">
-                                    <div class="equipment-name">
-                                        <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
-                                        <?= htmlspecialchars($item['name']) ?>
-                                    </div>
-                                    <div class="equipment-stock" style="text-align: right; line-height: 1.4;">
-                                        <div class="stock-<?= $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty' ?>">
-                                            剩餘: <?= $item['available'] ?>/<?= $item['total'] ?>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-tools"></i> 器材借用 <span style="font-size: 0.85rem; color: #6b7280; font-weight: 400;">(可選)</span>
+                        </h3>
+                        <button type="button" id="equipmentToggle" onclick="toggleEquipmentSection()" class="toggle-btn" style="border: none; background: transparent; color: #8B1538; cursor: pointer; padding: 0.5rem; font-size: 1rem;">
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                    </div>
+                    <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">只需要申請活動與場地的社團可以跳過此部分。需要借用器材的社團請點擊下方展開填寫。</p>
+                    
+                    <div id="equipmentContent" class="equipment-content" style="display: none;">
+                        <div class="form-section">
+                            <div class="equipment-grid">
+                                <?php foreach ($equipment as $item): ?>
+                                <div class="equipment-card">
+                                    <div class="equipment-header">
+                                        <div class="equipment-name">
+                                            <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
+                                            <?= htmlspecialchars($item['name']) ?>
                                         </div>
+                                        <div class="equipment-stock" style="text-align: right; line-height: 1.4;">
+                                            <div class="stock-<?= $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty' ?>">
+                                                剩餘: <?= $item['available'] ?>/<?= $item['total'] ?>
+                                            </div>
 
-                                        <div style="font-size: 0.8rem; color: #6b7280;">
-                                            上限: <?= $item['limit'] > 0 ? $item['limit'] : '不限' ?>
+                                            <div style="font-size: 0.8rem; color: #6b7280;">
+                                                上限: <?= $item['limit'] > 0 ? $item['limit'] : '不限' ?>
+                                            </div>
                                         </div>
+                                            
                                     </div>
+                                    <div class="counter">
+                                        <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
                                         
-                                </div>
-                                <div class="counter">
-                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
-                                    
-                                    <?php
-                                    $maxBorrow = ($item['limit'] > 0) 
-                                        ? min($item['available'], $item['limit']) 
-                                        : $item['available'];
-                                    ?>
+                                        <?php
+                                        $maxBorrow = ($item['limit'] > 0) 
+                                            ? min($item['available'], $item['limit']) 
+                                            : $item['available'];
+                                        ?>
 
-                                    <input type="number" id="qty_<?= $item['id'] ?>" 
-                                    name="equipment[<?= $item['id'] ?>]" 
-                                    value="0" min="0" 
-                                    max="<?= $maxBorrow ?>" 
-                                    readonly>
+                                        <input type="number" id="qty_<?= $item['id'] ?>" 
+                                        name="equipment[<?= $item['id'] ?>]" 
+                                        value="0" min="0" 
+                                        max="<?= $maxBorrow ?>" 
+                                        readonly>
 
-                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                        <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                    </div>
                                 </div>
+                                <?php endforeach; ?>
                             </div>
-                            <?php endforeach; ?>
                         </div>
                     </div>
                 </div>
@@ -794,6 +822,19 @@ function getEquipmentIcon($equipId) {
             if (value < 0) value = 0;
             if (value > max) value = max;
             input.value = value;
+        }
+
+        function toggleEquipmentSection() {
+            const content = document.getElementById('equipmentContent');
+            const toggle = document.getElementById('equipmentToggle');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.innerHTML = '<i class="bi bi-chevron-up"></i>';
+            } else {
+                content.style.display = 'none';
+                toggle.innerHTML = '<i class="bi bi-chevron-down"></i>';
+            }
         }
 
         function parseDateTime(dateTime) {
