@@ -297,6 +297,29 @@ if ($result_recent) {
         .status-approved { background: #d1e7dd; color: #0f5132; }
         .status-pending { background: #fff3cd; color: #664d03; }
         .status-alert { background: #f8d7da; color: #842029; }
+        .welcome-banner {
+            padding: 1.5rem 0;
+            background: #e3f2fd;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+        }
+        .welcome-inner {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .welcome-banner h5 {
+            margin: 0 0 0.5rem;
+            color: #1565c0;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+        .welcome-banner p {
+            margin: 0;
+            color: #0d47a1;
+            font-size: 0.9rem;
+        }
         .notification-list .notification-card {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -333,8 +356,8 @@ if ($result_recent) {
         <nav class="nav flex-column">
             <a class="nav-link active" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
             <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
-            <a class="nav-link" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
-            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
+            <a class="nav-link" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 申請紀錄</a>
+            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材庫存管理</a>
             <a class="nav-link" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
             <a class="nav-link" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
         </nav>
@@ -363,13 +386,13 @@ if ($result_recent) {
         </header>
 
         <section class="dashboard-grid">
-            <div style="padding: 1.5rem 0; background: #e3f2fd; border-radius: 12px; margin-bottom: 1.5rem; padding: 1.5rem;">
-                <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-                    <div style="flex: 1;">
-                        <h5 style="margin: 0 0 0.5rem; color: #1565c0;">
+            <div class="welcome-banner">
+                <div class="welcome-inner">
+                    <div>
+                        <h5>
                             <i class="bi bi-shield-check"></i> 歡迎回來，<?php echo htmlspecialchars($user_name); ?>！
                         </h5>
-                        <p style="margin: 0; color: #0d47a1; font-size: 0.9rem;">
+                        <p>
                             今天是 <?php echo date('Y年m月d日'); ?>
                         </p>
                     </div>
@@ -380,7 +403,7 @@ if ($result_recent) {
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="label">待審核申請</div>
-                            <div class="value">4</div>
+                            <div class="value"><?php echo htmlspecialchars($pending_count); ?></div>
                         </div>
                         <div class="icon-box"><i class="bi bi-hourglass-split"></i></div>
                     </div>
@@ -389,7 +412,7 @@ if ($result_recent) {
             </div>
 
             <div class="quick-actions">
-                <div class="action-card" onclick="location.href='review.php'">
+                <div class="action-card review" onclick="location.href='review.php'">
                     <div class="action-top">
                         <span>審核管理</span>
                         <div class="action-icon"><i class="bi bi-clipboard-check"></i></div>
@@ -397,7 +420,7 @@ if ($result_recent) {
                     <h6>審核申請案件</h6>
                     <p>快速處理待審核的申請案件。</p>
                 </div>
-                <div class="action-card" onclick="location.href='event_mgmt.php'">
+                <div class="action-card event" onclick="location.href='event_mgmt.php'">
                     <div class="action-top">
                         <span>活動管理</span>
                         <div class="action-icon"><i class="bi bi-calendar-check"></i></div>
@@ -405,7 +428,7 @@ if ($result_recent) {
                     <h6>管理活動申請</h6>
                     <p>編輯與刪除活動申請。</p>
                 </div>
-                <div class="action-card" onclick="location.href='equipment_mgmt.php'">
+                <div class="action-card equipment" onclick="location.href='equipment_mgmt.php'">
                     <div class="action-top">
                         <span>器材管理</span>
                         <div class="action-icon"><i class="bi bi-tools"></i></div>
@@ -413,7 +436,7 @@ if ($result_recent) {
                     <h6>管理器材庫存</h6>
                     <p>新增、編輯或刪除器材項目。</p>
                 </div>
-                <div class="action-card" onclick="location.href='space_mgmt.php'">
+                <div class="action-card space" onclick="location.href='space_mgmt.php'">
                     <div class="action-top">
                         <span>空間管理</span>
                         <div class="action-icon"><i class="bi bi-building"></i></div>
