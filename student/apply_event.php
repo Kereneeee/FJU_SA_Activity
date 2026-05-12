@@ -146,7 +146,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     
     try {
         // --- 1. 處理檔案上傳 (放在最前面，失敗就直接進 catch) ---
-        $upload_dir = __DIR__ . "/../document/";
+        $base_dir = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'); 
+        $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
+
+        // 確保目錄存在
         if (!is_dir($upload_dir)) {
             mkdir($upload_dir, 0777, true);
         }
@@ -154,9 +157,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $file_ext = pathinfo($_FILES['event_document']['name'], PATHINFO_EXTENSION);
         $new_filename = "event_" . time() . "_" . uniqid() . "." . $file_ext;
         $target_path = $upload_dir . $new_filename;
+        
+        // 在 move_uploaded_file 之前加入這行來測試路徑
+        if (!is_writable($upload_dir)) {
+            throw new Exception("資料夾不可寫入: " . realpath($upload_dir));
+        }
 
         if (!move_uploaded_file($_FILES['event_document']['tmp_name'], $target_path)) {
-            throw new Exception("檔案上傳失敗，請檢查權限。");
+            // 檢查上傳錯誤碼
+            $error_code = $_FILES['event_document']['error'];
+            throw new Exception("搬移失敗。錯誤碼: $error_code (路徑: $target_path)");
         }
 
         // --- 2. 準備時間與變數 ---
@@ -188,22 +198,41 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $stmt_conflict->close();
 
             // --- 4. 插入活動記錄 (修正欄位與 bind_param) ---
-            $sql_event = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, document_path, review_note, status) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+            // 這裡我們只插入 8 個有變數的欄位，status 在 SQL 裡直接給預設值 'pending'
+            // --- 修改後的 SQL 語法 ---
+            // --- 4. 插入活動記錄 (依照資料庫結構修正) ---
+            // 依照你的 SQL 結構，最穩定的 INSERT 寫法
+            $sql_event = "INSERT INTO events (
+                user_id, 
+                event_name, 
+                club_name, 
+                description, 
+                start_time, 
+                end_time, 
+                document_path, 
+                review_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"; // 8 個欄位對應 8 個問號
+
             $stmt_event = $conn->prepare($sql_event);
-            
-            // 總共 8 個 's' 或 'i' (isssssss)
+
+            if (!$stmt_event) {
+                throw new Exception("SQL 預理失敗: " . $conn->error);
+            }
+
+            // 綁定 8 個參數
+            // i = integer (user_id)
+            // s = string (其餘)
             $stmt_event->bind_param("isssssss", 
-                $user_id, 
-                $event_name, 
-                $club_name, 
-                $description, 
-                $event_start, 
-                $event_end, 
-                $new_filename, 
-                $empty_note
+                $user_id,       // 對應 user_id
+                $event_name,    // 對應 event_name
+                $club_name,     // 對應 club_name
+                $description,   // 對應 description
+                $event_start,   // 對應 start_time
+                $event_end,     // 對應 end_time
+                $new_filename,  // 對應 document_path (這就是你的 PDF 檔名)
+                $empty_note     // 對應 review_note (預設給空字串)
             );
-            
+
             if (!$stmt_event->execute()) {
                 throw new Exception("活動記錄插入失敗: " . $stmt_event->error);
             }
@@ -270,6 +299,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 
                 $stmt_borrow->close();
             }
+            
+            // ✅ 提交事務
+            $conn->commit();
            
             $message = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "。我們將在2個工作天內審核您的申請。";
             $message_type = "success";
