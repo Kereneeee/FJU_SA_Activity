@@ -130,7 +130,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($start_period) || empty($end_period)) $errors[] = "請選擇活動時間";
     if (empty($venue_id)) $errors[] = "請選擇場地";
     if (!isset($_FILES['event_document']) || $_FILES['event_document']['error'] == UPLOAD_ERR_NO_FILE) {
-        $errors[] = "請上傳已簽署的三單文件";
+        $errors[] = "請上傳已簽署的活動申請表(PDF)";
     }
     
     // 驗證節次選擇
