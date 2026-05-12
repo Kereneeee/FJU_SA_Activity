@@ -111,7 +111,7 @@ $timeSlots = [
 ];
 
 $bookings = [];
-$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, e.status
+$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
     LEFT JOIN users u ON e.user_id = u.user_id
@@ -269,6 +269,7 @@ if ($stmt) {
         <section class="content-wrapper">
             <div class="card">
                 <h3><i class="bi bi-search"></i> 查詢教室</h3>
+                <p class="text-muted">此行事曆包含待審核的場協登記，若有衝突可先透過申請人信箱聯絡協商，待場協大會後再由課指組確認最終分配。</p>
                 <div class="filter-row">
                     <div>
                         <label class="form-label" for="buildingSelect">大樓</label>
@@ -536,6 +537,7 @@ if ($stmt) {
                         <div class="booking-title">${item.event_name}</div>
                         <div class="booking-club">社團：${item.club_name}</div>
                         <div class="booking-organizer">申請人：${item.organizer}</div>
+                        <div class="booking-email">聯絡信箱：${item.user_email ? item.user_email : '無'}</div>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:0.5rem; justify-content:center; align-items:flex-end;">
                         <span class="badge-status ${item.status}">${item.status === 'approved' ? '已核准' : '待審核'}</span>

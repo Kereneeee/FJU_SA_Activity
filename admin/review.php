@@ -22,8 +22,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['eve
 
     if ($action === 'approve') {
         $status = 'approved';
+        $message = '申請已全部核准。';
+        $message_type = 'success';
+    } elseif ($action === 'partial_approve') {
+        $status = 'approved';
+        $approved_equipment = isset($_POST['approved_equipment']) && is_array($_POST['approved_equipment']) ? array_map('intval', $_POST['approved_equipment']) : [];
+        $approved_list = implode(',', $approved_equipment);
+        if ($approved_list === '') {
+            $conn->query("DELETE FROM equipment_borrow WHERE event_id = " . $event_id);
+        } else {
+            $conn->query("DELETE FROM equipment_borrow WHERE event_id = " . $event_id . " AND equipment_id NOT IN (" . $approved_list . ")");
+        }
+        $message = '申請已部分核准，未核准器材已移除。';
+        $message_type = 'success';
     } elseif ($action === 'reject') {
         $status = 'rejected';
+        $message = '申請已駁回。';
+        $message_type = 'error';
     }
 
     $stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ? WHERE event_id = ?");
@@ -31,8 +46,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['eve
     $stmt->execute();
     $stmt->close();
 
-    $message = $status === 'approved' ? '申請已通過。' : '申請已駁回。';
-    $message_type = $status === 'approved' ? 'success' : 'error';
     header("Location: review.php?event_id=" . $event_id);
     exit;
 }
@@ -74,7 +87,7 @@ if ($event_id > 0) {
         $detail_error = '找不到對應的活動申請。';
     } else {
         $stmt = $conn->prepare(
-            "SELECT eq.name, eb.quantity
+            "SELECT eq.equipment_id, eq.name, eb.quantity
              FROM equipment_borrow eb
              JOIN equipment eq ON eb.equipment_id = eq.equipment_id
              WHERE eb.event_id = ?"
@@ -89,21 +102,56 @@ if ($event_id > 0) {
         }
         $stmt->close();
     }
+
+    if ($detail_event) {
+        $has_booking = !empty($detail_event['space_name']) || !empty($detail_event['reservation_start']);
+        $has_equipment = !empty($detail_equipment);
+        if ($has_booking && $has_equipment) {
+            $detail_event['case_type'] = '活動申請+器材借用';
+        } elseif ($has_booking) {
+            $detail_event['case_type'] = '活動申請';
+        } elseif ($has_equipment) {
+            $detail_event['case_type'] = '器材借用';
+        } else {
+            $detail_event['case_type'] = '一般申請';
+        }
+    }
 }
 
 $pending_events = [];
 if ($event_id === 0) {
     $sql_pending = 
-        "SELECT e.event_id, e.event_name, e.club_name, e.status, e.start_time, e.end_time, u.name AS applicant_name, s.space_name
+        "SELECT e.*, u.name AS applicant_name, u.email AS applicant_email, s.space_name,
+                r.start_time AS reservation_start, r.end_time AS reservation_end,
+                COALESCE(ec.equipment_count, 0) AS equipment_count
          FROM events e
          JOIN users u ON e.user_id = u.user_id
          LEFT JOIN reservations r ON e.event_id = r.event_id
          LEFT JOIN spaces s ON r.space_id = s.space_id
+         LEFT JOIN (
+             SELECT event_id, COUNT(*) AS equipment_count
+             FROM equipment_borrow
+             GROUP BY event_id
+         ) ec ON ec.event_id = e.event_id
          WHERE e.status = 'pending'
-         ORDER BY e.event_id ASC";
+         ORDER BY e.start_time DESC";
     $result_pending = $conn->query($sql_pending);
     if ($result_pending) {
         $pending_events = $result_pending->fetch_all(MYSQLI_ASSOC);
+        foreach ($pending_events as &$ev) {
+            $has_booking = !empty($ev['space_name']) || !empty($ev['reservation_start']);
+            $has_equipment = intval($ev['equipment_count']) > 0;
+            if ($has_booking && $has_equipment) {
+                $ev['case_type'] = '活動申請+器材借用';
+            } elseif ($has_booking) {
+                $ev['case_type'] = '活動申請';
+            } elseif ($has_equipment) {
+                $ev['case_type'] = '器材借用';
+            } else {
+                $ev['case_type'] = '一般申請';
+            }
+        }
+        unset($ev);
     }
 }
 ?>
@@ -220,6 +268,10 @@ if ($event_id === 0) {
         .status-pending { background: #fff3cd; color: #664d03; }
         .status-approved { background: #d1e7dd; color: #0f5132; }
         .status-rejected { background: #f8d7da; color: #842029; }
+        .case-tag { display: inline-flex; align-items: center; padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.78rem; color: #0f5132; background: #e7f5e6; margin-bottom: 0.5rem; }
+        .case-tag.activity { background: #e7f1ff; color: #0c4a9c; }
+        .case-tag.activity-equip { background: #fff4e5; color: #7a4a00; }
+        .case-tag.equipment { background: #f8e7ff; color: #5f2b7b; }
         .event-link { color: #0d6efd; text-decoration: none; }
         .event-link:hover { text-decoration: underline; }
         .detail-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.25rem; }
@@ -229,7 +281,56 @@ if ($event_id === 0) {
         .detail-list { list-style: none; padding-left: 0; }
         .detail-list li::before { content: '\2022'; margin-right: 0.5rem; color: var(--primary); }
         .note-area { width: 100%; min-height: 120px; resize: vertical; padding: 1rem; border: 1px solid #d1d5db; border-radius: 12px; font-size: 0.95rem; }
-        .btn-primary, .btn-success, .btn-danger { min-width: 130px; }
+        .btn {
+            padding: 0.5rem 0.95rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.25s ease;
+            margin-right: 0.35rem;
+        }
+        .btn-approve {
+            background: #198754;
+            color: white;
+        }
+        .btn-approve:hover {
+            background: #157347;
+            transform: translateY(-2px);
+        }
+        .btn-reject {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-reject:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+        .review-form {
+            display: inline-flex;
+            gap: 0.35rem;
+            align-items: center;
+        }
+        .review-note {
+            padding: 0.35rem 0.6rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+        .action-cell {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .time-badge {
+            background: #f3f4f6;
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
         .badge-info { background: #e7f1ff; color: #0f5132; }
         .empty-state { text-align: center; padding: 3rem 1.5rem; border-radius: 18px; background: white; box-shadow: 0 10px 30px rgba(15,23,42,0.06); }
         .empty-state i { font-size: 3rem; color: #c7d2fe; margin-bottom: 1rem; }
@@ -247,14 +348,10 @@ if ($event_id === 0) {
         </div>
         <nav class="nav flex-column">
             <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
-            <div class="dropdown">
-                <a class="nav-link active" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
-                <div class="dropdown-content">
-                    <a href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
-                    <a href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
-                    <a href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
-                </div>
-            </div>
+            <a class="nav-link active" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
+            <a class="nav-link" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 申請紀錄</a>
+            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材庫存管理</a>
+            <a class="nav-link" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
             <a class="nav-link" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
         </nav>
         <div class="sidebar-section">
@@ -350,6 +447,11 @@ if ($event_id === 0) {
                                     <i class="bi bi-<?= $detail_event['status'] === 'pending' ? 'clock' : ($detail_event['status'] === 'approved' ? 'check-lg' : 'x-lg') ?>"></i>
                                     <?= $detail_event['status'] === 'pending' ? '待審核' : ($detail_event['status'] === 'approved' ? '已通過' : '已駁回') ?>
                                 </span>
+                                <div style="margin-top:0.75rem;">
+                                    <span class="case-tag <?= $detail_event['case_type'] === '活動申請+器材借用' ? 'activity-equip' : ($detail_event['case_type'] === '活動申請' ? 'activity' : ($detail_event['case_type'] === '器材借用' ? 'equipment' : '')) ?>">
+                                        <?= htmlspecialchars($detail_event['case_type'] ?? '一般申請') ?>
+                                    </span>
+                                </div>
                                 <h6 class="mt-4">申請備註</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['description'] ?? '無')) ?></p>
                                 <h6 class="mt-4">審核備註</h6>
@@ -357,14 +459,37 @@ if ($event_id === 0) {
                             </div>
                         </div>
 
-                        <?php if (!empty($detail_equipment)): ?>
-                        <div class="detail-block mt-3">
-                            <h6>器材需求</h6>
-                            <ul class="detail-list">
-                                <?php foreach ($detail_equipment as $item): ?>
-                                    <li><?= htmlspecialchars($item['name']) ?> × <?= intval($item['quantity']) ?></li>
-                                <?php endforeach; ?>
-                            </ul>
+                        <form method="POST" class="mt-4">
+                            <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
+                            <?php if (!empty($detail_equipment)): ?>
+                            <div class="detail-block mt-3">
+                                <h6>器材需求</h6>
+                                <p style="color: #6b7280; font-size: 0.92rem; margin-bottom: 0.8rem;">勾選的器材將會納入核准；若未勾選，該器材將在部分核准時不予核准。</p>
+                                <ul class="detail-list">
+                                    <?php foreach ($detail_equipment as $item): ?>
+                                        <li>
+                                            <label style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                                <input type="checkbox" name="approved_equipment[]" value="<?= intval($item['equipment_id']) ?>" checked>
+                                                <?= htmlspecialchars($item['name']) ?> × <?= intval($item['quantity']) ?>
+                                            </label>
+                                        </li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($detail_event['document_path'])): ?>
+                            <div class="detail-block mt-3">
+                                <h6>上傳檔案</h6>
+                            <p><strong>檔案名稱：</strong><?= htmlspecialchars(basename($detail_event['document_path'])) ?></p>
+                            <div class="d-flex gap-2">
+                                <a href="../document/<?= htmlspecialchars($detail_event['document_path']) ?>" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-eye"></i> 檢視檔案
+                                </a>
+                                <a href="../document/<?= htmlspecialchars($detail_event['document_path']) ?>" download class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-download"></i> 下載檔案
+                                </a>
+                            </div>
                         </div>
                         <?php endif; ?>
 
@@ -375,7 +500,10 @@ if ($event_id === 0) {
                                 <textarea name="review_note" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
                             </div>
                             <div class="d-flex flex-wrap gap-3">
-                                <button type="submit" name="action" value="approve" class="btn btn-success"><i class="bi bi-check-circle"></i> 通過</button>
+                                <button type="submit" name="action" value="approve" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
+                                <?php if (!empty($detail_equipment)): ?>
+                                    <button type="submit" name="action" value="partial_approve" class="btn btn-warning"><i class="bi bi-slash-circle"></i> 部分核准</button>
+                                <?php endif; ?>
                                 <button type="submit" name="action" value="reject" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
                                 <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
                             </div>
@@ -395,6 +523,7 @@ if ($event_id === 0) {
                             <table>
                                 <thead>
                                     <tr>
+                                        <th>案件類型</th>
                                         <th>活動名稱</th>
                                         <th>申請人</th>
                                         <th>社團</th>
@@ -407,17 +536,39 @@ if ($event_id === 0) {
                                     <?php foreach ($pending_events as $ev): ?>
                                         <tr>
                                             <td>
+                                                <span class="case-tag <?= $ev['case_type'] === '活動申請+器材借用' ? 'activity-equip' : ($ev['case_type'] === '活動申請' ? 'activity' : ($ev['case_type'] === '器材借用' ? 'equipment' : '')) ?>">
+                                                    <?= htmlspecialchars($ev['case_type']) ?>
+                                                </span>
+                                            </td>
+                                            <td>
                                                 <a class="event-link" href="review.php?event_id=<?= intval($ev['event_id']) ?>">
                                                     <strong><?= htmlspecialchars($ev['event_name']) ?></strong>
                                                 </a>
                                                 <br>
-                                                <small><?= htmlspecialchars($ev['club_name']) ?></small>
+                                                <small style="color: #6b7280;"><?= htmlspecialchars($ev['description'] ?? '') ?></small>
                                             </td>
-                                            <td><?= htmlspecialchars($ev['applicant_name']) ?></td>
+                                            <td>
+                                                <?= htmlspecialchars($ev['applicant_name']) ?>
+                                                <br>
+                                                <small style="color: #6b7280;"><?= htmlspecialchars($ev['applicant_email'] ?? '') ?></small>
+                                            </td>
                                             <td><?= htmlspecialchars($ev['club_name']) ?></td>
                                             <td><?= htmlspecialchars($ev['space_name'] ?? '未指定') ?></td>
-                                            <td><?= htmlspecialchars(date('Y/m/d H:i', strtotime($ev['start_time']))) ?> - <?= htmlspecialchars(date('Y/m/d H:i', strtotime($ev['end_time']))) ?></td>
-                                            <td><span class="status-badge status-pending"><i class="bi bi-clock"></i> 待審核</span></td>
+                                            <td>
+                                                <?php 
+                                                if ($ev['start_time']) {
+                                                    echo '<span class="time-badge">';
+                                                    echo date('Y/m/d<br>H:i', strtotime($ev['start_time']));
+                                                    echo '</span>';
+                                                }
+                                                ?>
+                                            </td>
+                                            <td>
+                                                <span class="status-badge status-<?= htmlspecialchars($ev['status']) ?>">
+                                                    <i class="bi bi-<?= $ev['status'] === 'pending' ? 'clock' : ($ev['status'] === 'approved' ? 'check-lg' : 'x-lg') ?>"></i>
+                                                    <?= $ev['status'] === 'pending' ? '待審核' : ($ev['status'] === 'approved' ? '已通過' : '已駁回') ?>
+                                                </span>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>

@@ -12,27 +12,135 @@ if (!isset($_SESSION['user_id'])) {
 $user_name = $_SESSION['user_name'] ?? '管理員';
 $user_id = $_SESSION['user_id'];
 
-// 處理審核動作
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    $event_id = $_POST['event_id'] ?? 0;
+// 取得可編輯場地清單
+$edit_event = null;
+$edit_reservation = null;
+$edit_error = '';
+$spaces = [];
+$sql_spaces = "SELECT space_id, space_name FROM spaces ORDER BY space_name";
+$result_spaces = $conn->query($sql_spaces);
+if ($result_spaces) {
+    $spaces = $result_spaces->fetch_all(MYSQLI_ASSOC);
+}
+
+// 處理編輯或刪除動作
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['event_id'])) {
+    $event_id = intval($_POST['event_id']);
     $action = $_POST['action'];
-    $review_note = $_POST['review_note'] ?? '';
-    
-    if ($action === 'approve') {
-        $status = 'approved';
-    } elseif ($action === 'reject') {
-        $status = 'rejected';
-    } else {
-        $status = 'pending';
+
+    if ($action === 'delete') {
+        $conn->begin_transaction();
+        $ok = true;
+
+        $stmt = $conn->prepare("DELETE FROM equipment_borrow WHERE event_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("i", $event_id);
+            $ok = $ok && $stmt->execute();
+            $stmt->close();
+        }
+
+        $stmt = $conn->prepare("DELETE FROM reservations WHERE event_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("i", $event_id);
+            $ok = $ok && $stmt->execute();
+            $stmt->close();
+        }
+
+        $stmt = $conn->prepare("DELETE FROM events WHERE event_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("i", $event_id);
+            $ok = $ok && $stmt->execute();
+            $stmt->close();
+        }
+
+        if ($ok) {
+            $conn->commit();
+            header("Location: event_mgmt.php");
+            exit;
+        } else {
+            $conn->rollback();
+            $edit_error = '無法刪除活動，請稍後再試。';
+        }
+    } elseif ($action === 'save') {
+        $event_name = trim($_POST['event_name'] ?? '');
+        $club_name = trim($_POST['club_name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $review_note = trim($_POST['review_note'] ?? '');
+        $space_id = intval($_POST['space_id'] ?? 0);
+        $start_time = trim($_POST['start_time'] ?? '');
+        $end_time = trim($_POST['end_time'] ?? '');
+
+        if ($event_name === '' || $club_name === '' || $start_time === '' || $end_time === '') {
+            $edit_error = '請填寫活動名稱、社團名稱與時間。';
+        } else {
+            $conn->begin_transaction();
+            $ok = true;
+
+            $stmt = $conn->prepare("UPDATE events SET event_name = ?, club_name = ?, description = ?, review_note = ?, start_time = ?, end_time = ? WHERE event_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("ssssssi", $event_name, $club_name, $description, $review_note, $start_time, $end_time, $event_id);
+                $ok = $ok && $stmt->execute();
+                $stmt->close();
+            }
+
+            if ($ok) {
+                $stmt = $conn->prepare("SELECT reservation_id FROM reservations WHERE event_id = ?");
+                if ($stmt) {
+                    $stmt->bind_param("i", $event_id);
+                    $stmt->execute();
+                    $stmt->bind_result($reservation_id);
+                    $hasReservation = $stmt->fetch();
+                    $stmt->close();
+                }
+
+                if ($space_id > 0) {
+                    if ($hasReservation) {
+                        $stmt = $conn->prepare("UPDATE reservations SET space_id = ?, start_time = ?, end_time = ? WHERE reservation_id = ?");
+                        if ($stmt) {
+                            $stmt->bind_param("issi", $space_id, $start_time, $end_time, $reservation_id);
+                            $ok = $ok && $stmt->execute();
+                            $stmt->close();
+                        }
+                    } else {
+                        $stmt = $conn->prepare("INSERT INTO reservations (event_id, space_id, start_time, end_time) VALUES (?, ?, ?, ?)");
+                        if ($stmt) {
+                            $stmt->bind_param("iiss", $event_id, $space_id, $start_time, $end_time);
+                            $ok = $ok && $stmt->execute();
+                            $stmt->close();
+                        }
+                    }
+                }
+            }
+
+            if ($ok) {
+                $conn->commit();
+                header("Location: event_mgmt.php");
+                exit;
+            }
+
+            $conn->rollback();
+            $edit_error = '編輯失敗，請檢查資料後再試。';
+        }
     }
-    
-    $stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ? WHERE event_id = ?");
-    $stmt->bind_param("ssi", $status, $review_note, $event_id);
-    $stmt->execute();
-    $stmt->close();
-    
-    header("Location: event_mgmt.php");
-    exit;
+}
+
+if (isset($_GET['edit_id'])) {
+    $edit_id = intval($_GET['edit_id']);
+    $stmt = $conn->prepare(
+        "SELECT e.*, r.space_id, r.start_time AS reservation_start, r.end_time AS reservation_end
+         FROM events e
+         LEFT JOIN reservations r ON e.event_id = r.event_id
+         WHERE e.event_id = ?"
+    );
+    if ($stmt) {
+        $stmt->bind_param('i', $edit_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result) {
+            $edit_event = $result->fetch_assoc();
+        }
+        $stmt->close();
+    }
 }
 
 // 取得活動列表（包含申請人資訊）
@@ -258,6 +366,28 @@ foreach ($events as $e) {
             transition: all 0.25s ease;
             margin-right: 0.35rem;
         }
+        .btn-outline-primary {
+            background: transparent;
+            color: #0d6efd;
+            border: 1px solid #0d6efd;
+        }
+        .btn-outline-primary:hover {
+            background: #0d6efd;
+            color: white;
+        }
+        .btn-outline-danger {
+            background: transparent;
+            color: #dc3545;
+            border: 1px solid #dc3545;
+        }
+        .btn-outline-danger:hover {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-sm {
+            padding: 0.35rem 0.7rem;
+            font-size: 0.78rem;
+        }
         .btn-approve {
             background: #198754;
             color: white;
@@ -316,14 +446,10 @@ foreach ($events as $e) {
         </div>
         <nav class="nav flex-column">
             <a class="nav-link" href="dashboard.php"><i class="bi bi-house-door"></i> 儀表板</a>
-            <div class="dropdown">
-                <a class="nav-link active" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
-                <div class="dropdown-content">
-                    <a href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 活動管理</a>
-                    <a href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材管理</a>
-                    <a href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
-                </div>
-            </div>
+            <a class="nav-link" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
+            <a class="nav-link active" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 申請紀錄</a>
+            <a class="nav-link" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材庫存管理</a>
+            <a class="nav-link" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
             <a class="nav-link" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
         </nav>
         <div class="sidebar-section">
@@ -390,6 +516,60 @@ foreach ($events as $e) {
                 </div>
             </div>
 
+            <?php if (!empty($edit_event)): ?>
+            <div class="panel-row">
+                <h5><i class="bi bi-pencil-square"></i> 編輯活動申請</h5>
+                <?php if ($edit_error): ?>
+                    <div class="alert alert-danger"><?= htmlspecialchars($edit_error) ?></div>
+                <?php endif; ?>
+                <form method="POST" class="mb-4">
+                    <input type="hidden" name="action" value="save">
+                    <input type="hidden" name="event_id" value="<?= intval($edit_event['event_id']) ?>">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">活動名稱</label>
+                            <input type="text" name="event_name" class="form-control" value="<?= htmlspecialchars($edit_event['event_name']) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">社團名稱</label>
+                            <input type="text" name="club_name" class="form-control" value="<?= htmlspecialchars($edit_event['club_name']) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">開始時間</label>
+                            <input type="datetime-local" name="start_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($edit_event['reservation_start'] ?? $edit_event['start_time']))) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">結束時間</label>
+                            <input type="datetime-local" name="end_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($edit_event['reservation_end'] ?? $edit_event['end_time']))) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">場地</label>
+                            <select name="space_id" class="form-select">
+                                <option value="0">不指定場地</option>
+                                <?php foreach ($spaces as $space): ?>
+                                    <option value="<?= intval($space['space_id']) ?>" <?= intval($edit_event['space_id'] ?? 0) === intval($space['space_id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($space['space_name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">申請內容</label>
+                            <textarea name="description" class="form-control" rows="3"><?= htmlspecialchars($edit_event['description'] ?? '') ?></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">審核備註</label>
+                            <textarea name="review_note" class="form-control" rows="2"><?= htmlspecialchars($edit_event['review_note'] ?? '') ?></textarea>
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
+                        <a href="event_mgmt.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
+                    </div>
+                </form>
+            </div>
+            <?php endif; ?>
+
             <!-- 活動列表 -->
             <div class="panel-row">
                 <h5><i class="bi bi-list-ul"></i> 活動申請列表</h5>
@@ -447,18 +627,11 @@ foreach ($events as $e) {
                                 </td>
                                 <td>
                                     <div class="action-cell">
-                                        <?php if ($event['status'] === 'pending'): ?>
-                                        <form method="POST" class="review-form">
-                                            <input type="hidden" name="event_id" value="<?php echo $event['event_id']; ?>">
-                                            <input type="text" name="review_note" class="review-note" placeholder="審核備註" maxlength="50">
-                                            <button type="submit" name="action" value="approve" class="btn btn-approve" title="批准申請"><i class="bi bi-check"></i> 通過</button>
-                                            <button type="submit" name="action" value="reject" class="btn btn-reject" title="拒絕申請"><i class="bi bi-x"></i> 駁回</button>
+                                        <a href="event_mgmt.php?edit_id=<?php echo intval($event['event_id']); ?>" class="btn btn-outline-primary btn-sm" title="編輯申請"><i class="bi bi-pencil"></i> 編輯</a>
+                                        <form method="POST" style="display:inline-flex;" onsubmit="return confirm('確定要刪除此活動申請嗎？');">
+                                            <input type="hidden" name="event_id" value="<?php echo intval($event['event_id']); ?>">
+                                            <button type="submit" name="action" value="delete" class="btn btn-outline-danger btn-sm" title="刪除申請"><i class="bi bi-trash"></i> 刪除</button>
                                         </form>
-                                        <?php else: ?>
-                                        <span style="color: #6b7280; font-size: 0.85rem;">
-                                            <strong><?php echo htmlspecialchars($event['review_note'] ?? '無備註'); ?></strong>
-                                        </span>
-                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>

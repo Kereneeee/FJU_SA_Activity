@@ -29,7 +29,7 @@ if ($logoutHref === '') {
             <i class="bi bi-calendar-plus"></i> 活動申請
         </a>
         <a class="nav-link <?php echo ($current_page === 'calendar') ? 'active' : ''; ?>" href="calendar.php">
-            <i class="bi bi-calendar-check"></i> 空間申請
+            <i class="bi bi-calendar-check"></i> 空間日曆
         </a>
         <a class="nav-link <?php echo ($current_page === 'equipment') ? 'active' : ''; ?>" href="equipment.php">
             <i class="bi bi-tools"></i> 器材狀態
@@ -40,9 +40,7 @@ if ($logoutHref === '') {
         <a class="nav-link <?php echo ($current_page === 'my_applications') ? 'active' : ''; ?>" href="my_applications.php">
             <i class="bi bi-card-list"></i> 我的申請
         </a>
-        <a class="nav-link <?php echo ($current_page === 'edit_application') ? 'active' : ''; ?>" href="edit_application.php">
-            <i class="bi bi-pencil-square"></i> 編輯申請
-        </a>
+    
     </nav>
     <div class="sidebar-section">
         <p class="mb-2">快捷操作</p>
