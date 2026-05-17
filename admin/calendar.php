@@ -303,7 +303,7 @@ if ($stmt) {
                 </ol>
                 <h4 class="mt-2 mb-0">完整行事曆</h4>
             </div>
-            <div class="user-card">
+            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
                 <div class="user-avatar"><?= htmlspecialchars(substr($user_name, 0, 1)) ?></div>
                 <div>
                     <div><?= htmlspecialchars($user_name) ?></div>

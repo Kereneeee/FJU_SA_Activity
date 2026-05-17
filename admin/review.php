@@ -118,6 +118,9 @@ if ($event_id > 0) {
     }
 }
 
+// 篩選案件類型
+$filter_type = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+
 $pending_events = [];
 if ($event_id === 0) {
     $sql_pending = 
@@ -152,6 +155,20 @@ if ($event_id === 0) {
             }
         }
         unset($ev);
+
+        // 根據篩選條件過濾
+        if ($filter_type !== 'all') {
+            $pending_events = array_filter($pending_events, function($ev) use ($filter_type) {
+                if ($filter_type === '活動申請') {
+                    return $ev['case_type'] === '活動申請';
+                } elseif ($filter_type === '器材申請') {
+                    return $ev['case_type'] === '器材借用';
+                } elseif ($filter_type === '活動+器材申請') {
+                    return $ev['case_type'] === '活動申請+器材借用';
+                }
+                return true;
+            });
+        }
     }
 }
 ?>
@@ -369,7 +386,7 @@ if ($event_id === 0) {
                 </ol>
                 <h4 class="mt-2 mb-0">審核管理</h4>
             </div>
-            <div class="user-card">
+            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
                 <div class="user-avatar"><?= htmlspecialchars(substr($user_name, 0, 1)) ?></div>
                 <div>
                     <div><?= htmlspecialchars($user_name) ?></div>
@@ -512,7 +529,23 @@ if ($event_id === 0) {
                 </div>
             <?php else: ?>
                 <div class="panel-row">
-                    <h5><i class="bi bi-list-ul"></i> 待審核活動列表</h5>
+                    <div>
+                        <h5><i class="bi bi-list-ul"></i> 待審核活動列表</h5>
+                        <div style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                            <a href="review.php?filter=all" class="btn btn-sm <?= $filter_type === 'all' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                <i class="bi bi-funnel"></i> 全部
+                            </a>
+                            <a href="review.php?filter=活動申請" class="btn btn-sm <?= $filter_type === '活動申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                <i class="bi bi-calendar-event"></i> 活動申請
+                            </a>
+                            <a href="review.php?filter=器材申請" class="btn btn-sm <?= $filter_type === '器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                <i class="bi bi-tools"></i> 器材申請
+                            </a>
+                            <a href="review.php?filter=活動+器材申請" class="btn btn-sm <?= $filter_type === '活動+器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                                <i class="bi bi-collection"></i> 活動+器材申請
+                            </a>
+                        </div>
+                    </div>
                     <?php if (empty($pending_events)): ?>
                         <div class="empty-state">
                             <i class="bi bi-inbox"></i>

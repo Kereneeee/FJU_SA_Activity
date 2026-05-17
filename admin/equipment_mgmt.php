@@ -278,7 +278,7 @@ $borrowed_quantity = $total_quantity - $available_quantity;
                 </ol>
                 <h4 class="mt-2 mb-0">器材管理</h4>
             </div>
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-3" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
                 <span class="text-muted"><?php echo htmlspecialchars($user_name); ?></span>
                 <div class="user-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">
                     <?php echo substr($user_name, 0, 1); ?>

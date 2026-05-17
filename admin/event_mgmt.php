@@ -143,6 +143,9 @@ if (isset($_GET['edit_id'])) {
     }
 }
 
+// 篩選狀態
+$filter_status = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+
 // 取得活動列表（包含申請人資訊）
 $sql = "
     SELECT e.*, u.name as applicant_name, u.email as applicant_email, u.username,
@@ -151,6 +154,7 @@ $sql = "
     JOIN users u ON e.user_id = u.user_id
     LEFT JOIN reservations r ON e.event_id = r.event_id
     LEFT JOIN spaces s ON r.space_id = s.space_id
+    " . ($filter_status !== 'all' ? "WHERE e.status = '" . $conn->real_escape_string($filter_status) . "'" : "") . "
     ORDER BY e.start_time DESC
 ";
 $result = $conn->query($sql);
@@ -467,7 +471,7 @@ foreach ($events as $e) {
                 </ol>
                 <h4 class="mt-2 mb-0">活動管理</h4>
             </div>
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-3" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
                 <span class="text-muted"><?php echo htmlspecialchars($user_name); ?></span>
                 <div class="user-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">
                     <?php echo substr($user_name, 0, 1); ?>
@@ -572,7 +576,23 @@ foreach ($events as $e) {
 
             <!-- 活動列表 -->
             <div class="panel-row">
-                <h5><i class="bi bi-list-ul"></i> 活動申請列表</h5>
+                <div>
+                    <h5><i class="bi bi-list-ul"></i> 活動申請列表</h5>
+                    <div style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <a href="event_mgmt.php?filter=all" class="btn btn-sm <?= $filter_status === 'all' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                            <i class="bi bi-funnel"></i> 全部
+                        </a>
+                        <a href="event_mgmt.php?filter=pending" class="btn btn-sm <?= $filter_status === 'pending' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                            <i class="bi bi-hourglass-split"></i> 待審核
+                        </a>
+                        <a href="event_mgmt.php?filter=approved" class="btn btn-sm <?= $filter_status === 'approved' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                            <i class="bi bi-check-lg"></i> 已通過
+                        </a>
+                        <a href="event_mgmt.php?filter=rejected" class="btn btn-sm <?= $filter_status === 'rejected' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                            <i class="bi bi-x-lg"></i> 已駁回
+                        </a>
+                    </div>
+                </div>
                 <div style="overflow-x: auto;">
                     <table>
                         <thead>
