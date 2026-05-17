@@ -8,6 +8,7 @@ require_once(__DIR__ . "/../DB/db_config.php");
 if (!isset($_SESSION['user_id'])) {
     header('Location: ../login.php');
     exit();
+    
 }
 
 $user_name = $_SESSION['user_name'] ?? '管理員';
