@@ -206,7 +206,7 @@ if ($result_recent) {
         .card-panel .label { color: #6b7280; }
         .quick-actions {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(200px, 1fr));
             gap: 1.25rem;
             margin-bottom: 1.5rem;
         }
@@ -214,10 +214,10 @@ if ($result_recent) {
             background: linear-gradient(135deg, #8b1538 0%, #c2185b 100%);
             color: white;
             border-radius: 18px;
-            padding: 1.7rem;
+            padding: 1.5rem;
             cursor: pointer;
             transition: transform 0.25s ease, box-shadow 0.25s ease;
-            min-height: 180px;
+            min-height: 160px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -241,14 +241,15 @@ if ($result_recent) {
             font-size: 1.35rem;
         }
         .action-card h6 {
-            margin: 1rem 0 0.5rem;
-            font-size: 1.05rem;
+            margin: 0.8rem 0 0.3rem;
+            font-size: 0.95rem;
             font-weight: 700;
         }
         .action-card p {
             margin: 0;
             color: rgba(255,255,255,0.85);
-            line-height: 1.6;
+            line-height: 1.5;
+            font-size: 0.85rem;
         }
         .panel-row {
             display: grid;
@@ -376,7 +377,7 @@ if ($result_recent) {
                 </ol>
                 <h4 class="mt-2 mb-0">系統管理中心</h4>
             </div>
-            <div class="user-card">
+            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
                 <div class="user-avatar"><?php echo htmlspecialchars(substr($user_name, 0, 1)); ?></div>
                 <div>
                     <div class="fw-bold"><?php echo htmlspecialchars($user_name); ?></div>
