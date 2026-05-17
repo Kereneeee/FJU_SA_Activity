@@ -1,5 +1,3 @@
-<form method="POST" id="applicationForm" enctype="multipart/form-data">
-
 <?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -129,8 +127,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($event_date)) $errors[] = "請選擇活動日期";
     if (empty($start_period) || empty($end_period)) $errors[] = "請選擇活動時間";
     if (empty($venue_id)) $errors[] = "請選擇場地";
+    // 修正後的必填文件檢查
     if (!isset($_FILES['event_document']) || $_FILES['event_document']['error'] == UPLOAD_ERR_NO_FILE) {
         $errors[] = "請上傳已簽署的活動申請表(PDF)";
+    }
+    if (!isset($_FILES['venue_document']) || $_FILES['venue_document']['error'] == UPLOAD_ERR_NO_FILE) {
+        $errors[] = "請上傳已簽署的場地申請表(PDF)";
     }
     
     // 驗證節次選擇
@@ -154,19 +156,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             mkdir($upload_dir, 0777, true);
         }
 
-        $file_ext = pathinfo($_FILES['event_document']['name'], PATHINFO_EXTENSION);
-        $new_filename = "event_" . time() . "_" . uniqid() . "." . $file_ext;
-        $target_path = $upload_dir . $new_filename;
-        
-        // 在 move_uploaded_file 之前加入這行來測試路徑
-        if (!is_writable($upload_dir)) {
-            throw new Exception("資料夾不可寫入: " . realpath($upload_dir));
-        }
+        // --- 1. 處理 3 個檔案的上傳 ---
+        $files_to_upload = [
+            'event_document' => ['required' => true, 'prefix' => 'event_'],
+            'venue_document' => ['required' => true, 'prefix' => 'venue_'],
+            'equipment_document' => ['required' => false, 'prefix' => 'equip_']
+        ];
 
-        if (!move_uploaded_file($_FILES['event_document']['tmp_name'], $target_path)) {
-            // 檢查上傳錯誤碼
-            $error_code = $_FILES['event_document']['error'];
-            throw new Exception("搬移失敗。錯誤碼: $error_code (路徑: $target_path)");
+        $uploaded_filenames = [
+            'event_document' => null,
+            'venue_document' => null,
+            'equipment_document' => null
+        ];
+
+        foreach ($files_to_upload as $field_name => $config) {
+            if (isset($_FILES[$field_name]) && $_FILES[$field_name]['error'] == UPLOAD_ERR_OK) {
+                $file_ext = pathinfo($_FILES[$field_name]['name'], PATHINFO_EXTENSION);
+                $new_filename = $config['prefix'] . time() . "_" . uniqid() . "." . $file_ext;
+                $target_path = $upload_dir . $new_filename;
+
+                if (move_uploaded_file($_FILES[$field_name]['tmp_name'], $target_path)) {
+                    $uploaded_filenames[$field_name] = $new_filename;
+                } else {
+                    throw new Exception($field_name . " 檔案搬移失敗。");
+                }
+            } elseif ($config['required']) {
+                throw new Exception("請務必上傳必填的申請表單！");
+            }
         }
 
         // --- 2. 準備時間與變數 ---
@@ -203,39 +219,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // --- 4. 插入活動記錄 (依照資料庫結構修正) ---
             // 依照你的 SQL 結構，最穩定的 INSERT 寫法
             $sql_event = "INSERT INTO events (
-                user_id, 
-                event_name, 
-                club_name, 
-                description, 
-                start_time, 
-                end_time, 
-                document_path, 
+                user_id, event_name, club_name, description, 
+                start_time, end_time, document_path, venue_doc_path, equipment_doc_path, 
                 review_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"; // 8 個欄位對應 8 個問號
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             $stmt_event = $conn->prepare($sql_event);
+            if (!$stmt_event) { throw new Exception("SQL 準備失敗: " . $conn->error); }
 
-            if (!$stmt_event) {
-                throw new Exception("SQL 預理失敗: " . $conn->error);
-            }
-
-            // 綁定 8 個參數
-            // i = integer (user_id)
-            // s = string (其餘)
-            $stmt_event->bind_param("isssssss", 
-                $user_id,       // 對應 user_id
-                $event_name,    // 對應 event_name
-                $club_name,     // 對應 club_name
-                $description,   // 對應 description
-                $event_start,   // 對應 start_time
-                $event_end,     // 對應 end_time
-                $new_filename,  // 對應 document_path (這就是你的 PDF 檔名)
-                $empty_note     // 對應 review_note (預設給空字串)
+            // 綁定 10 個參數: i + 9個s
+            $stmt_event->bind_param("isssssssss", 
+                $user_id,                               // 1
+                $event_name,                            // 2
+                $club_name,                             // 3
+                $description,                           // 4
+                $event_start,                           // 5
+                $event_end,                             // 6
+                $uploaded_filenames['event_document'],  // 7 (活動單檔名)
+                $uploaded_filenames['venue_document'],  // 8 (場地單檔名)
+                $uploaded_filenames['equipment_document'], // 9 (器材單檔名，可為 null)
+                $empty_note                             // 10
             );
 
-            if (!$stmt_event->execute()) {
-                throw new Exception("活動記錄插入失敗: " . $stmt_event->error);
-            }
+            if (!$stmt_event->execute()) { throw new Exception("活動記錄插入失敗: " . $stmt_event->error); }
             $event_id = $conn->insert_id;
             $stmt_event->close();
             
@@ -832,17 +838,34 @@ function getEquipmentIcon($equipId) {
                 <div class="form-section">
                     <div class="row align-items-center">
                         <div class="col-md-6">
-                            <p class="mb-2"><strong>第一步：下載空白三單</strong></p>
-                            <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
-                                <i class="bi bi-download"></i> 下載空白申請表 (範本)
-                            </a>
+                            <p class="mb-2"><strong>下載空白三單</strong></p>
+                            <p>
+                            <div><a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
+                                <i class="bi bi-download"></i> 下載活動申請表(黃單)
+                            </a></div><br>
+                            <div><a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download>
+                                <i class="bi bi-download"></i> 下載例行活動場地核定登記表
+                            </a></div><br>
+                            <div><a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download>
+                                <i class="bi bi-download"></i> 下載器材借用申請表
+                            </a></div>
+                            </p>
                             <p class="text-muted small mt-2">請填寫完整並加蓋社團公章後掃描上傳。</p>
                         </div>
                         <div class="col-md-6">
-                            <div class="form-group">
-                                <label for="event_document"><strong>第二步：上傳已簽署三單 *</strong></label>
-                                <input type="file" id="event_document" name="event_document" class="form-control" accept=".pdf" required>
-                                <div class="form-text">僅接受 PDF檔，檔案大小限制 5MB。</div>
+                            <div class="mb-3">
+                                <label class="form-label">1. 活動申請單 (PDF) <span class="text-danger">*</span></label>
+                                <input type="file" name="event_document" class="form-control" accept=".pdf" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">2. 場地申請單 (PDF) <span class="text-danger">*</span></label>
+                                <input type="file" name="venue_document" class="form-control" accept=".pdf" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">3. 器材借用單 (PDF，若無借用可不傳)</label>
+                                <input type="file" name="equipment_document" class="form-control" accept=".pdf">
                             </div>
                         </div>
                     </div>
