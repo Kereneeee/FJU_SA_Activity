@@ -423,11 +423,11 @@ if ($result_recent) {
                 </div>
                 <div class="action-card event" onclick="location.href='event_mgmt.php'">
                     <div class="action-top">
-                        <span>活動管理</span>
+                        <span>申請紀錄</span>
                         <div class="action-icon"><i class="bi bi-calendar-check"></i></div>
                     </div>
-                    <h6>管理活動申請</h6>
-                    <p>編輯與刪除活動申請。</p>
+                    <h6>管理申請紀錄</h6>
+                    <p>編輯與刪除申請紀錄。</p>
                 </div>
                 <div class="action-card equipment" onclick="location.href='equipment_mgmt.php'">
                     <div class="action-top">
