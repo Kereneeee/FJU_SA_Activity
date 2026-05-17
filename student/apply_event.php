@@ -190,10 +190,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             // 處理器材選擇
             if (isset($_POST['equipment']) && is_array($_POST['equipment'])) {
+                // 嘗試使用新的字段，如果失敗則使用舊字段
                 $stmt_borrow = $conn->prepare(
-                    "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) 
-                     VALUES (?, ?, ?)"
+                    "INSERT INTO equipment_borrow (event_id, equipment_id, quantity, status, created_at) 
+                     VALUES (?, ?, ?, 'pending', NOW())"
                 );
+                
+                if (!$stmt_borrow) {
+                    // 如果新字段不存在，使用舊的 INSERT 語句
+                    $stmt_borrow = $conn->prepare(
+                        "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) 
+                         VALUES (?, ?, ?)"
+                    );
+                }
                 
                 foreach ($_POST['equipment'] as $equip_id => $quantity) {
                     $quantity = intval($quantity);
