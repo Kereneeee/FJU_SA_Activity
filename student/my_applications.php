@@ -30,14 +30,12 @@ if ($user_result && $user_result->num_rows > 0) {
 }
 $user_stmt->close();
 
-$sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, 
-               e.start_time, e.end_time, e.status, e.review_note,
-               e.created_at, r.space_id, s.space_name
+$sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time, e.status, e.review_note,
+               e.document_path, e.venue_doc_path, e.equipment_doc_path, s.space_name
         FROM events e
         LEFT JOIN reservations r ON e.event_id = r.event_id
         LEFT JOIN spaces s ON r.space_id = s.space_id
-        WHERE e.user_id = ?
-        ORDER BY e.created_at DESC";
+        ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {

@@ -500,9 +500,13 @@ if ($event_id === 0) {
                                 <h6>上傳檔案</h6>
                             <p><strong>檔案名稱：</strong><?= htmlspecialchars(basename($detail_event['document_path'])) ?></p>
                             <div class="d-flex gap-2">
-                                <a href="../document/<?= htmlspecialchars($detail_event['document_path']) ?>" target="_blank" class="btn btn-outline-primary btn-sm">
+                                <button type="button" 
+                                        class="btn btn-outline-primary btn-sm btn-preview-pdf" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#pdfPreviewModal" 
+                                        data-filepath="../document/<?= htmlspecialchars($detail_event['document_path']) ?>">
                                     <i class="bi bi-eye"></i> 檢視檔案
-                                </a>
+                                </button>
                                 <a href="../document/<?= htmlspecialchars($detail_event['document_path']) ?>" download class="btn btn-outline-success btn-sm">
                                     <i class="bi bi-download"></i> 下載檔案
                                 </a>
@@ -612,5 +616,51 @@ if ($event_id === 0) {
             <?php endif; ?>
         </section>
     </main>
+    <div class="modal fade" id="pdfPreviewModal" tabindex="-1" aria-labelledby="pdfPreviewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width: 85%;">
+            <div class="modal-content" style="border-radius: 16px; overflow: hidden;">
+                <div class="modal-header" style="background-color: var(--primary); color: white;">
+                    <h5 class="modal-title" id="pdfPreviewModalLabel"><i class="bi bi-file-pdf"></i> 申請附件預覽</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-0" style="height: 75vh; background-color: #f4f6fb;">
+                    <iframe id="pdfPreviewFrame" src="" width="100%" height="100%" style="border: none;"></iframe>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary m-0" data-bs-dismiss="modal">關閉視窗</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const previewModal = document.getElementById('pdfPreviewModal');
+        const previewFrame = document.getElementById('pdfPreviewFrame');
+
+        if (previewModal) {
+            // 當 Modal 準備顯示時觸發
+            previewModal.addEventListener('show.bs.modal', function (event) {
+                // 取得點擊的那個按鈕
+                const button = event.relatedTarget;
+                // 從按鈕的 data-filepath 屬性中取得 PDF 檔案路徑
+                const filePath = button.getAttribute('data-filepath');
+                
+                // 將路徑賦值給 iframe 的 src，開始載入 PDF
+                if (filePath) {
+                    previewFrame.src = filePath;
+                }
+            });
+
+            // 當 Modal 完全關閉時觸發
+            previewModal.addEventListener('hidden.bs.modal', function () {
+                // 清空 src，停止背後 PDF 的載入或播放，節省瀏覽器記憶體
+                previewFrame.src = '';
+            });
+        }
+    });
+    </script>
 </body>
 </html>
