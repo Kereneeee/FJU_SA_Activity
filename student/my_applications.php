@@ -37,6 +37,7 @@ $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_tim
         LEFT JOIN reservations r ON e.event_id = r.event_id
         LEFT JOIN spaces s ON r.space_id = s.space_id
         WHERE e.user_id = ?
+        GROUP BY e.event_id -- 🌟 加入這一行，確保同一個活動只會輸出成一筆資料
         ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
 
 $stmt = $conn->prepare($sql);
@@ -71,6 +72,7 @@ foreach ($applications as &$app) {
         $app['equipment_list'] = [];
     }
 }
+unset($app); // 🌟 核心修正：斷開傳址綁定，釋放變數！
 
 // 狀態中文對應
 $status_map = [
@@ -503,7 +505,6 @@ function getEquipmentStatusText($equipment_list) {
                             $equipment_status_class = $app['equipment_list'] ? $status_class_map[getEquipmentStatusPriority($app['equipment_list'])] : '';
                             $has_equipment = !empty($app['equipment_list']);
                             
-                            // 用於分類的狀態：如果活動或器材任何一個是 pending，就分類為 pending
                             $filter_status = $app['status'];
                             if ($has_equipment && getEquipmentStatusPriority($app['equipment_list']) === 'pending') {
                                 $filter_status = 'pending';
@@ -515,7 +516,6 @@ function getEquipmentStatusText($equipment_list) {
                                         <div class="application-title"><?php echo htmlspecialchars($app['event_name']); ?></div>
                                         <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'] ?? 'now')); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
                                     </div>
-                                    <!-- 雙狀態框 -->
                                     <div class="status-boxes">
                                         <div class="status-box event-status">
                                             <div class="status-box-label">活動、場地</div>
@@ -537,6 +537,7 @@ function getEquipmentStatusText($equipment_list) {
                                         </div>
                                     </div>
                                 </div>
+                                
                                 <div class="application-details">
                                     <div class="detail-item">
                                         <div class="detail-label">活動日期</div>
@@ -555,7 +556,7 @@ function getEquipmentStatusText($equipment_list) {
                                         <div class="detail-value"><?php echo htmlspecialchars($app['club_name']); ?></div>
                                     </div>
                                 </div>
-                                <!-- 器材詳情（如果有申請） -->
+                                
                                 <?php if ($has_equipment): ?>
                                 <div class="equipment-details">
                                     <div class="equipment-title">申請器材：</div>
@@ -572,11 +573,9 @@ function getEquipmentStatusText($equipment_list) {
                                     </div>
                                 </div>
                                 <?php endif; ?>
+                                
                                 <div class="application-actions">
-                                    <?php 
-                                    // 根據申請狀態決定顯示的按鈕
-                                    if ($app['status'] === 'pending' || $app['status'] === 'approved'):
-                                    ?>
+                                    <?php if ($app['status'] === 'pending' || $app['status'] === 'approved'): ?>
                                         <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消申請</button>
                                     <?php elseif ($app['status'] === 'completed'): ?>
                                         <button class="btn-action" onclick="viewDetails(<?php echo $app['event_id']; ?>)">查看詳情</button>
@@ -590,8 +589,7 @@ function getEquipmentStatusText($equipment_list) {
                                         </span>
                                     <?php endif; ?>
                                 </div>
-                            </div>
-                        <?php endforeach; ?>
+                            </div> <?php endforeach; ?>
                     <?php endif; ?>
                 </div>
 
