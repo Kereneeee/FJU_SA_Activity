@@ -52,7 +52,7 @@ if (!$event_id) {
 }
 
 // 獲取所有可用的器材
-$sql_equipment = "SELECT equipment_id, name, total_quantity, available_quantity FROM equipment WHERE status = 'available' ORDER BY name";
+$sql_equipment = "SELECT equipment_id, name, total_quantity, available_quantity FROM equipment WHERE equipment_status = 'available' ORDER BY name";
 $result_equipment = $conn->query($sql_equipment);
 $equipment_list = [];
 if ($result_equipment) {
