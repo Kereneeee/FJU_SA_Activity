@@ -21,7 +21,8 @@ if ($result_spaces) {
 }
 
 // 從資料庫獲取器材
-$sql_equipment = "SELECT equipment_id, name, total_quantity, available_quantity FROM equipment WHERE status = 'available'";
+// 從資料庫獲取器材（修正欄位名稱錯誤問題）
+$sql_equipment = "SELECT equipment_id, name, total_quantity, total_quantity AS available_quantity FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
 $equipment = [];
 if ($result_equipment) {
