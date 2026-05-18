@@ -63,6 +63,7 @@ if ($event_info) {
             e.equipment_id, 
             e.name, 
             e.total_quantity,
+            e.borrowing_limit,
             (e.total_quantity - COALESCE(SUM(
                 CASE 
                     WHEN ev.start_time < ? 
@@ -107,6 +108,7 @@ if ($event_id && $user_id) {
 }
 
 // 處理表單提交
+// 處理表單提交
 if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
     $equipment_selections = $_POST['equipment'] ?? [];
     
@@ -122,8 +124,67 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
     if (!$has_equipment) {
         $error = "請至少選擇一項器材";
     } else {
-        // 調用 API 提交
         try {
+            // 🟢 【新增】在寫入資料庫前，先撈取所有器材的限借數量與當前時間的可用數量進行驗證
+            $borrow_time = $event_info['start_time'];
+            $return_time = $event_info['end_time'];
+
+            // 這裡的 SQL 邏輯與撈取列表相同，同時抓出 borrowing_limit 與計算後的 available_quantity
+            $check_sql = "
+                SELECT 
+                    e.equipment_id, 
+                    e.name, 
+                    e.borrowing_limit,
+                    (e.total_quantity - COALESCE(SUM(
+                        CASE 
+                            WHEN ev.start_time < ? 
+                             AND ev.end_time > ? 
+                             AND ev.status IN ('pending', 'approved')
+                             AND ev.event_id != ? 
+                            THEN eb.quantity 
+                            ELSE 0 
+                        END
+                    ), 0)) AS available_quantity
+                FROM equipment e
+                LEFT JOIN equipment_borrow eb ON e.equipment_id = eb.equipment_id
+                LEFT JOIN events ev ON eb.event_id = ev.event_id
+                WHERE e.equipment_id = ?
+                GROUP BY e.equipment_id";
+            
+            $check_stmt = $conn->prepare($check_sql);
+
+            // 逐項檢查使用者輸入的數量
+            foreach ($equipment_selections as $equip_id => $quantity) {
+                $quantity = intval($quantity);
+                if ($quantity > 0) {
+                    $equip_id = intval($equip_id);
+                    
+                    // 查詢該器材的限制資料
+                    $check_stmt->bind_param("ssii", $return_time, $borrow_time, $event_id, $equip_id);
+                    $check_stmt->execute();
+                    $check_result = $check_stmt->get_result()->fetch_assoc();
+
+                    if ($check_result) {
+                        $limit = intval($check_result['borrowing_limit']);
+                        $available = intval($check_result['available_quantity']);
+                        $eq_name = $check_result['name'];
+
+                        // 1. 檢查是否超過限借數量 (如果 limit 為 NULL 或 0 通常代表不設限，這邊設定 > 0 才檢查)
+                        if ($limit > 0 && $quantity > $limit) {
+                            throw new Exception("「{$eq_name}」超過單次借用上限！每筆申請最多只能借用 {$limit} 件。");
+                        }
+
+                        // 2. 檢查是否超過庫存可用數量
+                        if ($quantity > $available) {
+                            throw new Exception("「{$eq_name}」剩餘可用庫存不足！目前該時段僅剩 {$available} 件。");
+                        }
+                    }
+                }
+            }
+            $check_stmt->close();
+
+
+            // ---- 驗證全數通過，開始寫入資料庫 ----
             $conn->begin_transaction();
 
             // 刪除現有的器材申請
@@ -134,12 +195,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             $delete_stmt->close();
 
             // 插入新的器材申請
-            // 嘗試使用新的字段，如果失敗則使用舊字段
             $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity, status, created_at) VALUES (?, ?, ?, 'pending', NOW())";
             $insert_stmt = $conn->prepare($insert_sql);
 
             if (!$insert_stmt) {
-                // 如果新字段不存在，使用舊的 INSERT 語句
                 $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)";
                 $insert_stmt = $conn->prepare($insert_sql);
                 $use_new_fields = false;
@@ -151,12 +210,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
-                    
-                    if ($use_new_fields) {
-                        $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
-                    } else {
-                        $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
-                    }
+                    $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
                     
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
@@ -173,8 +227,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             exit();
 
         } catch (Exception $e) {
-            $conn->rollback();
-            $error = "提交失敗：" . $e->getMessage();
+            // 如果中途拋出任何 Exception (如超過上限)，會在這裡被攔截並復原資料庫狀態
+            if ($conn->inTransaction()) {
+                $conn->rollback();
+            }
+            $error = $e->getMessage();
         }
     }
 }
@@ -539,16 +596,31 @@ $current_page = 'my_applications';
                                         <?php foreach ($equipment_list as $eq): ?>
                                         <div class="equipment-card">
                                             <div class="equipment-name"><?php echo htmlspecialchars($eq['name']); ?></div>
+                                            
                                             <div class="equipment-available">
                                                 可用數量：<strong><?php echo intval($eq['available_quantity']); ?>/<?php echo intval($eq['total_quantity']); ?> 件</strong>
                                             </div>
+                                            
+                                            <?php if (isset($eq['borrowing_limit']) && intval($eq['borrowing_limit']) > 0): ?>
+                                                <div class="equipment-limit" style="font-size: 0.85rem; color: #ef4444; margin-bottom: 0.75rem;">
+                                                    <i class="bi bi-exclamation-triangle"></i> 每筆活動限借：<strong><?php echo intval($eq['borrowing_limit']); ?> 件</strong>
+                                                </div>
+                                            <?php endif; ?>
+
                                             <div class="equipment-input-group">
+                                                <?php 
+                                                $max_allowed = intval($eq['available_quantity']);
+                                                if (isset($eq['borrowing_limit']) && intval($eq['borrowing_limit']) > 0) {
+                                                    // 取「剩餘庫存」與「限借上限」的最小值，就是他真正能輸入的最大值
+                                                    $max_allowed = min($max_allowed, intval($eq['borrowing_limit']));
+                                                }
+                                                ?>
                                                 <input type="number" 
-                                                       name="equipment[<?php echo $eq['equipment_id']; ?>]" 
-                                                       value="<?php echo $existing_equipment[$eq['equipment_id']] ?? 0; ?>"
-                                                       min="0" 
-                                                       max="<?php echo intval($eq['available_quantity']); ?>"
-                                                       placeholder="輸入數量">
+                                                    name="equipment[<?php echo $eq['equipment_id']; ?>]" 
+                                                    value="<?php echo $existing_equipment[$eq['equipment_id']] ?? 0; ?>"
+                                                    min="0" 
+                                                    max="<?php echo $max_allowed; ?>"
+                                                    placeholder="輸入數量">
                                                 <span>件</span>
                                             </div>
                                         </div>
