@@ -52,11 +52,42 @@ if (!$event_id) {
 }
 
 // 獲取所有可用的器材
-$sql_equipment = "SELECT equipment_id, name, total_quantity, available_quantity FROM equipment WHERE equipment_status = 'available' ORDER BY name";
-$result_equipment = $conn->query($sql_equipment);
+// 🟢 修改後的程式碼：直接在 SQL 中計算出該活動時間內的 available_quantity
 $equipment_list = [];
-if ($result_equipment) {
-    $equipment_list = $result_equipment->fetch_all(MYSQLI_ASSOC);
+if ($event_info) {
+    $borrow_time = $event_info['start_time'];
+    $return_time = $event_info['end_time'];
+
+    $sql_equipment = "
+        SELECT 
+            e.equipment_id, 
+            e.name, 
+            e.total_quantity,
+            (e.total_quantity - COALESCE(SUM(
+                CASE 
+                    WHEN ev.start_time < ? 
+                     AND ev.end_time > ? 
+                     AND ev.status IN ('pending', 'approved')
+                     AND ev.event_id != ? -- 排除當前活動本身的借用量
+                    THEN eb.quantity 
+                    ELSE 0 
+                END
+            ), 0)) AS available_quantity
+        FROM equipment e
+        LEFT JOIN equipment_borrow eb ON e.equipment_id = eb.equipment_id
+        LEFT JOIN events ev ON eb.event_id = ev.event_id
+        WHERE e.equipment_status = 'available'
+        GROUP BY e.equipment_id
+        ORDER BY e.name";
+
+    $stmt_eq = $conn->prepare($sql_equipment);
+    $stmt_eq->bind_param("ssi", $return_time, $borrow_time, $event_id);
+    $stmt_eq->execute();
+    $result_equipment = $stmt_eq->get_result();
+    if ($result_equipment) {
+        $equipment_list = $result_equipment->fetch_all(MYSQLI_ASSOC);
+    }
+    $stmt_eq->close();
 }
 
 // 獲取該活動的現有器材申請
