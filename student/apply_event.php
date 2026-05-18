@@ -565,7 +565,7 @@ function getEquipmentIcon($equipId) {
             </div>
             <?php endif; ?>
 
-            <form method="POST" id="applicationForm">
+            <form method="POST" id="applicationForm" enctype="multipart/form-data">
                 <!-- 基本資訊 -->
                 <div class="card">
                     <h3><i class="bi bi-info-circle"></i> 基本資訊</h3>

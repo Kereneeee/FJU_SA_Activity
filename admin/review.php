@@ -495,40 +495,69 @@ if ($event_id === 0) {
                             </div>
                             <?php endif; ?>
 
-                            <?php if (!empty($detail_event['document_path'])): ?>
-                            <div class="detail-block mt-3">
-                                <h6>上傳檔案</h6>
-                            <p><strong>檔案名稱：</strong><?= htmlspecialchars(basename($detail_event['document_path'])) ?></p>
-                            <div class="d-flex gap-2">
-                                <button type="button" 
-                                        class="btn btn-outline-primary btn-sm btn-preview-pdf" 
-                                        data-bs-toggle="modal" 
-                                        data-bs-target="#pdfPreviewModal" 
-                                        data-filepath="../document/<?= htmlspecialchars($detail_event['document_path']) ?>">
-                                    <i class="bi bi-eye"></i> 檢視檔案
-                                </button>
-                                <a href="../document/<?= htmlspecialchars($detail_event['document_path']) ?>" download class="btn btn-outline-success btn-sm">
-                                    <i class="bi bi-download"></i> 下載檔案
-                                </a>
+                            <?php 
+                        // 定義所有可能的檔案欄位與對應顯示的名稱
+                        $files_to_display = [
+                            ['path' => $detail_event['document_path'] ?? null, 'label' => '1. 活動申請單 (黃單)'],
+                            ['path' => $detail_event['venue_doc_path'] ?? null, 'label' => '2. 場地申請單'],
+                            ['path' => $detail_event['equipment_doc_path'] ?? null, 'label' => '3. 器材借用單']
+                        ];
+                        
+                        // 篩選出真正有路徑、有上傳的檔案
+                        $active_files = array_filter($files_to_display, function($f) {
+                            return !empty($f['path']);
+                        });
+                        ?>
+
+                        <?php if (!empty($active_files)): ?>
+                        <div class="detail-block mt-3">
+                            <h6>上傳檔案清單</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-borderless align-middle mb-0">
+                                    <tbody>
+                                        <?php foreach ($active_files as $file): ?>
+                                            <tr style="border-bottom: 1px dashed #e5e7eb;">
+                                                <td style="padding: 0.6rem 0;">
+                                                    <span class="badge bg-secondary me-2" style="font-size: 0.8rem;"><?= htmlspecialchars($file['label']) ?></span>
+                                                    <span style="font-size: 0.9rem; color: #475569;"><?= htmlspecialchars(basename($file['path'])) ?></span>
+                                                </td>
+                                                <td style="text-align: right; padding: 0.6rem 0;">
+                                                    <div class="d-inline-flex gap-2">
+                                                        <a href="../document/<?= htmlspecialchars($file['path']) ?>" 
+                                                           target="_blank" 
+                                                           class="btn btn-outline-primary btn-sm m-0">
+                                                            <i class="bi bi-box-arrow-up-right"></i> 檢視
+                                                        </a>
+                                                        <a href="../document/<?= htmlspecialchars($file['path']) ?>" download class="btn btn-outline-success btn-sm m-0">
+                                                            <i class="bi bi-download"></i> 下載
+                                                        </a>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                         <?php endif; ?>
 
-                        <form method="POST" class="mt-4">
-                            <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
-                            <div class="mb-3">
-                                <label class="form-label">審核備註（選填）</label>
-                                <textarea name="review_note" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
-                            </div>
-                            <div class="d-flex flex-wrap gap-3">
-                                <button type="submit" name="action" value="approve" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
-                                <?php if (!empty($detail_equipment)): ?>
-                                    <button type="submit" name="action" value="partial_approve" class="btn btn-warning"><i class="bi bi-slash-circle"></i> 部分核准</button>
-                                <?php endif; ?>
-                                <button type="submit" name="action" value="reject" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
-                                <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
-                            </div>
-                        </form>
+                        <div class="detail-block mt-3">
+                            <form method="POST" class="mt-4">
+                                <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
+                                <div class="mb-3">
+                                    <label class="form-label">審核備註（選填）</label>
+                                    <textarea name="review_note" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
+                                </div>
+                                <div class="d-flex flex-wrap gap-3">
+                                    <button type="submit" name="action" value="approve" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
+                                    <?php if (!empty($detail_equipment)): ?>
+                                        <button type="submit" name="action" value="partial_approve" class="btn btn-warning"><i class="bi bi-slash-circle"></i> 部分核准</button>
+                                    <?php endif; ?>
+                                    <button type="submit" name="action" value="reject" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
+                                    <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
+                                </div>
+                            </form>
+                        </div>
                     <?php endif; ?>
                 </div>
             <?php else: ?>
