@@ -31,10 +31,12 @@ if ($user_result && $user_result->num_rows > 0) {
 $user_stmt->close();
 
 $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time, e.status, e.review_note,
-               e.document_path, e.venue_doc_path, e.equipment_doc_path, s.space_name
+               e.document_path, e.venue_doc_path, e.equipment_doc_path, s.space_name, e.user_id,
+               COALESCE(e.created_at, NOW()) as created_at
         FROM events e
         LEFT JOIN reservations r ON e.event_id = r.event_id
         LEFT JOIN spaces s ON r.space_id = s.space_id
+        WHERE e.user_id = ?
         ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
 
 $stmt = $conn->prepare($sql);
@@ -50,6 +52,25 @@ if ($result) {
     $applications = $result->fetch_all(MYSQLI_ASSOC);
 }
 $stmt->close();
+
+// 為每個申請獲取器材詳情
+foreach ($applications as &$app) {
+    // 獲取該活動的所有器材申請
+    $equipment_sql = "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity, eb.status, eb.review_note 
+                      FROM equipment_borrow eb
+                      LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
+                      WHERE eb.event_id = ?";
+    $eq_stmt = $conn->prepare($equipment_sql);
+    if ($eq_stmt) {
+        $eq_stmt->bind_param("i", $app['event_id']);
+        $eq_stmt->execute();
+        $eq_result = $eq_stmt->get_result();
+        $app['equipment_list'] = $eq_result->fetch_all(MYSQLI_ASSOC) ?? [];
+        $eq_stmt->close();
+    } else {
+        $app['equipment_list'] = [];
+    }
+}
 
 // 狀態中文對應
 $status_map = [
@@ -68,6 +89,41 @@ $status_class_map = [
     'completed' => 'status-completed',
     'cancelled' => 'status-rejected'
 ];
+
+// 獲取器材狀態的最高優先級（用於分類）
+function getEquipmentStatusPriority($equipment_list) {
+    if (empty($equipment_list)) {
+        return null; // 沒有器材申請
+    }
+    
+    // 優先級順序：pending > rejected > approved > completed
+    $priority = ['pending' => 0, 'rejected' => 1, 'approved' => 2, 'completed' => 3];
+    
+    $highest = null;
+    $highest_priority = 999;
+    
+    foreach ($equipment_list as $eq) {
+        $eq_status = $eq['status'] ?? 'pending';
+        $eq_priority = $priority[$eq_status] ?? 999;
+        if ($eq_priority < $highest_priority) {
+            $highest_priority = $eq_priority;
+            $highest = $eq_status;
+        }
+    }
+    
+    return $highest;
+}
+
+// 獲取器材狀態顯示文本
+function getEquipmentStatusText($equipment_list) {
+    if (empty($equipment_list)) {
+        return null;
+    }
+    
+    $status = getEquipmentStatusPriority($equipment_list);
+    global $status_map;
+    return $status_map[$status] ?? '未知';
+}
 ?>
 
 <!DOCTYPE html>
@@ -212,6 +268,7 @@ $status_class_map = [
             justify-content: space-between;
             align-items: flex-start;
             margin-bottom: 1rem;
+            gap: 1rem;
         }
         .application-title {
             font-weight: 600;
@@ -222,11 +279,94 @@ $status_class_map = [
             color: #6b7280;
             font-size: 0.9rem;
         }
+        .status-boxes {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-start;
+        }
+        .status-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.35rem;
+            min-width: 120px;
+            padding: 0.5rem;
+            background: #f9fafb;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .status-box-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .btn-add-equipment {
+            padding: 0.35rem 0.75rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+        }
+        .btn-add-equipment:hover {
+            background: #6a0e2a;
+            transform: translateY(-1px);
+        }
         .status-badge {
             padding: 0.25rem 0.75rem;
             border-radius: 999px;
             font-size: 0.8rem;
             font-weight: 600;
+        }
+        .equipment-details {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            margin-top: 0.5rem;
+        }
+        .equipment-title {
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .equipment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .equipment-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+        }
+        .equipment-name {
+            flex: 1;
+            color: #374151;
+            font-size: 0.9rem;
+        }
+        .equipment-quantity {
+            color: #6b7280;
+            font-size: 0.85rem;
+            min-width: 50px;
+            text-align: right;
+        }
+        .equipment-status-badge {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.5rem;
         }
         .status-pending { background: #fff3cd; color: #664d03; }
         .status-approved { background: #d1e7dd; color: #0f5132; }
@@ -356,16 +496,46 @@ $status_class_map = [
                             <a href="apply_event.php" class="btn-action btn-edit" style="display: inline-block; margin-top: 1rem;">前往申請</a>
                         </div>
                     <?php else: ?>
-                        <?php foreach ($applications as $app): ?>
-                            <div class="application-card" data-status="<?php echo htmlspecialchars($app['status']); ?>">
+                        <?php foreach ($applications as $app): 
+                            $event_status = $status_map[$app['status']] ?? '未知';
+                            $event_status_class = $status_class_map[$app['status']] ?? 'status-pending';
+                            $equipment_status = getEquipmentStatusText($app['equipment_list']);
+                            $equipment_status_class = $app['equipment_list'] ? $status_class_map[getEquipmentStatusPriority($app['equipment_list'])] : '';
+                            $has_equipment = !empty($app['equipment_list']);
+                            
+                            // 用於分類的狀態：如果活動或器材任何一個是 pending，就分類為 pending
+                            $filter_status = $app['status'];
+                            if ($has_equipment && getEquipmentStatusPriority($app['equipment_list']) === 'pending') {
+                                $filter_status = 'pending';
+                            }
+                        ?>
+                            <div class="application-card" data-status="<?php echo htmlspecialchars($filter_status); ?>">
                                 <div class="application-header">
                                     <div>
                                         <div class="application-title"><?php echo htmlspecialchars($app['event_name']); ?></div>
-                                        <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'])); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
+                                        <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'] ?? 'now')); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
                                     </div>
-                                    <span class="status-badge <?php echo $status_class_map[$app['status']] ?? 'status-pending'; ?>">
-                                        <?php echo $status_map[$app['status']] ?? '未知'; ?>
-                                    </span>
+                                    <!-- 雙狀態框 -->
+                                    <div class="status-boxes">
+                                        <div class="status-box event-status">
+                                            <div class="status-box-label">活動、場地</div>
+                                            <span class="status-badge <?php echo $event_status_class; ?>">
+                                                <?php echo $event_status; ?>
+                                            </span>
+                                        </div>
+                                        <div class="status-box equipment-status">
+                                            <?php if ($has_equipment): ?>
+                                                <div class="status-box-label">器材</div>
+                                                <span class="status-badge <?php echo $equipment_status_class; ?>">
+                                                    <?php echo $equipment_status; ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <button class="btn-add-equipment" onclick="redirectToAddEquipment(<?php echo $app['event_id']; ?>)">
+                                                    <i class="bi bi-plus-circle"></i> 追加申請器材
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="application-details">
                                     <div class="detail-item">
@@ -385,15 +555,29 @@ $status_class_map = [
                                         <div class="detail-value"><?php echo htmlspecialchars($app['club_name']); ?></div>
                                     </div>
                                 </div>
+                                <!-- 器材詳情（如果有申請） -->
+                                <?php if ($has_equipment): ?>
+                                <div class="equipment-details">
+                                    <div class="equipment-title">申請器材：</div>
+                                    <div class="equipment-list">
+                                        <?php foreach ($app['equipment_list'] as $eq): ?>
+                                        <div class="equipment-item">
+                                            <span class="equipment-name"><?php echo htmlspecialchars($eq['name'] ?? '未知器材'); ?></span>
+                                            <span class="equipment-quantity">× <?php echo intval($eq['quantity']); ?></span>
+                                            <span class="equipment-status-badge status-badge <?php echo $status_class_map[$eq['status']] ?? 'status-pending'; ?>">
+                                                <?php echo $status_map[$eq['status']] ?? '未知'; ?>
+                                            </span>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                                 <div class="application-actions">
                                     <?php 
                                     // 根據申請狀態決定顯示的按鈕
-                                    // 審核中和已通過的申請不能編輯，只能取消
-                                    if ($app['status'] === 'pending'):
+                                    if ($app['status'] === 'pending' || $app['status'] === 'approved'):
                                     ?>
-                                        <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消</button>
-                                    <?php elseif ($app['status'] === 'approved'): ?>
-                                        <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消</button>
+                                        <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消申請</button>
                                     <?php elseif ($app['status'] === 'completed'): ?>
                                         <button class="btn-action" onclick="viewDetails(<?php echo $app['event_id']; ?>)">查看詳情</button>
                                     <?php elseif ($app['status'] === 'rejected'): ?>
@@ -480,6 +664,11 @@ $status_class_map = [
                     alert('發生錯誤，請重試');
                 });
             }
+        }
+
+        function redirectToAddEquipment(eventId) {
+            // 重定向到追加申請器材頁面
+            window.location.href = `add_equipment.php?event_id=${eventId}`;
         }
 
         function viewDetails(eventId) {
