@@ -15,6 +15,7 @@ $user_id = $_SESSION['user_id'];
 $pending_count = 0;
 $recent_events = [];
 
+// 1. 待審核申請計數（確認 status 欄位直接在 events 表中）
 $sql_pending = "SELECT COUNT(*) AS cnt FROM events WHERE status = 'pending'";
 $result_pending = $conn->query($sql_pending);
 if ($result_pending) {
@@ -22,6 +23,8 @@ if ($result_pending) {
     $pending_count = intval($row['cnt']);
 }
 
+// 2. 近期活動列表（直接改由 events 表撈取 start_time, end_time, status）
+// 只保留 LEFT JOIN spaces 來抓取場地名稱
 $sql_recent = "SELECT e.event_id, e.event_name, e.club_name, e.start_time, e.end_time, e.status, s.space_name
                FROM events e
                LEFT JOIN reservations r ON e.event_id = r.event_id
@@ -450,24 +453,41 @@ if ($result_recent) {
             <div class="panel-row">
                 <section class="panel-full">
                     <h5>近期活動列表</h5>
-                            <div class="event-list">
+                    <div class="event-list">
                         <?php if (empty($recent_events)): ?>
                             <div class="event-card">
                                 <div class="title">目前尚無近期活動申請。</div>
                             </div>
                         <?php else: ?>
                             <?php foreach ($recent_events as $event): ?>
+                                <?php 
+                                    // 格式化時間，轉換為與 UI 圖片一致的格式 (例如：12/20 14:00-17:00)
+                                    $start_date = date('m/d', strtotime($event['start_time']));
+                                    $end_date = date('m/d', strtotime($event['end_time']));
+                                    $start_time = date('H:i', strtotime($event['start_time']));
+                                    $end_time = date('H:i', strtotime($event['end_time']));
+                                    
+                                    // 判斷是否為同一天
+                                    $time_display = ($start_date === $end_date) 
+                                        ? "{$start_date} {$start_time}-{$end_time}" 
+                                        : "{$start_date} {$start_time} - {$end_date} {$end_time}";
+                                ?>
                                 <div class="event-card">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
                                             <div class="title"><?= htmlspecialchars($event['event_name']) ?></div>
                                             <div class="meta">
-                                                <?= htmlspecialchars(date('m/d H:i', strtotime($event['start_time']))) ?> - <?= htmlspecialchars(date('m/d H:i', strtotime($event['end_time']))) ?> · <?= htmlspecialchars($event['space_name'] ?? '未指定場地') ?>
+                                                <?= htmlspecialchars($time_display) ?> · <?= htmlspecialchars($event['space_name'] ?? '外校營地/未指定場地') ?>
                                             </div>
                                         </div>
-                                        <span class="status-pill <?= $event['status'] === 'approved' ? 'status-approved' : ($event['status'] === 'pending' ? 'status-pending' : 'status-alert') ?>">
-                                            <?= $event['status'] === 'approved' ? '已核准' : ($event['status'] === 'pending' ? '審核中' : '已駁回') ?>
-                                        </span>
+                                        
+                                        <?php if ($event['status'] === 'approved'): ?>
+                                            <span class="status-pill status-approved">已核准</span>
+                                        <?php elseif ($event['status'] === 'pending'): ?>
+                                            <span class="status-pill status-pending">審核中</span>
+                                        <?php else: ?>
+                                            <span class="status-pill status-alert">已駁回</span>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

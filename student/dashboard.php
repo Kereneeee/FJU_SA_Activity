@@ -433,33 +433,44 @@ elseif ($user_id) {
                 <section class="panel-full">
                     <h5>近期活動列表</h5>
                     <div class="event-list">
-                        <div class="event-card">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <div class="title">聖誕節慶祝會</div>
-                                    <div class="meta">12/20 14:00-17:00 · 綜合大樓一樓</div>
-                                </div>
-                                <span class="status-pill status-approved">已核准</span>
+                        <?php if (empty($recent_events)): ?>
+                            <div class="event-card">
+                                <div class="title">目前尚無近期活動申請。</div>
                             </div>
-                        </div>
-                        <div class="event-card">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <div class="title">迎新宿營籌備</div>
-                                    <div class="meta">12/08 全天 · 校外營地</div>
+                        <?php else: ?>
+                            <?php foreach ($recent_events as $event): ?>
+                                <?php 
+                                    // 格式化時間：如果是同天，後面只顯示時間
+                                    $start_date = date('m/d', strtotime($event['start_time']));
+                                    $end_date = date('m/d', strtotime($event['end_time']));
+                                    $start_time = date('H:i', strtotime($event['start_time']));
+                                    $end_time = date('H:i', strtotime($event['end_time']));
+                                    
+                                    // 判斷是否為全天活動（假設你的系統全天會設定為 00:00 到 23:59 或有特殊註記）
+                                    // 這裡示範標準格式：12/20 14:00-17:00
+                                    $time_display = ($start_date === $end_date) 
+                                        ? "{$start_date} {$start_time}-{$end_time}" 
+                                        : "{$start_date} {$start_time} - {$end_date} {$end_time}";
+                                ?>
+                                <div class="event-card">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <div class="title"><?= htmlspecialchars($event['event_name']) ?></div>
+                                            <div class="meta">
+                                                <?= htmlspecialchars($time_display) ?> · <?= htmlspecialchars($event['space_name'] ?? '外校營地/未指定場地') ?>
+                                            </div>
+                                        </div>
+                                        <?php if ($event['status'] === 'approved'): ?>
+                                            <span class="status-pill status-approved">已核准</span>
+                                        <?php elseif ($event['status'] === 'pending' || $event['status'] === '審核中'): ?>
+                                            <span class="status-pill status-pending">審核中</span>
+                                        <?php else: ?>
+                                            <span class="status-pill status-alert">已駁回</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
-                                <span class="status-pill status-pending">審核中</span>
-                            </div>
-                        </div>
-                        <div class="event-card">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <div class="title">期末讀書交流</div>
-                                    <div class="meta">12/10 19:00-21:00 · 圖書館討論室</div>
-                                </div>
-                                <span class="status-pill status-approved">已核准</span>
-                            </div>
-                        </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
                 </section>
                 <section class="panel-full">
