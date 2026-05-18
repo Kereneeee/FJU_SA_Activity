@@ -65,14 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $errors[] = "請上傳已簽署的場地申請表(PDF)";
     }
     
-    // 驗證節次選擇
-    if (!empty($start_period) && !empty($end_period)) {
-        if (!isset($time_periods[$start_period]) || !isset($time_periods[$end_period])) {
-            $errors[] = "選擇的時間節次無效";
-        }
-    }
-
-    if (empty($errors)) {
+        if (empty($errors)) {
         // 開始事務
         $conn->begin_transaction();
     
@@ -116,8 +109,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
 
         // --- 2. 準備時間與變數 ---
-        $event_start = $event_date . " " . $time_periods[$start_period]['start'] . ":00";
-        $event_end = $event_date . " " . $time_periods[$end_period]['end'] . ":00";
+        $event_start = $event_date . " " . $start_time . ":00";
+        $event_end = $event_date . " " . $end_time . ":00";   
         $venue_id = intval($venue_id);
         $user_id = $_SESSION['user_id'] ?? null; // 注意：確認你的 session 鍵名是 user_id 還是 student_id
         $empty_note = ""; 
@@ -629,13 +622,11 @@ function getEquipmentIcon($equipId) {
                     </div>
                 </div>
 
-                <!-- 器材借用 -->
                 <div class="card">
                     <h3><i class="bi bi-tools"></i> 器材借用</h3>
                     <div class="form-section">
                         <div class="equipment-grid">
-                            <?php foreach ($equipment as $item): ?>
-                            <div class="equipment-card">
+                            <?php foreach ($equipment as $item): ?><div class="equipment-card">
                                 <div class="equipment-header">
                                     <div class="equipment-name">
                                         <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
@@ -644,77 +635,70 @@ function getEquipmentIcon($equipId) {
                                     <div class="equipment-stock">
                                         <div class="stock-<?= $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty' ?>">
                                             剩餘: <?= $item['available'] ?>/<?= $item['total'] ?>
-                                        </div>
-                                            
-                                    </div>
-                                    <div class="counter">
-                                        <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
-                                        
-                                        <?php
-                                        $maxBorrow = ($item['limit'] > 0) 
-                                            ? min($item['available'], $item['limit']) 
-                                            : $item['available'];
-                                        ?>
-
-                                        <input type="number" id="qty_<?= $item['id'] ?>" 
-                                        name="equipment[<?= $item['id'] ?>]" 
-                                        value="0" min="0" 
-                                        max="<?= $maxBorrow ?>" 
-                                        readonly>
-
-                                        <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                        </div>                                            
                                     </div>
                                 </div>
-                                <?php endforeach; ?>
-                            </div>
+                                <div class="counter mt-2">
+                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
+                                    
+                                    <?php $maxBorrow = $item['available']; ?>
+
+                                    <input type="number" id="qty_<?= $item['id'] ?>" 
+                                    name="equipment[<?= $item['id'] ?>]" 
+                                    value="0" min="0" 
+                                    max="<?= $maxBorrow ?>" 
+                                    readonly>
+
+                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                </div>
+                            </div><?php endforeach; ?>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
-                <h3><i class="bi bi-file-earmark-arrow-up"></i> 三單下載與上傳</h3>
-                <div class="form-section">
-                    <div class="row align-items-center">
-                        <div class="col-md-6">
-                            <p class="mb-2"><strong>下載空白三單</strong></p>
-                            <p>
-                            <div><a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
-                                <i class="bi bi-download"></i> 下載活動申請表(黃單)
-                            </a></div><br>
-                            <div><a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download>
-                                <i class="bi bi-download"></i> 下載例行活動場地核定登記表
-                            </a></div><br>
-                            <div><a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download>
-                                <i class="bi bi-download"></i> 下載器材借用申請表
-                            </a></div>
-                            </p>
-                            <p class="text-muted small mt-2">請填寫完整並加蓋社團公章後掃描上傳。</p>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label">1. 活動申請單 (PDF) <span class="text-danger">*</span></label>
-                                <input type="file" name="event_document" class="form-control" accept=".pdf" required>
+                    <h3><i class="bi bi-file-earmark-arrow-up"></i> 三單下載與上傳</h3>
+                    <div class="form-section">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <p class="mb-2"><strong>下載空白三單</strong></p>
+                                <p>
+                                <div><a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
+                                    <i class="bi bi-download"></i> 下載活動申請表(黃單)
+                                </a></div><br>
+                                <div><a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download>
+                                    <i class="bi bi-download"></i> 下載例行活動場地核定登記表
+                                </a></div><br>
+                                <div><a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download>
+                                    <i class="bi bi-download"></i> 下載器材借用申請表
+                                </a></div>
+                                </p>
+                                <p class="text-muted small mt-2">請填寫完整並加蓋社團公章後掃描上傳。</p>
                             </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">1. 活動申請單 (PDF) <span class="text-danger">*</span></label>
+                                    <input type="file" name="event_document" class="form-control" accept=".pdf" required>
+                                </div>
 
-                            <div class="mb-3">
-                                <label class="form-label">2. 場地申請單 (PDF) <span class="text-danger">*</span></label>
-                                <input type="file" name="venue_document" class="form-control" accept=".pdf" required>
-                            </div>
+                                <div class="mb-3">
+                                    <label class="form-label">2. 場地申請單 (PDF) <span class="text-danger">*</span></label>
+                                    <input type="file" name="venue_document" class="form-control" accept=".pdf" required>
+                                </div>
 
-                            <div class="mb-3">
-                                <label class="form-label">3. 器材借用單 (PDF，若無借用可不傳)</label>
-                                <input type="file" name="equipment_document" class="form-control" accept=".pdf">
+                                <div class="mb-3">
+                                    <label class="form-label">3. 器材借用單 (PDF，若無借用可不傳)</label>
+                                    <input type="file" name="equipment_document" class="form-control" accept=".pdf">
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
                 <button type="submit" class="btn-submit"><i class="bi bi-send"></i> 提交申請</button>
             </form>
         </section>
     </main>
-
     <script>
         function selectVenue(venueId) {
             document.querySelectorAll('.venue-card').forEach(card => card.classList.remove('selected'));
