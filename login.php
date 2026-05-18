@@ -181,7 +181,7 @@ body {
     </form>
 
     <div class="footer-text">
-        請先在資料庫 users 表新增帳號
+        
     </div>
 
 </div>
