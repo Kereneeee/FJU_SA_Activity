@@ -28,7 +28,7 @@ if ($result_equipment) {
             'description' => $eq['description'],
             'borrowing_limit' => $eq['borrowing_limit'],
             'total_quantity' => $eq['total_quantity'],
-            'available_quantity' => $eq['available_quantity']
+            'available_quantity' => $eq['total_quantity']
         ];
     }
 }
@@ -259,46 +259,7 @@ $current_page = 'equipment';
         }
     </style>
 </head>
-<script>
-async function updateAvailability() {
 
-    const borrowTime =
-        document.getElementById('borrow_time').value;
-
-    const returnTime =
-        document.getElementById('return_time').value;
-
-    if (!borrowTime || !returnTime) {
-        return;
-    }
-
-    const response = await fetch(
-        `get_equipment_availability.php?borrow_time=${borrowTime}&return_time=${returnTime}`
-    );
-
-    const data = await response.json();
-
-    document.querySelectorAll('.equipment-card')
-        .forEach(card => {
-
-        const equipmentId =
-            card.dataset.equipmentId;
-
-        const qtySpan =
-            card.querySelector('.available-qty');
-
-        if (data[equipmentId] !== undefined) {
-            qtySpan.textContent = data[equipmentId];
-        }
-    });
-}
-
-document.getElementById('borrow_time')
-    .addEventListener('change', updateAvailability);
-
-document.getElementById('return_time')
-    .addEventListener('change', updateAvailability);
-</script>
 <body>
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
@@ -341,7 +302,7 @@ document.getElementById('return_time')
                                     <div class="status">
                                         剩餘:
                                         <span class="available-qty">
-                                            <?= $item['available_quantity'] ?>
+                                            <?= $item['total_quantity'] ?>
                                         </span>
                                     </div>
                                 </div>
@@ -367,6 +328,45 @@ document.getElementById('return_time')
             </div>
         </section>
     </main>
+<script>
+async function updateAvailability() {
 
+    const borrowTime =
+        document.getElementById('borrow_time').value;
+
+    const returnTime =
+        document.getElementById('return_time').value;
+
+    if (!borrowTime || !returnTime) {
+        return;
+    }
+
+    const response = await fetch(
+        `get_equipment_availability.php?borrow_time=${borrowTime}&return_time=${returnTime}`
+    );
+
+    const data = await response.json();
+
+    document.querySelectorAll('.equipment-card')
+        .forEach(card => {
+
+        const equipmentId =
+            card.dataset.equipmentId;
+
+        const qtySpan =
+            card.querySelector('.available-qty');
+
+        if (data[equipmentId] !== undefined) {
+            qtySpan.textContent = data[equipmentId];
+        }
+    });
+}
+
+document.getElementById('borrow_time')
+    .addEventListener('change', updateAvailability);
+
+document.getElementById('return_time')
+    .addEventListener('change', updateAvailability);
+</script>
 </body>
 </html>
