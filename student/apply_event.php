@@ -21,8 +21,8 @@ if ($result_spaces) {
 }
 
 // 從資料庫獲取器材
-// 從資料庫獲取器材（修正欄位名稱錯誤問題）
-$sql_equipment = "SELECT equipment_id, name, total_quantity, total_quantity AS available_quantity FROM equipment WHERE equipment_status = 'available'";
+// 從資料庫獲取器材 (修正：改為 equipment_status 並移除了未定義的 available_quantity)
+$sql_equipment = "SELECT equipment_id, name, total_quantity FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
 $equipment = [];
 if ($result_equipment) {
@@ -33,7 +33,7 @@ if ($result_equipment) {
             'id' => $eq['equipment_id'],
             'name' => $eq['name'],
             'total' => $eq['total_quantity'],
-            'available' => $eq['available_quantity'],
+            'available' => $eq['total_quantity'], // 直接用資料庫的總數量當作初始可用數量
             'unit' => '件'
         ];
     }
