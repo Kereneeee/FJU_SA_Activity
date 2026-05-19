@@ -278,6 +278,15 @@ $current_page = 'equipment';
         <section class="content-wrapper">
             <div class="card">
                 <h3>可借用器材</h3>
+            <div class="mb-4 position-relative">
+                <input 
+                    type="text"
+                    id="searchEquipment"
+                    class="form-control pe-5"
+                    placeholder="搜尋器材編號或名稱..."
+                >
+                <i class="bi bi-search position-absolute top-50 end-0 translate-middle-y me-3 text-muted"></i>
+            </div>
             <div class="row mb-4">
                 <div class="col-md-6">
                     <label class="form-label">借用時間</label>
@@ -293,7 +302,9 @@ $current_page = 'equipment';
                     <div class="equipment-grid">
                     <?php foreach ($equipment as $item): ?>
                         <div class="equipment-card"
-                             data-equipment-id="<?= $item['equipment_id'] ?>">
+                            data-equipment-id="<?= $item['equipment_id'] ?>"
+                            data-name="<?= htmlspecialchars($item['name']) ?>"
+                            data-code="<?= htmlspecialchars($item['code']) ?>">
                             <div class="equipment-header">
                                 <div class="equipment-icon">
                                     <?= htmlspecialchars($item['code']) ?>
@@ -368,6 +379,30 @@ document.getElementById('borrow_time')
 
 document.getElementById('return_time')
     .addEventListener('change', updateAvailability);
+// 搜尋器材
+document.getElementById('searchEquipment')
+    .addEventListener('input', function () {
+
+    const keyword =
+        this.value.toLowerCase();
+
+    document.querySelectorAll('.equipment-card')
+        .forEach(card => {
+
+        const name =
+            card.dataset.name.toLowerCase();
+
+        const code =
+            card.dataset.code.toLowerCase();
+
+        const match =
+            name.includes(keyword) ||
+            code.includes(keyword);
+
+        card.style.display =
+            match ? '' : 'none';
+    });
+});
 </script>
 </body>
 </html>
