@@ -28,7 +28,8 @@ if ($result_equipment) {
             'description' => $eq['description'],
             'borrowing_limit' => $eq['borrowing_limit'],
             'total_quantity' => $eq['total_quantity'],
-            'available_quantity' => $eq['total_quantity']
+            'available_quantity' => $eq['total_quantity'],
+            'code' => $eq['code']
         ];
     }
 }
@@ -295,7 +296,7 @@ $current_page = 'equipment';
                              data-equipment-id="<?= $item['equipment_id'] ?>">
                             <div class="equipment-header">
                                 <div class="equipment-icon">
-                                    <i class="bi bi-tools"></i>
+                                    <?= htmlspecialchars($item['code']) ?>
                                 </div>
                                 <div class="equipment-info">
                                     <h4><?= htmlspecialchars($item['name']) ?></h4>
