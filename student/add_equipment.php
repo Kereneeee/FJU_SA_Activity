@@ -31,7 +31,7 @@ if (!$event_id) {
     $user_stmt->close();
 
     // 獲取活動信息
-    $event_sql = "SELECT e.event_id, e.event_name, e.club_name, e.start_time, e.end_time, 
+    $event_sql = "SELECT e.event_id, e.user_id, e.event_name, e.club_name, e.start_time, e.end_time, 
                          e.status as event_status, s.space_name
                   FROM events e
                   LEFT JOIN reservations r ON e.event_id = r.event_id
@@ -45,6 +45,9 @@ if (!$event_id) {
 
     if ($event_result && $event_result->num_rows > 0) {
         $event_info = $event_result->fetch_assoc();
+        if ($event_info['event_status'] !== 'approved') {
+            $error = "只有已批准的活動才能追加申請器材。";
+        }
     } else {
         $error = "無法找到該活動申請，或您無權修改此申請";
     }
@@ -69,7 +72,6 @@ if ($event_info) {
                     WHEN ev.start_time < ? 
                      AND ev.end_time > ? 
                      AND ev.status IN ('pending', 'approved')
-                     AND ev.event_id != ? -- 排除當前活動本身的借用量
                     THEN eb.quantity 
                     ELSE 0 
                 END
@@ -82,7 +84,7 @@ if ($event_info) {
         ORDER BY e.name";
 
     $stmt_eq = $conn->prepare($sql_equipment);
-    $stmt_eq->bind_param("ssi", $return_time, $borrow_time, $event_id);
+    $stmt_eq->bind_param("ss", $return_time, $borrow_time);
     $stmt_eq->execute();
     $result_equipment = $stmt_eq->get_result();
     if ($result_equipment) {
@@ -140,7 +142,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                             WHEN ev.start_time < ? 
                              AND ev.end_time > ? 
                              AND ev.status IN ('pending', 'approved')
-                             AND ev.event_id != ? 
                             THEN eb.quantity 
                             ELSE 0 
                         END
@@ -160,7 +161,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                     $equip_id = intval($equip_id);
                     
                     // 查詢該器材的限制資料
-                    $check_stmt->bind_param("ssii", $return_time, $borrow_time, $event_id, $equip_id);
+                    $check_stmt->bind_param("ssi", $return_time, $borrow_time, $equip_id);
                     $check_stmt->execute();
                     $check_result = $check_stmt->get_result()->fetch_assoc();
 
@@ -187,31 +188,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             // ---- 驗證全數通過，開始寫入資料庫 ----
             $conn->begin_transaction();
 
-            // 刪除現有的器材申請
-            $delete_sql = "DELETE FROM equipment_borrow WHERE event_id = ?";
-            $delete_stmt = $conn->prepare($delete_sql);
-            $delete_stmt->bind_param("i", $event_id);
-            $delete_stmt->execute();
-            $delete_stmt->close();
+            // 插入新的器材申請事件（不修改原活動）
+            $new_description = '追加申請器材（原活動ID：' . intval($event_id) . '）';
+            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, review_note, original_event_id) VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?)";
+            $insert_event_stmt = $conn->prepare($insert_event_sql);
+            if (!$insert_event_stmt) {
+                throw new Exception('建立器材申請事件失敗：' . $conn->error);
+            }
+            $empty_string = '';
+            $insert_event_stmt->bind_param("isssssi", $event_info['user_id'], $empty_string, $empty_string, $new_description, $borrow_time, $return_time, $event_id);
+            if (!$insert_event_stmt->execute()) {
+                throw new Exception('建立器材申請事件失敗：' . $insert_event_stmt->error);
+            }
+            $new_event_id = $conn->insert_id;
+            $insert_event_stmt->close();
 
-            // 插入新的器材申請
-            $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity, status, created_at) VALUES (?, ?, ?, 'pending', NOW())";
+            // 插入新的器材申請記錄
+            $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_sql);
-
             if (!$insert_stmt) {
-                $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)";
-                $insert_stmt = $conn->prepare($insert_sql);
-                $use_new_fields = false;
-            } else {
-                $use_new_fields = true;
+                throw new Exception('建立器材借用記錄失敗：' . $conn->error);
             }
 
             foreach ($equipment_selections as $equip_id => $quantity) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
-                    $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
-                    
+                    $insert_stmt->bind_param("iii", $new_event_id, $equip_id, $quantity);
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
                     }
@@ -617,7 +620,7 @@ $current_page = 'my_applications';
                                                 ?>
                                                 <input type="number" 
                                                     name="equipment[<?php echo $eq['equipment_id']; ?>]" 
-                                                    value="<?php echo $existing_equipment[$eq['equipment_id']] ?? 0; ?>"
+                                                    value="0"
                                                     min="0" 
                                                     max="<?php echo $max_allowed; ?>"
                                                     placeholder="輸入數量">
