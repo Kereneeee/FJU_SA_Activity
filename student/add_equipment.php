@@ -1,4 +1,7 @@
 <?php
+// 🟢 核心修正 1：必須把 session_start() 放在最頂端，否則下方檢查登入狀態必定失敗
+session_start(); 
+
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -45,9 +48,6 @@ if (!$event_id) {
 
     if ($event_result && $event_result->num_rows > 0) {
         $event_info = $event_result->fetch_assoc();
-        if ($event_info['event_status'] !== 'approved') {
-            $error = "只有已批准的活動才能追加申請器材。";
-        }
     } else {
         $error = "無法找到該活動申請，或您無權修改此申請";
     }
@@ -55,7 +55,6 @@ if (!$event_id) {
 }
 
 // 獲取所有可用的器材
-// 🟢 修改後的程式碼：直接在 SQL 中計算出該活動時間內的 available_quantity
 $equipment_list = [];
 if ($event_info) {
     $borrow_time = $event_info['start_time'];
@@ -110,7 +109,6 @@ if ($event_id && $user_id) {
 }
 
 // 處理表單提交
-// 處理表單提交
 if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
     $equipment_selections = $_POST['equipment'] ?? [];
     
@@ -127,11 +125,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
         $error = "請至少選擇一項器材";
     } else {
         try {
-            // 🟢 【新增】在寫入資料庫前，先撈取所有器材的限借數量與當前時間的可用數量進行驗證
+            // ===== 第一步：處理器材申請單檔案上傳 =====
+            $base_dir = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..');
+            $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
+
+            if (!is_dir($upload_dir)) {
+                mkdir($upload_dir, 0777, true);
+            }
+
+            $equipment_doc_filename = null;
+
+            if (isset($_FILES['equipment_document']) && $_FILES['equipment_document']['error'] == UPLOAD_ERR_OK) {
+                $file_ext = pathinfo($_FILES['equipment_document']['name'], PATHINFO_EXTENSION);
+                $new_filename = 'equip_' . time() . "_" . uniqid() . "." . $file_ext;
+                $target_path = $upload_dir . $new_filename;
+
+                if (!move_uploaded_file($_FILES['equipment_document']['tmp_name'], $target_path)) {
+                    throw new Exception("器材申請單檔案搬移失敗。");
+                }
+                $equipment_doc_filename = $new_filename;
+            } else {
+                throw new Exception("請務必上傳器材借用單 (PDF) 檔案。");
+            }
+
+            // ===== 第二步：庫存與上限驗證 =====
             $borrow_time = $event_info['start_time'];
             $return_time = $event_info['end_time'];
 
-            // 這裡的 SQL 邏輯與撈取列表相同，同時抓出 borrowing_limit 與計算後的 available_quantity
             $check_sql = "
                 SELECT 
                     e.equipment_id, 
@@ -154,13 +174,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             
             $check_stmt = $conn->prepare($check_sql);
 
-            // 逐項檢查使用者輸入的數量
             foreach ($equipment_selections as $equip_id => $quantity) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
                     
-                    // 查詢該器材的限制資料
                     $check_stmt->bind_param("ssi", $return_time, $borrow_time, $equip_id);
                     $check_stmt->execute();
                     $check_result = $check_stmt->get_result()->fetch_assoc();
@@ -170,12 +188,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                         $available = intval($check_result['available_quantity']);
                         $eq_name = $check_result['name'];
 
-                        // 1. 檢查是否超過限借數量 (如果 limit 為 NULL 或 0 通常代表不設限，這邊設定 > 0 才檢查)
                         if ($limit > 0 && $quantity > $limit) {
                             throw new Exception("「{$eq_name}」超過單次借用上限！每筆申請最多只能借用 {$limit} 件。");
                         }
 
-                        // 2. 檢查是否超過庫存可用數量
                         if ($quantity > $available) {
                             throw new Exception("「{$eq_name}」剩餘可用庫存不足！目前該時段僅剩 {$available} 件。");
                         }
@@ -184,26 +200,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             }
             $check_stmt->close();
 
-
-            // ---- 驗證全數通過，開始寫入資料庫 ----
+            // ---- 驗證全數通過，開始進行資料庫操作 ----
             $conn->begin_transaction();
 
-            // 插入新的器材申請事件（不修改原活動）
-            $new_description = '追加申請器材（原活動ID：' . intval($event_id) . '）';
-            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, review_note, original_event_id) VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?)";
-            $insert_event_stmt = $conn->prepare($insert_event_sql);
-            if (!$insert_event_stmt) {
-                throw new Exception('建立器材申請事件失敗：' . $conn->error);
+            // 雙狀態框修正：更新原活動的 equipment_doc_path，不建立新 events 紀錄
+            $update_event_sql = "UPDATE events SET equipment_doc_path = ? WHERE event_id = ?";
+            $update_event_stmt = $conn->prepare($update_event_sql);
+            if (!$update_event_stmt) {
+                throw new Exception('更新活動器材單據失敗：' . $conn->error);
             }
-            $empty_string = '';
-            $insert_event_stmt->bind_param("isssssi", $event_info['user_id'], $empty_string, $empty_string, $new_description, $borrow_time, $return_time, $event_id);
-            if (!$insert_event_stmt->execute()) {
-                throw new Exception('建立器材申請事件失敗：' . $insert_event_stmt->error);
+            $update_event_stmt->bind_param("si", $equipment_doc_filename, $event_id);
+            if (!$update_event_stmt->execute()) {
+                throw new Exception('更新活動器材單據失敗：' . $update_event_stmt->error);
             }
-            $new_event_id = $conn->insert_id;
-            $insert_event_stmt->close();
+            $update_event_stmt->close();
 
-            // 插入新的器材申請記錄
+            // 雙狀態框修正：寫入前先清理舊的器材借用明細
+            $delete_old_sql = "DELETE FROM equipment_borrow WHERE event_id = ?";
+            $delete_old_stmt = $conn->prepare($delete_old_sql);
+            if ($delete_old_stmt) {
+                $delete_old_stmt->bind_param("i", $event_id);
+                $delete_old_stmt->execute();
+                $delete_old_stmt->close();
+            }
+
+            // 🟢 核心修正 2：將不可用的 status 欄位完全從 SQL 語法中移除，精準對應你的實體資料表欄位 (event_id, equipment_id, quantity)
             $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_sql);
             if (!$insert_stmt) {
@@ -214,7 +235,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
-                    $insert_stmt->bind_param("iii", $new_event_id, $equip_id, $quantity);
+                    // 僅綁定 3 個參數，與上方 SQL 完美對齊
+                    $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
                     }
@@ -222,18 +244,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             }
             $insert_stmt->close();
 
-            // 提交事務
             $conn->commit();
             
-            // 重定向回我的申請頁面
             header("Location: my_applications.php?success=true");
             exit();
 
         } catch (Exception $e) {
-            // 如果中途拋出任何 Exception (如超過上限)，會在這裡被攔截並復原資料庫狀態
-            if ($conn->inTransaction()) {
-                $conn->rollback();
-            }
+            $conn->rollback();
             $error = $e->getMessage();
         }
     }
@@ -508,6 +525,20 @@ $current_page = 'my_applications';
                 flex-direction: column;
             }
         }
+        .btn-outline-secondary-custom {
+            display: inline-block;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border: 1px solid #6c757d;
+            color: #6c757d;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+        .btn-outline-secondary-custom:hover {
+            background-color: #6c757d;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -541,10 +572,9 @@ $current_page = 'my_applications';
             <?php else: ?>
                 <div class="form-card">
                     <h3>追加申請器材</h3>
-                    <p style="color: #6b7280; margin-bottom: 1.5rem;">以下資訊已固定，您只需選擇要申請的器材</p>
+                    <p style="color: #6b7280; margin-bottom: 1.5rem;">以下資訊已固定，您只需選擇要申請的器材並上傳單據</p>
 
-                    <form method="POST">
-                        <!-- 固定的活動信息 -->
+                    <form method="POST" enctype="multipart/form-data">
                         <div class="form-section">
                             <div class="form-section-title">活動信息</div>
                             
@@ -580,14 +610,13 @@ $current_page = 'my_applications';
                                 <label>活動狀態</label>
                                 <div class="read-only-value">
                                     <?php 
-                                    $status_map = ['pending' => '審核中', 'approved' => '已通過', 'rejected' => '已拒絕', 'completed' => '已完成'];
+                                    $status_map = ['pending' => '審核中', 'approved' => '已通過', 'rejected' => '已拒絕', 'completed' => '已完成', 'cancelled' => '已取消'];
                                     echo htmlspecialchars($status_map[$event_info['event_status']] ?? '未知');
                                     ?>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- 器材選擇 -->
                         <div class="form-section">
                             <div class="form-section-title">選擇申請器材</div>
                             
@@ -614,7 +643,6 @@ $current_page = 'my_applications';
                                                 <?php 
                                                 $max_allowed = intval($eq['available_quantity']);
                                                 if (isset($eq['borrowing_limit']) && intval($eq['borrowing_limit']) > 0) {
-                                                    // 取「剩餘庫存」與「限借上限」的最小值，就是他真正能輸入的最大值
                                                     $max_allowed = min($max_allowed, intval($eq['borrowing_limit']));
                                                 }
                                                 ?>
@@ -633,7 +661,38 @@ $current_page = 'my_applications';
                             </div>
                         </div>
 
-                        <!-- 表單操作按鈕 -->
+                        <div class="form-section">
+                            <div class="form-section-title"><i class="bi bi-file-earmark-arrow-up"></i> 器材借用單下載與上傳</div>
+                            <div style="display: flex; flex-wrap: wrap; margin: -10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1.5rem;">
+                                <div style="flex: 1; min-width: 280px; padding: 10px; border-right: 1px solid #e5e7eb;">
+                                    <p class="mb-2"><strong>下載空白器材借用單</strong></p>
+                                    <div style="margin-bottom: 10px;">
+                                        <a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn-outline-secondary-custom btn-sm" download>
+                                            <i class="bi bi-download"></i> 下載器材借用申請表
+                                        </a>
+                                    </div>
+                                    <p style="color: #6b7280; font-size: 0.85rem; margin-top: 10px; padding-right: 10px;">
+                                        請點擊按鈕下載空白表格，填寫完整並加蓋社團公章後，轉為 PDF 格式由右側上傳。
+                                    </p>
+                                </div>
+                                
+                                <div style="flex: 1; min-width: 280px; padding: 10px; display: flex; flex-direction: column; justify-content: center;">
+                                    <div class="mb-3">
+                                        <label class="form-label" style="font-weight: 600; color: #374151; margin-bottom: 0.5rem; display: block;">
+                                            上傳已用印器材借用單 (PDF) <span class="text-danger" style="color: var(--danger);">*</span>
+                                        </label>
+                                        <input type="file" name="equipment_document" id="equipmentDocInput" class="form-control" accept=".pdf" required style="cursor: pointer; background: white;" onchange="previewPDF(this)">
+                                    </div>
+                                    <div id="pdfPreviewWrap" style="display:none; margin-top: 0.5rem;">
+                                        <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 0.4rem;">
+                                            <i class="bi bi-eye"></i> 預覽
+                                        </div>
+                                        <iframe id="pdfPreview" src="" style="width:100%; height:400px; border:1px solid #e5e7eb; border-radius:8px; background:#fff;"></iframe>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="form-actions">
                             <a href="my_applications.php" class="btn-secondary">取消</a>
                             <button type="submit" class="btn-primary">
@@ -645,5 +704,19 @@ $current_page = 'my_applications';
             <?php endif; ?>
         </section>
     </main>
+    <script>
+        function previewPDF(input) {
+            const wrap = document.getElementById('pdfPreviewWrap');
+            const iframe = document.getElementById('pdfPreview');
+            if (input.files && input.files[0]) {
+                const url = URL.createObjectURL(input.files[0]);
+                iframe.src = url;
+                wrap.style.display = 'block';
+            } else {
+                iframe.src = '';
+                wrap.style.display = 'none';
+            }
+        }
+    </script>
 </body>
 </html>

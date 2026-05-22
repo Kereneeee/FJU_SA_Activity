@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mysql -u root fjusa -e \"ALTER TABLE events MODIFY COLUMN status ENUM\\('pending','approved','rejected','cancelled'\\) DEFAULT 'pending';\")",
+      "Bash(mysql -u root -p12345678 fjusa -e \"ALTER TABLE events MODIFY COLUMN status ENUM\\('pending','approved','rejected','cancelled'\\) DEFAULT 'pending';\")"
+    ]
+  }
+}

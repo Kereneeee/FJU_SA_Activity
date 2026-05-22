@@ -57,7 +57,7 @@ $stmt->close();
 // 為每個申請獲取器材詳情
 foreach ($applications as &$app) {
     // 獲取該活動的所有器材申請
-    $equipment_sql = "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity, eb.status, eb.review_note 
+    $equipment_sql = "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity
                       FROM equipment_borrow eb
                       LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                       WHERE eb.event_id = ?";
@@ -393,6 +393,31 @@ function getEquipmentStatusText($equipment_list) {
         .detail-value {
             color: #6b7280;
         }
+        .doc-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .doc-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            background: #fff5f7;
+            border: 1px solid #f3a0b0;
+            border-radius: 6px;
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .doc-link:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
         .application-actions {
             display: flex;
             gap: 0.5rem;
@@ -487,6 +512,7 @@ function getEquipmentStatusText($equipment_list) {
                     <button class="filter-tab" onclick="filterApplications('pending')">審核中</button>
                     <button class="filter-tab" onclick="filterApplications('approved')">已通過</button>
                     <button class="filter-tab" onclick="filterApplications('completed')">已完成</button>
+                    <button class="filter-tab" onclick="filterApplications('cancelled')">已取消</button>
                 </div>
 
                 <div id="applicationsList">
@@ -501,19 +527,16 @@ function getEquipmentStatusText($equipment_list) {
                         <?php foreach ($applications as $app): 
                             $event_status = $status_map[$app['status']] ?? '未知';
                             $event_status_class = $status_class_map[$app['status']] ?? 'status-pending';
-                            $equipment_status = getEquipmentStatusText($app['equipment_list']);
-                            $equipment_status_class = $app['equipment_list'] ? $status_class_map[getEquipmentStatusPriority($app['equipment_list'])] : '';
                             $has_equipment = !empty($app['equipment_list']);
+                            $equipment_status = $has_equipment ? $event_status : null;
+                            $equipment_status_class = $has_equipment ? $event_status_class : '';
                             
                             $filter_status = $app['status'];
-                            if ($has_equipment && getEquipmentStatusPriority($app['equipment_list']) === 'pending') {
-                                $filter_status = 'pending';
-                            }
                         ?>
                             <div class="application-card" data-status="<?php echo htmlspecialchars($filter_status); ?>">
                                 <div class="application-header">
                                     <div>
-                                        <div class="application-title"><?php echo htmlspecialchars($app['event_name']); ?></div>
+                                        <div class="application-title"><?php echo htmlspecialchars(!empty($app['event_name']) ? $app['event_name'] : (!empty($app['description']) ? $app['description'] : '（未命名申請）')); ?></div>
                                         <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'] ?? 'now')); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
                                     </div>
                                     <div class="status-boxes">
@@ -556,7 +579,28 @@ function getEquipmentStatusText($equipment_list) {
                                         <div class="detail-value"><?php echo htmlspecialchars($app['club_name']); ?></div>
                                     </div>
                                 </div>
-                                
+
+                                <?php
+                                $docs = [
+                                    'document_path'    => '活動申請單',
+                                    'venue_doc_path'   => '場地申請單',
+                                    'equipment_doc_path' => '器材借用單',
+                                ];
+                                $has_docs = false;
+                                foreach ($docs as $col => $_) { if (!empty($app[$col])) { $has_docs = true; break; } }
+                                ?>
+                                <?php if ($has_docs): ?>
+                                <div class="doc-links">
+                                    <?php foreach ($docs as $col => $label): ?>
+                                        <?php if (!empty($app[$col])): ?>
+                                        <a href="../document/<?php echo htmlspecialchars($app[$col]); ?>" target="_blank" class="doc-link">
+                                            <i class="bi bi-file-earmark-pdf-fill"></i> <?php echo $label; ?>
+                                        </a>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php endif; ?>
+
                                 <?php if ($has_equipment): ?>
                                 <div class="equipment-details">
                                     <div class="equipment-title">申請器材：</div>
@@ -565,9 +609,6 @@ function getEquipmentStatusText($equipment_list) {
                                         <div class="equipment-item">
                                             <span class="equipment-name"><?php echo htmlspecialchars($eq['name'] ?? '未知器材'); ?></span>
                                             <span class="equipment-quantity">× <?php echo intval($eq['quantity']); ?></span>
-                                            <span class="equipment-status-badge status-badge <?php echo $status_class_map[$eq['status']] ?? 'status-pending'; ?>">
-                                                <?php echo $status_map[$eq['status']] ?? '未知'; ?>
-                                            </span>
                                         </div>
                                         <?php endforeach; ?>
                                     </div>
@@ -586,6 +627,10 @@ function getEquipmentStatusText($equipment_list) {
                                             <?php else: ?>
                                                 申請已拒絕
                                             <?php endif; ?>
+                                        </span>
+                                    <?php elseif ($app['status'] === 'cancelled'): ?>
+                                        <span class="status-badge status-rejected" style="font-size: 0.9rem; padding: 0.4rem 1rem;">
+                                            <i class="bi bi-x-circle me-1"></i>已取消
                                         </span>
                                     <?php endif; ?>
                                 </div>
@@ -619,18 +664,7 @@ function getEquipmentStatusText($equipment_list) {
             const cards = document.querySelectorAll('.application-card');
             cards.forEach(card => {
                 const status = card.getAttribute('data-status');
-                
-                if (filter === 'all') {
-                    card.style.display = 'block';
-                } else if (filter === 'pending' && status === 'pending') {
-                    card.style.display = 'block';
-                } else if (filter === 'approved' && status === 'approved') {
-                    card.style.display = 'block';
-                } else if (filter === 'completed' && status === 'completed') {
-                    card.style.display = 'block';
-                } else {
-                    card.style.display = 'none';
-                }
+                card.style.display = (filter === 'all' || filter === status) ? 'block' : 'none';
             });
         }
 

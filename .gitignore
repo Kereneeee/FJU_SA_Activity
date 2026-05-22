@@ -1,0 +1,8 @@
+# 使用者上傳的文件
+document/*.pdf
+document/*.doc
+document/*.docx
+
+# 系統檔
+.DS_Store
+Thumbs.db
