@@ -2,7 +2,6 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
 require_once(__DIR__ . "/../DB/db_config.php");
 
 if (!isset($_SESSION['student_id'])) {
@@ -17,26 +16,20 @@ $user_id = $_SESSION['user_id'] ?? null;
 // 設置當前頁面用於側邊欄高亮
 $current_page = 'dashboard';
 
-// 獲取用戶的社團及幹部身分
-$is_officer = false;
-$current_club = null;
-$officer_title = null;
-
-// 獲取用戶的社團及幹部身分
-$is_officer = false;
+// 獲取用戶的社團及幹部身分（初始化變數）
 $current_club = $_SESSION['active_club_name'] ?? null;
 $officer_title = $_SESSION['active_position'] ?? null;
 
-// 1. 如果 Session 裡已經有身分了，直接設定 $is_officer 為 true
-if ($current_club) {
-    $is_officer = true;
-} 
-// 2. 如果 Session 是空的，且 user_id 存在，則去資料庫抓取預設身分
-elseif ($user_id) {
-    $club_sql = "SELECT r.*, c.club_name
-                 FROM user_club_roles r
-                 JOIN clubs c ON r.club_id = c.club_id
-                 WHERE r.user_id = ?
+// 【修正點 1】判斷是否為幹部：不能只看有沒有社團，必須看 active_position 是否有值
+$is_officer = !empty($_SESSION['active_position']);
+
+// 如果 Session 是空的，且 user_id 存在，則去資料庫抓取預設身分
+if (!$current_club && $user_id) {
+    // 【修正點 2】表名與欄位修正：根據前面的結構，使用者與社團關係在 club_members，而非 user_club_roles
+    $club_sql = "SELECT cm.*, c.club_name
+                 FROM club_members cm
+                 JOIN clubs c ON cm.club_id = c.club_id
+                 WHERE cm.user_id = ?
                  LIMIT 1";
     
     $club_stmt = $conn->prepare($club_sql);
@@ -48,15 +41,40 @@ elseif ($user_id) {
         if ($club_row = $club_result->fetch_assoc()) {
             // 設定變數供頁面顯示
             $current_club = $club_row['club_name'];
-            $officer_title = $club_row['position'];
-            $is_officer = true;
+            $officer_title = $club_row['is_officer'] ? ($club_row['officer_title'] ?: '幹部') : null;
+            $is_officer = !empty($officer_title);
 
-            // 同時存入 Session，下次就不用再查資料庫[cite: 2]
+            // 同時存入 Session，供各頁面同步狀態
             $_SESSION['active_club_id'] = $club_row['club_id'];
             $_SESSION['active_club_name'] = $club_row['club_name'];
-            $_SESSION['active_position'] = $club_row['position'];
+            $_SESSION['active_position'] = $officer_title;
         }
     }
+}
+
+// 獲取近期活動資料
+$activities = [];
+
+// 查詢 events、reservations 與 spaces，取得活動名稱、時間、狀態與場地名稱
+$activities_sql = "SELECT e.event_name, e.start_time, e.status, s.space_name
+                   FROM events e
+                   LEFT JOIN reservations r ON e.event_id = r.event_id
+                   LEFT JOIN spaces s ON r.space_id = s.space_id
+                   WHERE e.club_name = ?
+                   ORDER BY e.start_time DESC LIMIT 5";
+
+$act_stmt = $conn->prepare($activities_sql);
+if ($act_stmt) {
+    // 【關鍵修正】先用一個乾淨的變數接收值，再放入 bind_param 中傳遞引用，徹底解決 Fatal error
+    $search_club = $current_club ?: ''; 
+    
+    $act_stmt->bind_param("s", $search_club);
+    $act_stmt->execute();
+    $act_result = $act_stmt->get_result();
+    while ($row = $act_result->fetch_assoc()) {
+        $activities[] = $row;
+    }
+    $act_stmt->close(); // 養成好習慣關閉 statement
 }
 ?>
 
@@ -432,46 +450,58 @@ elseif ($user_id) {
             <div class="panel-row">
                 <section class="panel-full">
                     <h5>近期活動列表</h5>
-                    <div class="event-list">
-                        <?php if (empty($recent_events)): ?>
-                            <div class="event-card">
-                                <div class="title">目前尚無近期活動申請。</div>
-                            </div>
-                        <?php else: ?>
-                            <?php foreach ($recent_events as $event): ?>
-                                <?php 
-                                    // 格式化時間：如果是同天，後面只顯示時間
-                                    $start_date = date('m/d', strtotime($event['start_time']));
-                                    $end_date = date('m/d', strtotime($event['end_time']));
-                                    $start_time = date('H:i', strtotime($event['start_time']));
-                                    $end_time = date('H:i', strtotime($event['end_time']));
-                                    
-                                    // 判斷是否為全天活動（假設你的系統全天會設定為 00:00 到 23:59 或有特殊註記）
-                                    // 這裡示範標準格式：12/20 14:00-17:00
-                                    $time_display = ($start_date === $end_date) 
-                                        ? "{$start_date} {$start_time}-{$end_time}" 
-                                        : "{$start_date} {$start_time} - {$end_date} {$end_time}";
-                                ?>
-                                <div class="event-card">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            <div class="title"><?= htmlspecialchars($event['event_name']) ?></div>
-                                            <div class="meta">
-                                                <?= htmlspecialchars($time_display) ?> · <?= htmlspecialchars($event['space_name'] ?? '外校營地/未指定場地') ?>
-                                            </div>
-                                        </div>
-                                        <?php if ($event['status'] === 'approved'): ?>
-                                            <span class="status-pill status-approved">已核准</span>
-                                        <?php elseif ($event['status'] === 'pending' || $event['status'] === '審核中'): ?>
-                                            <span class="status-pill status-pending">審核中</span>
-                                        <?php else: ?>
-                                            <span class="status-pill status-alert">已駁回</span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light text-secondary">
+                                    <tr>
+                                        <th scope="col" style="width: 35%;">活動名稱</th>
+                                        <th scope="col" style="width: 25%;">時間</th>
+                                        <th scope="col" style="width: 25%;">場地</th>
+                                        <th scope="col" style="width: 15%;">狀態</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                <?php if (!empty($activities)): ?>
+                                    <?php foreach ($activities as $act): ?>
+                                        <tr>
+                                            <td class="fw-semibold text-dark">
+                                                <?php echo htmlspecialchars($act['event_name'] ?? '未命名活動'); ?>
+                                            </td>
+                                            <td class="text-secondary small">
+                                                <i class="bi bi-calendar3 me-1.5"></i>
+                                                <?php echo date('Y-m-d H:i', strtotime($act['start_time'])); ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-light text-dark border d-inline-flex align-items-center">
+                                                    <i class="bi bi-geo-alt-fill text-danger me-1"></i>
+                                                    <?php echo htmlspecialchars($act['space_name'] ?? '未指定場地'); ?>
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <?php 
+                                                $status = $act['status'] ?? 'pending';
+                                                if ($status === 'approved' || $status === '已通過' || $status === '通過') {
+                                                    echo '<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-check-circle-fill me-1"></i>已通過</span>';
+                                                } elseif ($status === 'rejected' || $status === '已拒絕' || $status === '拒絕') {
+                                                    echo '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-x-circle-fill me-1"></i>已拒絕</span>';
+                                                } else {
+                                                    echo '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-clock-history me-1"></i>審核中</span>';
+                                                }
+                                                ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted py-5">
+                                            <i class="bi bi-folder-x display-5 d-block mb-3 text-secondary" style="opacity: 0.5;"></i>
+                                            <span class="fs-6">目前切換的社團身分尚無申請中的近期活動。</span>
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
                 </section>
                 <section class="panel-full">
                     <h5>最新通知</h5>

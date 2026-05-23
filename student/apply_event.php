@@ -12,6 +12,17 @@ if (!isset($_SESSION['student_id'])) {
 $message = "";
 $message_type = "";
 
+// 檢查登入與權限（通常會在前面）
+if (!isset($_SESSION['student_id'])) {
+    header('Location: ../login.php');
+    exit();
+}
+
+// 【新增/確保】獲取當前身分的社團 ID 與名稱
+$active_club_id   = $_SESSION['active_club_id'] ?? '';
+$active_club_name = $_SESSION['active_club_name'] ?? '未指定社團';
+
+
 // 從資料庫獲取場地
 $sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available'";
 $result_spaces = $conn->query($sql_spaces);
@@ -576,9 +587,11 @@ function getEquipmentIcon($equipId) {
                                 <label for="event_name">活動名稱 *</label>
                                 <input type="text" id="event_name" name="event_name" class="form-control" required>
                             </div>
-                            <div class="form-group">
-                                <label for="club_name">主辦社團 *</label>
-                                <input type="text" id="club_name" name="club_name" class="form-control" required>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold text-secondary">主辦社團 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control bg-light" value="<?php echo htmlspecialchars($active_club_name); ?>" readonly>
+                                
+                                <input type="hidden" name="club_name" value="<?php echo htmlspecialchars($active_club_name); ?>">
                             </div>
                         </div>
 

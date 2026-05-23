@@ -61,22 +61,41 @@ if (isset($_SESSION['current_club_id'])) {
     $_SESSION['current_club_id'] = $current_club_id;
 }
 
+
 // 3. 處理身分切換
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'switch_club' && isset($_POST['club_id'])) {
-        $new_club_id = $_POST['club_id']; // 不要用 intval()，因為有英文字母
+        $new_club_id = $_POST['club_id']; 
         
-        // 修正：表名改為 club_members，型態改為 "is" (Integer, String)
-        $check_sql = "SELECT club_id FROM club_members WHERE user_id = ? AND club_id = ?";
+        // 【修正】除了驗證權限，順便把 c.club_name, cm.is_officer, cm.officer_title 撈出來
+        $check_sql = "SELECT cm.club_id, c.club_name, cm.is_officer, cm.officer_title 
+                      FROM club_members cm
+                      JOIN clubs c ON cm.club_id = c.club_id
+                      WHERE cm.user_id = ? AND cm.club_id = ?";
+                      
         $check_stmt = $conn->prepare($check_sql);
         if ($check_stmt) {
             $check_stmt->bind_param("is", $user_id, $new_club_id);
             $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
             
-            if ($check_stmt->get_result()->num_rows > 0) {
-                // 更新 Session 即可，若你有 user_current_role 表則繼續保留更新邏輯
+            if ($check_row = $check_result->fetch_assoc()) {
+                // 1. 保留原本 profile.php 自用的 current_club_id
                 $_SESSION['current_club_id'] = $new_club_id;
                 $current_club_id = $new_club_id;
+                
+                // 2. 【核心修復】同步更新 dashboard.php 所需的身分 Session
+                if ($check_row['is_officer'] == 1) {
+                    // 如果是幹部，寫入對應的社團名稱與職稱
+                    $_SESSION['active_club_id']   = $check_row['club_id'];
+                    $_SESSION['active_club_name'] = $check_row['club_name'];
+                    $_SESSION['active_position']  = $check_row['officer_title'] ?: '幹部';
+                } else {
+                    // 如果切換過去只是一般成員，要把幹部權限洗掉，以免保有上一個社團的幹部權限
+                    $_SESSION['active_club_id']   = $check_row['club_id'];
+                    $_SESSION['active_club_name'] = $check_row['club_name'];
+                    $_SESSION['active_position']  = null; 
+                }
                 
                 // 重新載入頁面以更新資料，防止 POST 重複提交
                 header("Location: " . $_SERVER['PHP_SELF']);
