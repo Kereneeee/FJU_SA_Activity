@@ -35,6 +35,17 @@ $result_recent = $conn->query($sql_recent);
 if ($result_recent) {
     $recent_events = $result_recent->fetch_all(MYSQLI_ASSOC);
 }
+
+// 獲取最新通知資料
+$notifications = [];
+$noti_sql = "SELECT title, content, type FROM notifications ORDER BY created_at DESC LIMIT 3";
+$noti_result = $conn->query($noti_sql);
+
+if ($noti_result) {
+    while ($row = $noti_result->fetch_assoc()) {
+        $notifications[] = $row;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -497,27 +508,32 @@ if ($result_recent) {
                 <section class="panel-full">
                     <h5>最新通知</h5>
                     <div class="notification-list">
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">系統維護提醒</div>
-                                <div class="meta">今晚 22:00-24:00 進行系統更新。</div>
+                        <?php if (!empty($notifications)): ?>
+                            <?php foreach ($notifications as $noti): ?>
+                                <div class="notification-card p-3 mb-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-start">
+                                    <div style="flex: 1; padding-right: 10px;">
+                                        <div class="title fw-bold text-dark mb-1"><?php echo htmlspecialchars($noti['title']); ?></div>
+                                        <div class="meta text-secondary small"><?php echo htmlspecialchars($noti['content']); ?></div>
+                                    </div>
+                                    <?php 
+                                    // 根據 type 顯示不同的 Badge 顏色與文字
+                                    $type = $noti['type'];
+                                    if ($type === 'update' || $type === '更新') {
+                                        echo '<span class="badge bg-success text-white px-2 py-1 small">更新</span>';
+                                    } elseif ($type === 'alert' || $type === '提醒' || $type === '緊急') {
+                                        echo '<span class="badge bg-danger text-white px-2 py-1 small">提醒</span>';
+                                    } else {
+                                        echo '<span class="badge bg-primary text-white px-2 py-1 small">新消息</span>';
+                                    }
+                                    ?>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-bell-slash display-6 d-block mb-2 opacity-50"></i>
+                                目前沒有新通知。
                             </div>
-                            <span class="badge badge-update text-white px-2 py-1">更新</span>
-                        </div>
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">申請通過通知</div>
-                                <div class="meta">您的「聖誕節慶祝會」申請已完成審核。</div>
-                            </div>
-                            <span class="badge badge-new text-white px-2 py-1">新消息</span>
-                        </div>
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">器材歸還提醒</div>
-                                <div class="meta">請於今日內歸還麥克風設備。</div>
-                            </div>
-                            <span class="badge badge-alert text-white px-2 py-1">提醒</span>
-                        </div>
+                        <?php endif; ?>
                     </div>
                 </section>
             </div>

@@ -76,6 +76,17 @@ if ($act_stmt) {
     }
     $act_stmt->close(); // 養成好習慣關閉 statement
 }
+
+// 獲取最新通知資料
+$notifications = [];
+$noti_sql = "SELECT title, content, type FROM notifications ORDER BY created_at DESC LIMIT 3";
+$noti_result = $conn->query($noti_sql);
+
+if ($noti_result) {
+    while ($row = $noti_result->fetch_assoc()) {
+        $notifications[] = $row;
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -450,83 +461,93 @@ if ($act_stmt) {
             <div class="panel-row">
                 <section class="panel-full">
                     <h5>近期活動列表</h5>
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0">
-                                <thead class="table-light text-secondary">
-                                    <tr>
-                                        <th scope="col" style="width: 35%;">活動名稱</th>
-                                        <th scope="col" style="width: 25%;">時間</th>
-                                        <th scope="col" style="width: 25%;">場地</th>
-                                        <th scope="col" style="width: 15%;">狀態</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                <?php if (!empty($activities)): ?>
-                                    <?php foreach ($activities as $act): ?>
-                                        <tr>
-                                            <td class="fw-semibold text-dark">
+                    <div class="event-list">
+                        <?php if (empty($activities)): ?>
+                            <div class="event-card p-3 border rounded-3 bg-white shadow-sm text-center text-muted">
+                                <i class="bi bi-folder-x display-6 d-block mb-2 opacity-50"></i>
+                                目前尚無近期活動申請。
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($activities as $act): ?>
+                                <?php 
+                                    // 格式化時間，轉換為 (例如：12/20 14:00)
+                                    $start_date = date('m/d', strtotime($act['start_time']));
+                                    $start_time = date('H:i', strtotime($act['start_time']));
+                                    
+                                    // 安全檢查：如果資料庫未來有撈 end_time 再行處理，否則預設以 start_time 為主
+                                    if (!empty($act['end_time'])) {
+                                        $end_date = date('m/d', strtotime($act['end_time']));
+                                        $end_time = date('H:i', strtotime($act['end_time']));
+                                        
+                                        $time_display = ($start_date === $end_date) 
+                                            ? "{$start_date} {$start_time}-{$end_time}" 
+                                            : "{$start_date} {$start_time} - {$end_date} {$end_time}";
+                                    } else {
+                                        $time_display = "{$start_date} {$start_time}";
+                                    }
+                                    
+                                    // 統一狀態標籤判斷
+                                    $status = $act['status'] ?? 'pending';
+                                    $is_approved = in_array($status, ['approved', '已通過', '通過']);
+                                    $is_rejected = in_array($status, ['rejected', '已拒絕', '拒絕', '已駁回']);
+                                ?>
+                                <div class="event-card p-3 mb-2 border rounded-3 bg-white shadow-sm">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div style="flex: 1; padding-right: 15px;">
+                                            <div class="title fw-bold text-dark mb-1" style="font-size: 0.95rem;">
                                                 <?php echo htmlspecialchars($act['event_name'] ?? '未命名活動'); ?>
-                                            </td>
-                                            <td class="text-secondary small">
-                                                <i class="bi bi-calendar3 me-1.5"></i>
-                                                <?php echo date('Y-m-d H:i', strtotime($act['start_time'])); ?>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-light text-dark border d-inline-flex align-items-center">
-                                                    <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-                                                    <?php echo htmlspecialchars($act['space_name'] ?? '未指定場地'); ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <?php 
-                                                $status = $act['status'] ?? 'pending';
-                                                if ($status === 'approved' || $status === '已通過' || $status === '通過') {
-                                                    echo '<span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-check-circle-fill me-1"></i>已通過</span>';
-                                                } elseif ($status === 'rejected' || $status === '已拒絕' || $status === '拒絕') {
-                                                    echo '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-x-circle-fill me-1"></i>已拒絕</span>';
-                                                } else {
-                                                    echo '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2.5 py-1.5 d-inline-flex align-items-center"><i class="bi bi-clock-history me-1"></i>審核中</span>';
-                                                }
-                                                ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="4" class="text-center text-muted py-5">
-                                            <i class="bi bi-folder-x display-5 d-block mb-3 text-secondary" style="opacity: 0.5;"></i>
-                                            <span class="fs-6">目前切換的社團身分尚無申請中的近期活動。</span>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
+                                            </div>
+                                            <div class="meta text-secondary small">
+                                                <i class="bi bi-calendar3 me-1"></i><?php echo htmlspecialchars($time_display); ?> 
+                                                <span class="mx-1.5 text-muted">·</span> 
+                                                <i class="bi bi-geo-alt-fill text-danger me-1"></i><?php echo htmlspecialchars($act['space_name'] ?? '外校營地/未指定場地'); ?>
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <?php if ($is_approved): ?>
+                                                <span class="status-pill status-approved">已核准</span>
+                                            <?php elseif ($is_rejected): ?>
+                                                <span class="status-pill status-alert">已駁回</span>
+                                            <?php else: ?>
+                                                <span class="status-pill status-pending">審核中</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
                 </section>
                 <section class="panel-full">
                     <h5>最新通知</h5>
                     <div class="notification-list">
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">系統維護提醒</div>
-                                <div class="meta">今晚 22:00-24:00 進行系統更新。</div>
+                        <?php if (!empty($notifications)): ?>
+                            <?php foreach ($notifications as $noti): ?>
+                                <div class="notification-card p-3 mb-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-start">
+                                    <div style="flex: 1; padding-right: 10px;">
+                                        <div class="title fw-bold text-dark mb-1"><?php echo htmlspecialchars($noti['title']); ?></div>
+                                        <div class="meta text-secondary small"><?php echo htmlspecialchars($noti['content']); ?></div>
+                                    </div>
+                                    <?php 
+                                    // 根據 type 顯示不同的 Badge 顏色與文字
+                                    $type = $noti['type'];
+                                    if ($type === 'update' || $type === '更新') {
+                                        echo '<span class="badge bg-success text-white px-2 py-1 small">更新</span>';
+                                    } elseif ($type === 'alert' || $type === '提醒' || $type === '緊急') {
+                                        echo '<span class="badge bg-danger text-white px-2 py-1 small">提醒</span>';
+                                    } else {
+                                        echo '<span class="badge bg-primary text-white px-2 py-1 small">新消息</span>';
+                                    }
+                                    ?>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-bell-slash display-6 d-block mb-2 opacity-50"></i>
+                                目前沒有新通知。
                             </div>
-                            <span class="badge badge-update text-white px-2 py-1">更新</span>
-                        </div>
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">申請通過通知</div>
-                                <div class="meta">您的「聖誕節慶祝會」申請已完成審核。</div>
-                            </div>
-                            <span class="badge badge-new text-white px-2 py-1">新消息</span>
-                        </div>
-                        <div class="notification-card">
-                            <div>
-                                <div class="title">器材歸還提醒</div>
-                                <div class="meta">請於今日內歸還麥克風設備。</div>
-                            </div>
-                            <span class="badge badge-alert text-white px-2 py-1">提醒</span>
-                        </div>
+                        <?php endif; ?>
                     </div>
                 </section>
             </div>
