@@ -84,12 +84,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['eve
             }
 
             if ($ok) {
+                // 預設為無保留紀錄
+                $hasReservation = false;
+                $reservation_id = null;
                 $stmt = $conn->prepare("SELECT reservation_id FROM reservations WHERE event_id = ?");
                 if ($stmt) {
                     $stmt->bind_param("i", $event_id);
                     $stmt->execute();
                     $stmt->bind_result($reservation_id);
-                    $hasReservation = $stmt->fetch();
+                    if ($stmt->fetch()) {
+                        $hasReservation = true;
+                    } else {
+                        $reservation_id = null;
+                    }
                     $stmt->close();
                 }
 
@@ -293,6 +300,21 @@ foreach ($events as $e) {
             background: transparent;
             padding: 0;
         }
+        .top-navbar .user-card {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+        .user-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+        }
         .dashboard-grid {
             padding: 1.5rem 2rem 2rem;
         }
@@ -471,10 +493,11 @@ foreach ($events as $e) {
                 </ol>
                 <h4 class="mt-2 mb-0">活動管理</h4>
             </div>
-            <div class="d-flex align-items-center gap-3" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
-                <span class="text-muted"><?php echo htmlspecialchars($user_name); ?></span>
-                <div class="user-avatar" style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">
-                    <?php echo substr($user_name, 0, 1); ?>
+            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
+                <div class="user-avatar"><?= htmlspecialchars(substr($user_name, 0, 1)) ?></div>
+                <div>
+                    <div><?= htmlspecialchars($user_name) ?></div>
+                    <small class="text-muted">管理員</small>
                 </div>
             </div>
         </header>

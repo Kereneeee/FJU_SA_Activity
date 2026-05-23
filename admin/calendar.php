@@ -228,6 +228,8 @@ if ($stmt) {
         .main-content { margin-left: 260px; min-height: 100vh; transition: margin-left 0.25s ease; }
         .top-navbar { background: white; border-bottom: 1px solid #e9ecef; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
         .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
+        .top-navbar .user-card { display: flex; align-items: center; gap: 0.85rem; }
+        .user-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: white; display: grid; place-items: center; font-weight: 700; }
         .content-wrapper { padding: 1.5rem 2rem 2rem; }
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .card h3 { margin-bottom: 1rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }

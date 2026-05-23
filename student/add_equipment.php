@@ -203,25 +203,48 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             // ---- 驗證全數通過，開始進行資料庫操作 ----
             $conn->begin_transaction();
 
-            // 雙狀態框修正：更新原活動的 equipment_doc_path，不建立新 events 紀錄
-            $update_event_sql = "UPDATE events SET equipment_doc_path = ? WHERE event_id = ?";
-            $update_event_stmt = $conn->prepare($update_event_sql);
-            if (!$update_event_stmt) {
-                throw new Exception('更新活動器材單據失敗：' . $conn->error);
+            // 🟢 核心修正：建立新的 event 紀錄（追加申請），而不是更新原活動
+            // 新記錄中必須寫入 original_event_id（指向原活動）
+            
+            $original_event_id = intval($event_id);
+            $new_event_name = $event_info['event_name'];
+            $new_club_name = $event_info['club_name'];
+            $new_start_time = $event_info['start_time'];
+            $new_end_time = $event_info['end_time'];
+            $new_status = 'pending';
+            
+            // 插入新的追加申請 event 紀錄
+            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, equipment_doc_path, start_time, end_time, status, original_event_id) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $insert_event_stmt = $conn->prepare($insert_event_sql);
+            if (!$insert_event_stmt) {
+                throw new Exception('建立追加申請紀錄失敗：' . $conn->error);
             }
-            $update_event_stmt->bind_param("si", $equipment_doc_filename, $event_id);
-            if (!$update_event_stmt->execute()) {
-                throw new Exception('更新活動器材單據失敗：' . $update_event_stmt->error);
+            
+            $description = '追加器材申請';
+            $insert_event_stmt->bind_param(
+                "issssssi",
+                $user_id,
+                $new_event_name,
+                $new_club_name,
+                $description,
+                $equipment_doc_filename,
+                $new_start_time,
+                $new_end_time,
+                $new_status,
+                $original_event_id
+            );
+            
+            if (!$insert_event_stmt->execute()) {
+                throw new Exception('建立追加申請紀錄失敗：' . $insert_event_stmt->error);
             }
-            $update_event_stmt->close();
-
-            // 雙狀態框修正：寫入前先清理舊的器材借用明細
-            $delete_old_sql = "DELETE FROM equipment_borrow WHERE event_id = ?";
-            $delete_old_stmt = $conn->prepare($delete_old_sql);
-            if ($delete_old_stmt) {
-                $delete_old_stmt->bind_param("i", $event_id);
-                $delete_old_stmt->execute();
-                $delete_old_stmt->close();
+            
+            // 取得新建立的 event_id
+            $new_event_id = $conn->insert_id;
+            $insert_event_stmt->close();
+            
+            if ($new_event_id <= 0) {
+                throw new Exception('無法獲取新建立的申請 ID');
             }
 
             // 🟢 核心修正 2：將不可用的 status 欄位完全從 SQL 語法中移除，精準對應你的實體資料表欄位 (event_id, equipment_id, quantity)
@@ -235,8 +258,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
-                    // 僅綁定 3 個參數，與上方 SQL 完美對齊
-                    $insert_stmt->bind_param("iii", $event_id, $equip_id, $quantity);
+                    // 僅綁定 3 個參數，與上方 SQL 完美對齊，使用新建立的 event_id
+                    $insert_stmt->bind_param("iii", $new_event_id, $equip_id, $quantity);
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
                     }

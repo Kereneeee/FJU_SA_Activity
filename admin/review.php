@@ -101,13 +101,18 @@ if ($event_id > 0) {
     if ($detail_event) {
         $has_activity = trim($detail_event['event_name']) !== '' || trim($detail_event['club_name']) !== '';
         $has_equipment = !empty($detail_equipment);
+        $has_original_event = !empty($detail_event['original_event_id']);
 
-        if ($has_activity && $has_equipment) {
-            $detail_event['case_type'] = '活動申請+器材借用';
-        } elseif ($has_activity) {
-            $detail_event['case_type'] = '活動申請';
-        } elseif ($has_equipment) {
+        // 🟢 【修改】新的分類邏輯：根據 original_event_id 和器材相關欄位判斷案件類型
+        if ($has_original_event) {
+            // 【器材申請】標籤：status = 'pending' AND original_event_id IS NOT NULL
             $detail_event['case_type'] = '器材申請';
+        } elseif ($has_activity && $has_equipment) {
+            // 【活動+器材申請】標籤：status = 'pending' AND original_event_id IS NULL AND 有器材相關欄位
+            $detail_event['case_type'] = '活動+器材申請';
+        } elseif ($has_activity) {
+            // 【活動申請】標籤：status = 'pending' AND original_event_id IS NULL AND 沒有器材相關欄位
+            $detail_event['case_type'] = '活動申請';
         } else {
             $detail_event['case_type'] = '一般申請';
         }
@@ -142,15 +147,20 @@ if ($event_id === 0) {
     if ($result_pending) {
         $pending_events = $result_pending->fetch_all(MYSQLI_ASSOC);
         foreach ($pending_events as &$ev) {
-            $has_activity = trim($ev['event_name']) !== '' || trim($ev['club_name']) !== '';
+            // 🟢 【修改】新的分類邏輯：根據 original_event_id 和器材相關欄位判斷案件類型
+            $has_activity = (trim($ev['event_name']) !== '' || trim($ev['club_name']) !== '');
             $has_equipment = intval($ev['equipment_count']) > 0;
+            $has_original_event = !empty($ev['original_event_id']);
 
-            if ($has_activity && $has_equipment) {
-                $ev['case_type'] = '活動申請+器材借用';
-            } elseif ($has_activity) {
-                $ev['case_type'] = '活動申請';
-            } elseif ($has_equipment) {
+            if ($has_original_event) {
+                // 【器材申請】標籤：status = 'pending' AND original_event_id IS NOT NULL
                 $ev['case_type'] = '器材申請';
+            } elseif ($has_activity && $has_equipment) {
+                // 【活動+器材申請】標籤：status = 'pending' AND original_event_id IS NULL AND 有器材相關欄位
+                $ev['case_type'] = '活動+器材申請';
+            } elseif ($has_activity) {
+                // 【活動申請】標籤：status = 'pending' AND original_event_id IS NULL AND 沒有器材相關欄位
+                $ev['case_type'] = '活動申請';
             } else {
                 $ev['case_type'] = '一般申請';
             }
@@ -165,7 +175,7 @@ if ($event_id === 0) {
                 } elseif ($filter_type === '器材申請') {
                     return $ev['case_type'] === '器材申請';
                 } elseif ($filter_type === '活動+器材申請') {
-                    return $ev['case_type'] === '活動申請+器材借用';
+                    return $ev['case_type'] === '活動+器材申請';
                 }
                 return true;
             });
@@ -264,6 +274,8 @@ if ($event_id === 0) {
         .main-content { margin-left: 260px; min-height: 100vh; transition: margin-left 0.25s ease; }
         .top-navbar { background: white; border-bottom: 1px solid #e9ecef; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
         .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
+        .top-navbar .user-card { display: flex; align-items: center; gap: 0.85rem; }
+        .user-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: white; display: grid; place-items: center; font-weight: 700; }
         .content-wrapper { padding: 1.5rem 2rem 2rem; }
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; font-weight: 700; color: var(--primary); margin-bottom: 1rem; }
@@ -482,7 +494,7 @@ if ($event_id === 0) {
                                     <?= $detail_event['status'] === 'pending' ? '待審核' : ($detail_event['status'] === 'approved' ? '已通過' : '已駁回') ?>
                                 </span>
                                 <div style="margin-top:0.75rem;">
-                                    <span class="case-tag <?= $detail_event['case_type'] === '活動申請+器材借用' ? 'activity-equip' : ($detail_event['case_type'] === '活動申請' ? 'activity' : ($detail_event['case_type'] === '器材申請' ? 'equipment' : '')) ?>">
+                                    <span class="case-tag <?= $detail_event['case_type'] === '活動+器材申請' ? 'activity-equip' : ($detail_event['case_type'] === '活動申請' ? 'activity' : ($detail_event['case_type'] === '器材申請' ? 'equipment' : '')) ?>">
                                         <?= htmlspecialchars($detail_event['case_type'] ?? '一般申請') ?>
                                     </span>
                                 </div>
@@ -610,7 +622,7 @@ if ($event_id === 0) {
                                     <?php foreach ($pending_events as $ev): ?>
                                         <tr>
                                             <td>
-                                                <span class="case-tag <?= $ev['case_type'] === '活動申請+器材借用' ? 'activity-equip' : ($ev['case_type'] === '活動申請' ? 'activity' : ($ev['case_type'] === '器材申請' ? 'equipment' : '')) ?>">
+                                                <span class="case-tag <?= $ev['case_type'] === '活動+器材申請' ? 'activity-equip' : ($ev['case_type'] === '活動申請' ? 'activity' : ($ev['case_type'] === '器材申請' ? 'equipment' : '')) ?>">
                                                     <?= htmlspecialchars($ev['case_type']) ?>
                                                 </span>
                                             </td>
