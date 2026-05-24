@@ -594,7 +594,7 @@ if ($event_id === 0) {
                             <a href="review.php?filter=器材申請" class="btn btn-sm <?= $filter_type === '器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
                                 <i class="bi bi-tools"></i> 器材申請
                             </a>
-                            <a href="review.php?filter=活動+器材申請" class="btn btn-sm <?= $filter_type === '活動+器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                            <a href="review.php?filter=活動%2B器材申請" class="btn btn-sm <?= $filter_type === '活動+器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
                                 <i class="bi bi-collection"></i> 活動+器材申請
                             </a>
                         </div>

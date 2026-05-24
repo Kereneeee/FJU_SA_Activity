@@ -1,4 +1,6 @@
 <?php
+session_start();
+
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -12,10 +14,21 @@ if (!isset($_SESSION['student_id'])) {
 $message = "";
 $message_type = "";
 
-// 檢查登入與權限（通常會在前面）
-if (!isset($_SESSION['student_id'])) {
-    header('Location: ../login.php');
-    exit();
+// 確保 user_id 從 session 中正確獲取，如果沒有則從數據庫查詢
+$user_id = $_SESSION['user_id'] ?? null;
+
+// 如果 session 中沒有 user_id，嘗試從 student_id（email）查詢
+if (!$user_id && isset($_SESSION['student_id'])) {
+    $user_sql = "SELECT user_id FROM users WHERE email = ?";
+    $user_stmt = $conn->prepare($user_sql);
+    $user_stmt->bind_param("s", $_SESSION['student_id']);
+    $user_stmt->execute();
+    $user_result = $user_stmt->get_result();
+    if ($user_result && $user_result->num_rows > 0) {
+        $user_row = $user_result->fetch_assoc();
+        $user_id = $user_row['user_id'];
+    }
+    $user_stmt->close();
 }
 
 // 【新增/確保】獲取當前身分的社團 ID 與名稱
@@ -124,7 +137,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $event_start = $event_date . " " . $start_time . ":00";
         $event_end = $event_date . " " . $end_time . ":00";   
         $venue_id = intval($venue_id);
-        $user_id = $_SESSION['user_id'] ?? null; // 注意：確認你的 session 鍵名是 user_id 還是 student_id
         $empty_note = ""; 
         
         if (!$user_id) throw new Exception("登入逾時，請重新登入。");
@@ -155,25 +167,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // 依照你的 SQL 結構，最穩定的 INSERT 寫法
             $sql_event = "INSERT INTO events (
                 user_id, event_name, club_name, description, 
-                start_time, end_time, document_path, venue_doc_path, equipment_doc_path, 
-                review_note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                start_time, end_time, document_path, venue_doc_path, equipment_doc_path,
+                status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
 
             $stmt_event = $conn->prepare($sql_event);
             if (!$stmt_event) { throw new Exception("SQL 準備失敗: " . $conn->error); }
 
-            // 綁定 10 個參數: i + 9個s
-            $stmt_event->bind_param("isssssssss", 
-                $user_id,                               // 1
-                $event_name,                            // 2
-                $club_name,                             // 3
-                $description,                           // 4
-                $event_start,                           // 5
-                $event_end,                             // 6
-                $uploaded_filenames['event_document'],  // 7 (活動單檔名)
-                $uploaded_filenames['venue_document'],  // 8 (場地單檔名)
-                $uploaded_filenames['equipment_document'], // 9 (器材單檔名，可為 null)
-                $empty_note                             // 10
+            // 修正：綁定 9 個參數，並移除未定義變數與多餘參數
+            $stmt_event->bind_param("issssssss", 
+                $user_id,
+                $event_name,
+                $club_name,
+                $description,
+                $event_start,
+                $event_end,
+                $uploaded_filenames['event_document'],
+                $uploaded_filenames['venue_document'],
+                $uploaded_filenames['equipment_document']
             );
 
             if (!$stmt_event->execute()) { throw new Exception("活動記錄插入失敗: " . $stmt_event->error); }
@@ -195,32 +206,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             // 處理器材選擇
             if (isset($_POST['equipment']) && is_array($_POST['equipment'])) {
-                // 嘗試使用新的字段，如果失敗則使用舊字段
                 $stmt_borrow = $conn->prepare(
-                    "INSERT INTO equipment_borrow (event_id, equipment_id, quantity, status, created_at) 
-                     VALUES (?, ?, ?, 'pending', NOW())"
+                    "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)"
                 );
-                
                 if (!$stmt_borrow) {
-                    // 如果新字段不存在，使用舊的 INSERT 語句
-                    $stmt_borrow = $conn->prepare(
-                        "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) 
-                         VALUES (?, ?, ?)"
-                    );
+                    throw new Exception("器材借用記錄準備失敗: " . $conn->error);
                 }
-                
+
                 foreach ($_POST['equipment'] as $equip_id => $quantity) {
                     $quantity = intval($quantity);
                     if ($quantity > 0) {
-                        // 使用 equipment_id 查詢器材
+                        $equip_id = intval($equip_id);
                         $stmt_borrow->bind_param("iii", $event_id, $equip_id, $quantity);
-                        
                         if (!$stmt_borrow->execute()) {
                             throw new Exception("器材借用記錄插入失敗: " . $stmt_borrow->error);
                         }
                     }
                 }
-                
+
                 $stmt_borrow->close();
             }
             

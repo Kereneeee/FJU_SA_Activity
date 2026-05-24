@@ -223,7 +223,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             
             $description = '追加器材申請';
             $insert_event_stmt->bind_param(
-                "issssssi",
+                "isssssssi",
                 $user_id,
                 $new_event_name,
                 $new_club_name,
