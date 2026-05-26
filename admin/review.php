@@ -206,6 +206,7 @@ if ($event_id === 0) {
         }
         * { box-sizing: border-box; }
         html { overflow-y: scroll; }
+        body.modal-open { padding-right: 0 !important; }
 
         body {
             margin: 0;

@@ -75,6 +75,7 @@ $conflicts = $fc_manager->getConflictsBySettingId($setting_id);
         }
         * { box-sizing: border-box; }
         html { overflow-y: scroll; }
+        body.modal-open { padding-right: 0 !important; }
 
         body {
             margin: 0;
@@ -95,6 +96,31 @@ $conflicts = $fc_manager->getConflictsBySettingId($setting_id);
             overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
+        }
+        .sidebar .brand { text-align: center; margin-bottom: 1.5rem; }
+        .sidebar .brand h4 { margin: 0; font-size: 1.1rem; line-height: 1.4; font-weight: 700; }
+        .sidebar .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: rgba(255,255,255,0.9);
+            padding: 0.85rem 1rem;
+            margin: 0.2rem 0;
+            border-radius: 16px;
+            transition: background 0.25s ease, transform 0.15s ease;
+            text-decoration: none;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.12);
+            color: #ffffff;
+            transform: translateX(4px);
+        }
+        .sidebar .nav-link i { font-size: 1.1rem; }
+        .sidebar .sidebar-section {
+            padding: 1rem 0.5rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.12);
         }
         .main-content {
             margin-left: 260px;
@@ -146,6 +172,10 @@ $conflicts = $fc_manager->getConflictsBySettingId($setting_id);
         }
         .status-unresolved { background: #fee2e2; color: #7f1d1d; }
         .status-resolved { background: #d1fae5; color: #065f46; }
+        @media (max-width: 768px) {
+            .main-content { margin-left: 0; }
+            .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
+        }
     </style>
 </head>
 <body>

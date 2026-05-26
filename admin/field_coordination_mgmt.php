@@ -134,6 +134,7 @@ $active_setting = $fc_manager->getActiveSettings();
         }
         * { box-sizing: border-box; }
         html { overflow-y: scroll; }
+        body.modal-open { padding-right: 0 !important; }
 
         body {
             margin: 0;
@@ -180,6 +181,12 @@ $active_setting = $fc_manager->getActiveSettings();
             background: rgba(255,255,255,0.12);
             color: #ffffff;
             transform: translateX(4px);
+        }
+        .sidebar .nav-link i { font-size: 1.1rem; }
+        .sidebar .sidebar-section {
+            padding: 1rem 0.5rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.12);
         }
         .main-content {
             margin-left: 260px;
@@ -231,7 +238,7 @@ $active_setting = $fc_manager->getActiveSettings();
             border-radius: 12px;
             overflow: hidden;
         }
-        @media (max-width: 1100px) {
+        @media (max-width: 768px) {
             .main-content { margin-left: 0; }
         }
     </style>

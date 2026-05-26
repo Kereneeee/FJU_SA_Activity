@@ -271,8 +271,8 @@ if ($stmt) {
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
         .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
         .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
-        @media (max-width: 1100px) { .main-content { margin-left: 0; } }
         @media (max-width: 768px) {
+            .main-content { margin-left: 0; }
             .filter-row { grid-template-columns: 1fr; }
             .calendar-grid { grid-template-columns: repeat(2, 1fr); }
             .slot-row { grid-template-columns: 1fr; }

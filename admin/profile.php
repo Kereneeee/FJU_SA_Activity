@@ -141,7 +141,7 @@ $stmt->close();
             margin: 2rem auto;
             padding: 0 2rem;
         }
-        @media (max-width: 1100px) { .main-content { margin-left: 0; } }
+        @media (max-width: 768px) { .main-content { margin-left: 0; } }
 
         .profile-card {
             background: white;

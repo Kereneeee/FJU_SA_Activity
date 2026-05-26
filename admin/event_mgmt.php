@@ -458,9 +458,9 @@ foreach ($events as $e) {
         }
         @media (max-width: 1100px) {
             .summary-row { grid-template-columns: repeat(2, 1fr); }
-            .main-content { margin-left: 0; }
         }
         @media (max-width: 768px) {
+            .main-content { margin-left: 0; }
             .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
             .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
             .summary-row { grid-template-columns: 1fr; }
