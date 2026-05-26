@@ -17,6 +17,12 @@ $message_type = "";
 $user_id = $_SESSION['user_id'] ?? null;
 $field_coordination_results = [];
 $fc_manager = null;
+$prefill_event_name = '';
+$prefill_club_name = '';
+$prefill_event_date = '';
+$prefill_start_time = '';
+$prefill_end_time = '';
+$prefill_venue_id = '';
 if ($user_id) {
     $fc_manager = new FieldCoordinationManager($conn);
     $club_sql = "SELECT cm.club_id, c.club_name
@@ -583,8 +589,6 @@ function getEquipmentIcon($equipId) {
             </div>
             <?php endif; ?>
 
-<<<<<<< Updated upstream
-=======
             <?php if (!empty($field_coordination_results)): ?>
             <div class="card">
                 <h3><i class="bi bi-check-circle"></i> 場協登記結果選擇</h3>
@@ -617,7 +621,6 @@ function getEquipmentIcon($equipId) {
             </div>
             <?php endif; ?>
 
->>>>>>> Stashed changes
             <form method="POST" id="applicationForm" enctype="multipart/form-data">
                 <!-- 基本資訊 -->
                 <div class="card">
@@ -628,17 +631,9 @@ function getEquipmentIcon($equipId) {
                                 <label for="event_name">活動名稱 *</label>
                                 <input type="text" id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_POST['event_name'] ?? $prefill_event_name, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
-<<<<<<< Updated upstream
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label fw-bold text-secondary">主辦社團 <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control bg-light" value="<?php echo htmlspecialchars($active_club_name); ?>" readonly>
-                                
-                                <input type="hidden" name="club_name" value="<?php echo htmlspecialchars($active_club_name); ?>">
-=======
                             <div class="form-group">
                                 <label for="club_name">主辦社團 *</label>
                                 <input type="text" id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_POST['club_name'] ?? $prefill_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
->>>>>>> Stashed changes
                             </div>
                         </div>
 

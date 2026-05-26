@@ -37,6 +37,11 @@ if ($logoutHref === '') {
         <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="field_coord.php">
             <i class="bi bi-people"></i> 場地協調
         </a>
+        <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+        <a class="nav-link <?php echo ($current_page === 'field_coordination_mgmt') ? 'active' : ''; ?>" href="field_coordination_mgmt.php">
+            <i class="bi bi-people-fill"></i> 場協登記管理
+        </a>
+        <?php endif; ?>
         <a class="nav-link <?php echo ($current_page === 'my_applications') ? 'active' : ''; ?>" href="my_applications.php">
             <i class="bi bi-card-list"></i> 我的申請
         </a>
