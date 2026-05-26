@@ -2,8 +2,8 @@
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
 if (!isset($_SESSION['student_id'])) {
     header('Location: ../login.php');
@@ -12,6 +12,12 @@ if (!isset($_SESSION['student_id'])) {
 
 // 設置當前頁面用於側邊欄高亮
 $current_page = 'field_coord';
+
+// 初始化場協管理器
+$fc_manager = new FieldCoordinationManager($conn);
+$active_setting = $fc_manager->getActiveSettings();
+$is_in_registration_period = $fc_manager->isInRegistrationPeriod();
+$has_meeting_passed = $fc_manager->hasCoordinationMeetingPassed();
 
 $message = '';
 $message_type = '';
@@ -80,6 +86,13 @@ foreach ($buildings as $building) {
 
 $selected_club_name = $_SESSION['active_club_name'] ?? '';
 $user_id = $_SESSION['user_id'] ?? null;
+$student_id_value = null;
+if ($user_id) {
+    $student_id_value = $fc_manager->getStudentIdByUserId($user_id);
+    if (!$student_id_value) {
+        $student_id_value = $user_id;
+    }
+}
 
 if (empty($selected_club_name) && $user_id) {
     $club_sql = "SELECT c.club_name
@@ -100,54 +113,63 @@ if (empty($selected_club_name) && $user_id) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
-    $event_name = trim($_POST['event_name'] ?? '');
-    $club_name = trim($_POST['club_name'] ?? $selected_club_name);
-    $activity_purpose = trim($_POST['activity_purpose'] ?? '');
-    $event_date = trim($_POST['event_date'] ?? '');
-    $start_time = trim($_POST['start_time'] ?? '');
-    $end_time = trim($_POST['end_time'] ?? '');
-    $repeat_type = $_POST['repeat_type'] ?? 'none';
-    $repeat_weekday = $_POST['repeat_weekday'] ?? '';
-    $repeat_weeks = intval($_POST['repeat_weeks'] ?? 1);
-    $space_ids = $_POST['space_ids'] ?? [];
-    $description = trim($_POST['description'] ?? '');
+    // 檢查是否已過協調大會（在非場協期間）
+    if (!$is_in_registration_period && $has_meeting_passed) {
+        $message_type = 'error';
+        $message = '❌ 場地協調大會已結束。此後場地申請採用先到先得制，請改用常規場地申請功能。';
+    } else if (!$active_setting) {
+        $message_type = 'error';
+        $message = '❌ 目前不在場協登記期間。請等待下一個場協登記期間。';
+    } else {
+        $event_name = trim($_POST['event_name'] ?? '');
+        $club_name = trim($_POST['club_name'] ?? $selected_club_name);
+        $activity_purpose = trim($_POST['activity_purpose'] ?? '');
+        $event_date = trim($_POST['event_date'] ?? '');
+        $start_time = trim($_POST['start_time'] ?? '');
+        $end_time = trim($_POST['end_time'] ?? '');
+        $repeat_type = $_POST['repeat_type'] ?? 'none';
+        $repeat_weekday = $_POST['repeat_weekday'] ?? '';
+        $repeat_weeks = intval($_POST['repeat_weeks'] ?? 1);
+        $space_ids = $_POST['space_ids'] ?? [];
+        $description = trim($_POST['description'] ?? '');
+        $acknowledged_conflicts = isset($_POST['acknowledged_conflicts']) ? intval($_POST['acknowledged_conflicts']) : 0;
 
-    $errors = [];
-    if (empty($event_name)) {
-        $errors[] = '請填寫活動名稱';
-    }
-    if (empty($club_name)) {
-        $errors[] = '請填寫社團名稱';
-    }
-    if (empty($event_date)) {
-        $errors[] = '請選擇活動日期';
-    }
-    if (empty($start_time) || empty($end_time)) {
-        $errors[] = '請選擇完整的開始與結束時間';
-    }
-    if ($start_time >= $end_time) {
-        $errors[] = '結束時間必須晚於開始時間';
-    }
-    if (empty($space_ids) || !is_array($space_ids)) {
-        $errors[] = '請至少選擇一個場地';
-    }
-    if ($repeat_type === 'weekly') {
-        if ($repeat_weekday === '') {
-            $errors[] = '請選擇每週重複的星期日';
+        $errors = [];
+        if (empty($event_name)) {
+            $errors[] = '請填寫活動名稱';
         }
-        if ($repeat_weeks < 1) {
-            $errors[] = '請輸入正確的重複週數';
+        if (empty($club_name)) {
+            $errors[] = '請填寫社團名稱';
         }
-    }
+        if (empty($event_date)) {
+            $errors[] = '請選擇活動日期';
+        }
+        if (empty($start_time) || empty($end_time)) {
+            $errors[] = '請選擇完整的開始與結束時間';
+        }
+        if ($start_time >= $end_time) {
+            $errors[] = '結束時間必須晚於開始時間';
+        }
+        if (empty($space_ids) || !is_array($space_ids)) {
+            $errors[] = '請至少選擇一個場地';
+        }
+        if ($repeat_type === 'weekly') {
+            if ($repeat_weekday === '') {
+                $errors[] = '請選擇每週重複的星期日';
+            }
+            if ($repeat_weeks < 1) {
+                $errors[] = '請輸入正確的重複週數';
+            }
+        }
 
-    if (empty($errors)) {
+        // 先計算登記事件的所有發生日期，用於後續驗證與衝突檢查
         $occurrence_dates = [$event_date];
         if ($repeat_type === 'weekly') {
             $weekday = intval($repeat_weekday);
-            $start_date = new DateTime($event_date);
-            $start_weekday = intval($start_date->format('N')) - 1;
+            $start_date_obj = new DateTime($event_date);
+            $start_weekday = intval($start_date_obj->format('N')) - 1;
             $days_until = ($weekday - $start_weekday + 7) % 7;
-            $first_date = clone $start_date;
+            $first_date = clone $start_date_obj;
             if ($days_until > 0) {
                 $first_date->modify("+{$days_until} days");
             }
@@ -161,72 +183,166 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             }
         }
 
-        $event_start = $occurrence_dates[0] . ' ' . $start_time . ':00';
-        $event_end = $occurrence_dates[0] . ' ' . $end_time . ':00';
+        if (empty($errors) && $active_setting && !empty($active_setting['borrow_start_date']) && !empty($active_setting['borrow_end_date']) && !empty($active_setting['borrow_start_time']) && !empty($active_setting['borrow_end_time'])) {
+            $borrow_start_dt = new DateTime($active_setting['borrow_start_date']);
+            $borrow_end_dt = new DateTime($active_setting['borrow_end_date']);
+            $borrow_start_time = date('H:i:s', strtotime($active_setting['borrow_start_time']));
+            $borrow_end_time = date('H:i:s', strtotime($active_setting['borrow_end_time']));
 
-        $conn->begin_transaction();
-        try {
-            $stmt_event = $conn->prepare(
-                "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status) 
-                 VALUES (?, ?, ?, ?, ?, ?, 'pending')"
-            );
+            foreach ($occurrence_dates as $occurrence_date_item) {
+                $occ_start = new DateTime($occurrence_date_item . ' ' . $start_time);
+                $occ_end = new DateTime($occurrence_date_item . ' ' . $end_time);
 
-            if (!$user_id) {
-                throw new Exception('尚未取得使用者識別碼，請重新登入。');
-            }
-
-            $description_lines = ["場地協調"];
-            if (!empty($activity_purpose)) {
-                $description_lines[] = "用途：{$activity_purpose}";
-            }
-            if ($repeat_type === 'weekly') {
-                $weekday_names = ['一', '二', '三', '四', '五', '六', '日'];
-                $description_lines[] = "重複：每週{$weekday_names[$weekday]}，共 {$repeat_weeks} 週";
-            }
-            if (!empty($description)) {
-                $description_lines[] = "備註：{$description}";
-            }
-            $full_description = implode("\n", $description_lines);
-
-            $stmt_event->bind_param('isssss', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end);
-            if (!$stmt_event->execute()) {
-                throw new Exception('建立活動記錄失敗：' . $stmt_event->error);
-            }
-
-            $event_id = $conn->insert_id;
-            $stmt_event->close();
-
-            $stmt_reserve = $conn->prepare(
-                "INSERT INTO reservations (event_id, space_id, start_time, end_time) 
-                 VALUES (?, ?, ?, ?)"
-            );
-
-            foreach ($space_ids as $space_id) {
-                $space_id = intval($space_id);
-                foreach ($occurrence_dates as $date_value) {
-                    $reservation_start = $date_value . ' ' . $start_time . ':00';
-                    $reservation_end = $date_value . ' ' . $end_time . ':00';
-                    $stmt_reserve->bind_param('iiss', $event_id, $space_id, $reservation_start, $reservation_end);
-                    if (!$stmt_reserve->execute()) {
-                        throw new Exception('場地登記失敗：' . $stmt_reserve->error);
-                    }
+                if ($occ_start < $borrow_start_dt || $occ_end > $borrow_end_dt) {
+                    $errors[] = '❌ 活動日期必須在可借用期間內：' . date('Y-m-d', strtotime($active_setting['borrow_start_date'])) . ' ～ ' . date('Y-m-d', strtotime($active_setting['borrow_end_date']));
+                    break;
+                }
+                if (date('H:i:s', strtotime($start_time)) < $borrow_start_time || date('H:i:s', strtotime($end_time)) > $borrow_end_time) {
+                    $errors[] = '❌ 活動時段必須在可借用時間內：' . $borrow_start_time . ' ～ ' . $borrow_end_time;
+                    break;
                 }
             }
-            $stmt_reserve->close();
-
-            $conn->commit();
-            $message_type = 'success';
-            $date_range_message = implode('、', $occurrence_dates);
-            $message = '✅ 場地協調登記已送出，申請編號：#' . $event_id . '。登記日期：' . $date_range_message . '。管理員將儘速協調場地衝突。';
-            $_POST = [];
-        } catch (Exception $e) {
-            $conn->rollback();
-            $message_type = 'error';
-            $message = '❌ 登記失敗：' . $e->getMessage();
         }
-    } else {
-        $message_type = 'error';
-        $message = '❌ ' . implode('<br>', $errors);
+
+        // 在場協期間檢測衝突
+        $conflicts_detected = [];
+        if (empty($errors) && $is_in_registration_period) {
+            $event_start = $event_date . ' ' . $start_time . ':00';
+            $event_end = $event_date . ' ' . $end_time . ':00';
+            $conflicts_detected = $fc_manager->detectFieldCoordinationConflicts(
+                $active_setting['setting_id'], 
+                $space_ids, 
+                $event_start, 
+                $event_end
+            );
+        }
+
+        // 如果檢測到衝突但未確認，不繼續提交
+        if (!empty($conflicts_detected) && !$acknowledged_conflicts) {
+            // 存儲衝突到會話以供前端顯示
+            $_SESSION['pending_conflicts'] = $conflicts_detected;
+            $_SESSION['pending_form_data'] = $_POST;
+            $message_type = 'warning';
+            $conflict_text = '';
+            foreach ($conflicts_detected as $conflict) {
+                $conflict_text .= '<br>- ' . htmlspecialchars($conflict['conflicting_club'], ENT_QUOTES, 'UTF-8') . ' 的 "' . 
+                                 htmlspecialchars($conflict['conflicting_event'], ENT_QUOTES, 'UTF-8') . 
+                                 '" (' . htmlspecialchars($conflict['conflicting_time'], ENT_QUOTES, 'UTF-8') . ')';
+            }
+            $message = '⚠️ 檢測到場地衝突，請確認是否繼續提交：' . $conflict_text;
+        } else if (empty($errors)) {
+            $occurrence_dates = [$event_date];
+            if ($repeat_type === 'weekly') {
+                $weekday = intval($repeat_weekday);
+                $start_date = new DateTime($event_date);
+                $start_weekday = intval($start_date->format('N')) - 1;
+                $days_until = ($weekday - $start_weekday + 7) % 7;
+                $first_date = clone $start_date;
+                if ($days_until > 0) {
+                    $first_date->modify("+{$days_until} days");
+                }
+                $occurrence_dates = [];
+                for ($i = 0; $i < $repeat_weeks; $i++) {
+                    $date = clone $first_date;
+                    if ($i > 0) {
+                        $date->modify("+{$i} week");
+                    }
+                    $occurrence_dates[] = $date->format('Y-m-d');
+                }
+            }
+
+            $event_start = $occurrence_dates[0] . ' ' . $start_time . ':00';
+            $event_end = $occurrence_dates[0] . ' ' . $end_time . ':00';
+
+            $conn->begin_transaction();
+            try {
+                $stmt_event = $conn->prepare(
+                    "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, is_field_coordination, field_coordination_setting_id) 
+                     VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?)"
+                );
+
+                if (!$user_id) {
+                    throw new Exception('尚未取得使用者識別碼，請重新登入。');
+                }
+
+                $description_lines = ["場地協調"];
+                if (!empty($activity_purpose)) {
+                    $description_lines[] = "用途：{$activity_purpose}";
+                }
+                if ($repeat_type === 'weekly') {
+                    $weekday_names = ['一', '二', '三', '四', '五', '六', '日'];
+                    $description_lines[] = "重複：每週{$weekday_names[$weekday]}，共 {$repeat_weeks} 週";
+                }
+                if (!empty($description)) {
+                    $description_lines[] = "備註：{$description}";
+                }
+                $full_description = implode("\n", $description_lines);
+
+                $setting_id = $active_setting['setting_id'];
+                $stmt_event->bind_param('issssssi', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end, $setting_id);
+                if (!$stmt_event->execute()) {
+                    throw new Exception('建立活動記錄失敗：' . $stmt_event->error);
+                }
+
+                $event_id = $conn->insert_id;
+                $stmt_event->close();
+
+                $stmt_reserve = $conn->prepare(
+                    "INSERT INTO reservations (event_id, space_id, start_time, end_time, is_field_coordination_preliminary) 
+                     VALUES (?, ?, ?, ?, 1)"
+                );
+
+                foreach ($space_ids as $space_id) {
+                    $space_id = intval($space_id);
+                    foreach ($occurrence_dates as $date_value) {
+                        $reservation_start = $date_value . ' ' . $start_time . ':00';
+                        $reservation_end = $date_value . ' ' . $end_time . ':00';
+                        $stmt_reserve->bind_param('iiss', $event_id, $space_id, $reservation_start, $reservation_end);
+                        if (!$stmt_reserve->execute()) {
+                            throw new Exception('場地登記失敗：' . $stmt_reserve->error);
+                        }
+                    }
+                }
+                $stmt_reserve->close();
+
+                // 取得社團ID
+                $club_id_sql = "SELECT club_id FROM clubs WHERE club_name = ? LIMIT 1";
+                $club_id_stmt = $conn->prepare($club_id_sql);
+                $club_id_stmt->bind_param("s", $club_name);
+                $club_id_stmt->execute();
+                $club_id_result = $club_id_stmt->get_result();
+                $club_id = ($club_row = $club_id_result->fetch_assoc()) ? $club_row['club_id'] : 0;
+                $club_id_stmt->close();
+
+                // 建立場協登記紀錄
+                $fc_manager->createFieldCoordinationRegistration(
+                    $active_setting['setting_id'],
+                    $event_id,
+                    $student_id_value,
+                    $club_id,
+                    $club_name
+                );
+
+                $conn->commit();
+                $message_type = 'success';
+                $date_range_message = implode('、', $occurrence_dates);
+                $message = '✅ 場地協調登記已送出，申請編號：#' . $event_id . '。登記日期：' . $date_range_message . '。';
+                if (!empty($conflicts_detected)) {
+                    $message .= '該申請包含 ' . count($conflicts_detected) . ' 個場地衝突，管理員將於協調大會時協調。';
+                }
+                // 清空会话中的待处理数据
+                unset($_SESSION['pending_conflicts']);
+                unset($_SESSION['pending_form_data']);
+                $_POST = [];
+            } catch (Exception $e) {
+                $conn->rollback();
+                $message_type = 'error';
+                $message = '❌ 登記失敗：' . $e->getMessage();
+            }
+        } else {
+            $message_type = 'error';
+            $message = '❌ ' . implode('<br>', $errors);
+        }
     }
 }
 ?>
@@ -447,10 +563,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 <p class="text-muted">本頁提供社團幹部一次選擇多個場地、設定固定週次的例行活動登記。</p>
             </div>
 
+            <!-- 場協狀態提示 -->
+            <?php if (!$active_setting): ?>
+            <div class="card" style="border-left: 5px solid #f59e0b;">
+                <h3><i class="bi bi-info-circle"></i> 場協登記未開放</h3>
+                <p class="text-muted mb-0">目前不在場協登記期間。系統將於學期開始前開放場協登記。</p>
+            </div>
+            <?php elseif ($has_meeting_passed): ?>
+            <div class="card" style="border-left: 5px solid #f59e0b;">
+                <h3><i class="bi bi-info-circle"></i> 場協大會已結束</h3>
+                <p class="text-muted mb-0">場地協調大會已於 <?= date('Y-m-d', strtotime($active_setting['coordination_meeting_date'])) ?> 進行。此後場地申請採用先到先得制，請改用常規場地申請功能。</p>
+            </div>
+            <?php else: ?>
+            <div class="card" style="border-left: 5px solid #10b981;">
+                <h3><i class="bi bi-check-circle"></i> 場協登記開放中</h3>
+                <p class="text-muted mb-1"><strong>登記期限：</strong><?= date('Y-m-d', strtotime($active_setting['registration_start_date'])) ?> ~ <?= date('Y-m-d', strtotime($active_setting['registration_end_date'])) ?></p>
+                <p class="text-muted mb-0"><strong>協調大會：</strong><?= date('Y-m-d H:i', strtotime($active_setting['coordination_meeting_date'])) ?></p>
+            </div>
+            <?php endif; ?>
+
             <?php if (!empty($message)): ?>
-            <div class="card" style="border-left: 5px solid <?= $message_type === 'success' ? '#10b981' : '#ef4444'; ?>;">
-                <h3><?= $message_type === 'success' ? '登記成功' : '錯誤提醒' ?></h3>
-                <p class="text-muted"><?= $message ?></p>
+            <div class="card" style="border-left: 5px solid <?= $message_type === 'success' ? '#10b981' : ($message_type === 'warning' ? '#f59e0b' : '#ef4444'); ?>;">
+                <h3><?= $message_type === 'success' ? '登記成功' : ($message_type === 'warning' ? '衝突提示' : '錯誤提醒') ?></h3>
+                <p class="text-muted mb-0"><?= $message ?></p>
+            </div>
+            <?php endif; ?>
+
+            <!-- 顯示待確認的衝突 -->
+            <?php if (isset($_SESSION['pending_conflicts']) && !empty($_SESSION['pending_conflicts'])): ?>
+            <div class="card" style="border: 2px solid #f59e0b; background: #fffbf0;">
+                <h3><i class="bi bi-exclamation-triangle"></i> 請確認衝突</h3>
+                <p class="text-muted">您的場地申請與以下活動存在時間衝突。請確認是否繼續提交：</p>
+                <div style="background: white; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                    <?php foreach ($_SESSION['pending_conflicts'] as $conflict): ?>
+                    <div style="padding: 0.5rem 0; border-bottom: 1px solid #e5e7eb;">
+                        <p class="mb-1">
+                            <strong><?= htmlspecialchars($conflict['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></strong> - 
+                            <?= htmlspecialchars($conflict['conflicting_event'], ENT_QUOTES, 'UTF-8') ?><br>
+                            <small class="text-muted">場地：<?= htmlspecialchars($spaces[$conflict['space_id']]['space_name'] ?? '未知', ENT_QUOTES, 'UTF-8') ?></small><br>
+                            <small class="text-muted">時間：<?= htmlspecialchars($conflict['conflicting_time'], ENT_QUOTES, 'UTF-8') ?></small>
+                        </p>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <form method="post">
+                    <input type="hidden" name="acknowledged_conflicts" value="1">
+                    <?php foreach ($_SESSION['pending_form_data'] as $key => $value): ?>
+                        <?php if (is_array($value)): ?>
+                            <?php foreach ($value as $v): ?>
+                            <input type="hidden" name="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8') ?>[]" value="<?= htmlspecialchars($v, ENT_QUOTES, 'UTF-8') ?>">
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <input type="hidden" name="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars($value, ENT_QUOTES, 'UTF-8') ?>">
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-warning">繼續提交（確認衝突）</button>
+                        <button type="button" class="btn btn-secondary" onclick="location.reload();">取消修改</button>
+                    </div>
+                </form>
             </div>
             <?php endif; ?>
 
@@ -463,60 +634,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             <div class="card">
                 <h3><i class="bi bi-grid-1x2"></i> 批次場地協調登記</h3>
                 <p class="text-muted">一次選擇多個教室，並支援固定週次的例行練習或活動登記。</p>
-                <form method="post">
+                <?php if (!$active_setting || $has_meeting_passed): ?>
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle"></i> 
+                    <?php if (!$active_setting): ?>
+                    目前不在場協登記期間，表單已禁用。
+                    <?php else: ?>
+                    場地協調大會已結束，場地申請已恢復至先到先得制。
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+                <form method="post" <?php if (!$active_setting || $has_meeting_passed) echo 'style="opacity: 0.5; pointer-events: none;"'; ?>>
                     <input type="hidden" name="register_spaces" value="1">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label" for="club_name">主辦社團 *</label>
-                            <input id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_POST['club_name'] ?? $selected_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
+                            <input id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['club_name'] ?? $_POST['club_name'] ?? $selected_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="event_name">活動名稱 *</label>
-                            <input id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
+                            <input id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['event_name'] ?? $_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
                     </div>
                     <div class="mt-3">
                         <label class="form-label" for="activity_purpose">場地用途</label>
-                        <input id="activity_purpose" name="activity_purpose" class="form-control" value="<?= htmlspecialchars($_POST['activity_purpose'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="例如：熱舞社練習、比賽排練、社團會議">
+                        <input id="activity_purpose" name="activity_purpose" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['activity_purpose'] ?? $_POST['activity_purpose'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="例如：熱舞社練習、比賽排練、社團會議">
                     </div>
                     <div class="row g-3 mt-3">
                         <div class="col-md-4">
                             <label class="form-label" for="event_date">首次日期 *</label>
-                            <input type="date" id="event_date" name="event_date" class="form-control" value="<?= htmlspecialchars($_POST['event_date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
+                            <input type="date" id="event_date" name="event_date" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['event_date'] ?? $_POST['event_date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="start_time">開始時間 *</label>
-                            <input type="time" id="start_time" name="start_time" class="form-control" value="<?= htmlspecialchars($_POST['start_time'] ?? '12:00', ENT_QUOTES, 'UTF-8') ?>" required>
+                            <input type="time" id="start_time" name="start_time" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['start_time'] ?? $_POST['start_time'] ?? '12:00', ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="end_time">結束時間 *</label>
-                            <input type="time" id="end_time" name="end_time" class="form-control" value="<?= htmlspecialchars($_POST['end_time'] ?? '13:30', ENT_QUOTES, 'UTF-8') ?>" required>
+                            <input type="time" id="end_time" name="end_time" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['end_time'] ?? $_POST['end_time'] ?? '13:30', ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
                     </div>
                     <div class="row g-3 mt-3">
                         <div class="col-md-4">
                             <label class="form-label" for="repeat_type">重複方式</label>
                             <select id="repeat_type" name="repeat_type" class="form-control">
-                                <option value="none" <?= (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? '' : 'selected' ?>>單次登記</option>
-                                <option value="weekly" <?= (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'selected' : '' ?>>每週固定登記</option>
+                                <option value="none" <?= (isset($_SESSION['pending_form_data']['repeat_type']) && $_SESSION['pending_form_data']['repeat_type'] === 'weekly') || (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? '' : 'selected' ?>>單次登記</option>
+                                <option value="weekly" <?= (isset($_SESSION['pending_form_data']['repeat_type']) && $_SESSION['pending_form_data']['repeat_type'] === 'weekly') || (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'selected' : '' ?>>每週固定登記</option>
                             </select>
                         </div>
-                        <div class="col-md-4" id="weeklyWeekday" style="display: <?= (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'block' : 'none' ?>;">
+                        <div class="col-md-4" id="weeklyWeekday" style="display: <?= (isset($_SESSION['pending_form_data']['repeat_type']) && $_SESSION['pending_form_data']['repeat_type'] === 'weekly') || (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'block' : 'none' ?>;">
                             <label class="form-label" for="repeat_weekday">每週星期</label>
                             <select id="repeat_weekday" name="repeat_weekday" class="form-control">
                                 <option value="">請選擇</option>
-                                <option value="0" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '0') ? 'selected' : '' ?>>星期一</option>
-                                <option value="1" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '1') ? 'selected' : '' ?>>星期二</option>
-                                <option value="2" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '2') ? 'selected' : '' ?>>星期三</option>
-                                <option value="3" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '3') ? 'selected' : '' ?>>星期四</option>
-                                <option value="4" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '4') ? 'selected' : '' ?>>星期五</option>
-                                <option value="5" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '5') ? 'selected' : '' ?>>星期六</option>
-                                <option value="6" <?= (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] === '6') ? 'selected' : '' ?>>星期日</option>
+                                <?php for ($d = 0; $d < 7; $d++): ?>
+                                <option value="<?= $d ?>" <?= (isset($_SESSION['pending_form_data']['repeat_weekday']) && $_SESSION['pending_form_data']['repeat_weekday'] == $d) || (isset($_POST['repeat_weekday']) && $_POST['repeat_weekday'] == $d) ? 'selected' : '' ?>>星期<?= ['一', '二', '三', '四', '五', '六', '日'][$d] ?></option>
+                                <?php endfor; ?>
                             </select>
                         </div>
-                        <div class="col-md-4" id="weeklyCount" style="display: <?= (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'block' : 'none' ?>;">
+                        <div class="col-md-4" id="weeklyCount" style="display: <?= (isset($_SESSION['pending_form_data']['repeat_type']) && $_SESSION['pending_form_data']['repeat_type'] === 'weekly') || (isset($_POST['repeat_type']) && $_POST['repeat_type'] === 'weekly') ? 'block' : 'none' ?>;">
                             <label class="form-label" for="repeat_weeks">重複週數</label>
-                            <input type="number" id="repeat_weeks" name="repeat_weeks" class="form-control" min="1" value="<?= htmlspecialchars($_POST['repeat_weeks'] ?? '4', ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="number" id="repeat_weeks" name="repeat_weeks" class="form-control" min="1" value="<?= htmlspecialchars($_SESSION['pending_form_data']['repeat_weeks'] ?? $_POST['repeat_weeks'] ?? '4', ENT_QUOTES, 'UTF-8') ?>">
                         </div>
                     </div>
                     <div class="mt-4">
@@ -533,9 +710,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                                     <div class="fw-bold mb-2"><?= htmlspecialchars($building['name'], ENT_QUOTES, 'UTF-8') ?></div>
                                     <div class="row g-3">
                                         <?php foreach ($building['rooms'] as $space): ?>
+                                            <?php 
+                                            $is_checked = false;
+                                            if (isset($_SESSION['pending_form_data']['space_ids']) && in_array($space['space_id'], $_SESSION['pending_form_data']['space_ids'])) {
+                                                $is_checked = true;
+                                            } elseif (isset($_POST['space_ids']) && in_array($space['space_id'], $_POST['space_ids'])) {
+                                                $is_checked = true;
+                                            }
+                                            ?>
                                             <div class="col-md-6">
                                                 <div class="form-check" style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem; background:#fff;">
-                                                    <input class="form-check-input" type="checkbox" name="space_ids[]" value="<?= $space['space_id'] ?>" id="space_<?= $space['space_id'] ?>" <?= (isset($_POST['space_ids']) && in_array($space['space_id'], $_POST['space_ids'])) ? 'checked' : '' ?>>
+                                                    <input class="form-check-input" type="checkbox" name="space_ids[]" value="<?= $space['space_id'] ?>" id="space_<?= $space['space_id'] ?>" <?= $is_checked ? 'checked' : '' ?>>
                                                     <label class="form-check-label" for="space_<?= $space['space_id'] ?>">
                                                         <?= htmlspecialchars($space['space_name'], ENT_QUOTES, 'UTF-8') ?><?php if (!empty($space['capacity'])): ?>（容納 <?= htmlspecialchars($space['capacity'], ENT_QUOTES, 'UTF-8') ?> 人）<?php endif; ?>
                                                     </label>
@@ -554,10 +739,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                     </div>
                     <div class="mt-3">
                         <label class="form-label" for="description">備註</label>
-                        <textarea id="description" name="description" class="form-control" rows="3"><?= htmlspecialchars($_POST['description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
+                        <textarea id="description" name="description" class="form-control" rows="3"><?= htmlspecialchars($_SESSION['pending_form_data']['description'] ?? $_POST['description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
                     </div>
                     <div class="mt-4 d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-primary">提交批次登記</button>
+                        <button type="submit" class="btn btn-primary" <?php if (!$active_setting || $has_meeting_passed) echo 'disabled'; ?>>提交批次登記</button>
                         <button type="button" class="btn btn-secondary" onclick="location.href='calendar.php'">先查看日曆</button>
                     </div>
                     <p class="mt-3 text-muted" style="font-size:0.95rem;">* 若您是社團幹部，系統會自動帶入您目前身份對應的社團。</p>
@@ -570,29 +755,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                     <div class="contact-item">
                         <i class="bi bi-telephone"></i>
                         <div>
-                            <strong>場地管理中心</strong><br>
-                            電話：(02) 2905-2000 轉 1234
+                            <strong>輔仁大學課外活動指導組 張秉倪輔導老師</strong><br>
+                            電話：(02) 2905-2233 轉 3085
                         </div>
                     </div>
                     <div class="contact-item">
                         <i class="bi bi-envelope"></i>
                         <div>
                             <strong>電子郵件</strong><br>
-                            venue@fju.edu.tw
+                            163341@mail.fju.edu.tw
                         </div>
                     </div>
                     <div class="contact-item">
                         <i class="bi bi-clock"></i>
                         <div>
                             <strong>服務時間</strong><br>
-                            週一至週五 08:00-17:00
+                            週一至週五 08:00-16:30
                         </div>
                     </div>
                     <div class="contact-item">
                         <i class="bi bi-geo-alt"></i>
                         <div>
                             <strong>辦公室位置</strong><br>
-                            輔仁大學 場地管理中心 (學生中心1樓)
+                            輔仁大學 課外活動指導組(法籃旁)
                         </div>
                     </div>
                 </div>

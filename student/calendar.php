@@ -4,11 +4,16 @@ error_reporting(E_ALL);
 
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
 if (!isset($_SESSION['student_id'])) {
     header('Location: ../login.php');
     exit();
 }
+
+$fc_manager = new FieldCoordinationManager($conn);
+$active_field_coordination_setting = $fc_manager->getActiveSettings();
+$is_in_field_coordination_registration = $fc_manager->isInRegistrationPeriod();
 
 $current_page = 'calendar';
 
@@ -111,9 +116,11 @@ $timeSlots = [
 ];
 
 $bookings = [];
-$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status
+$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status, e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
+    LEFT JOIN field_coordination_registrations fcr ON e.event_id = fcr.event_id
+    LEFT JOIN field_coordination_settings fcs ON fcr.setting_id = fcs.setting_id
     LEFT JOIN users u ON e.user_id = u.user_id
     WHERE (r.start_time BETWEEN ? AND ?) OR (r.end_time BETWEEN ? AND ?)
     ORDER BY r.start_time ASC";
@@ -128,13 +135,30 @@ if ($stmt) {
         if (!isset($bookings[$key])) {
             $bookings[$key] = [];
         }
+
+        $status = $row['status'];
+        if (intval($row['is_field_coordination']) === 1) {
+            if ($row['is_approved'] === '1' || $row['is_approved'] === 1) {
+                $status = 'approved';
+            } elseif ($row['is_approved'] === '0' || $row['is_approved'] === 0) {
+                $status = 'rejected';
+            } else {
+                $meeting_passed = $row['coordination_meeting_date'] && strtotime($row['coordination_meeting_date']) < time();
+                $status = $meeting_passed ? 'pending' : 'pending';
+            }
+        }
+
         $bookings[$key][] = [
             'start_time' => $row['start_time'],
             'end_time' => $row['end_time'],
             'event_name' => $row['event_name'],
             'club_name' => $row['club_name'],
             'organizer' => $row['user_name'],
-            'status' => $row['status'],
+            'user_email' => $row['user_email'],
+            'status' => $status,
+            'is_field_coordination' => intval($row['is_field_coordination']) === 1,
+            'is_approved' => $row['is_approved'],
+            'coordination_meeting_date' => $row['coordination_meeting_date'],
         ];
     }
     $stmt->close();
@@ -226,8 +250,9 @@ if ($stmt) {
         .slot-label { font-weight: 600; color: #1f2937; }
         .slot-meta { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
         .badge-status { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
-        .badge-status.confirmed { background: #d1e7dd; color: #0f5132; }
+        .badge-status.confirmed, .badge-status.approved { background: #d1e7dd; color: #0f5132; }
         .badge-status.pending { background: #fff3cd; color: #664d03; }
+        .badge-status.rejected { background: #f8d7da; color: #842029; }
         .btn-action { padding: 0.55rem 1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; transition: all 0.25s ease; }
         .btn-action.primary { background: var(--primary); color: white; }
         .btn-action.primary:hover { background: #5a0f29; }
@@ -269,7 +294,13 @@ if ($stmt) {
         <section class="content-wrapper">
             <div class="card">
                 <h3><i class="bi bi-search"></i> 查詢教室</h3>
-                <p class="text-muted">此行事曆包含待審核的場協登記，若有衝突可先透過申請人信箱聯絡協商，待場協大會後再由課指組確認最終分配。</p>
+                <p class="text-muted">此行事曆包含場地申請與場協登記結果。若場協大會已過，已核准的場協結果會在此顯示為正式借用記錄。</p>
+                <?php if ($is_in_field_coordination_registration && $active_field_coordination_setting): ?>
+                <div class="alert alert-warning" style="border-radius: 12px;">
+                    <strong>目前為場協登記期間</strong>，系統允許同一時段的場協登記衝突，但最終場地分配仍以協調結果為準。
+                    <br>登記期限：<?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_start_date'])) ?> ～ <?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_end_date'])) ?>
+                </div>
+                <?php endif; ?>
                 <div class="filter-row">
                     <div>
                         <label class="form-label" for="buildingSelect">大樓</label>
@@ -531,6 +562,12 @@ if ($stmt) {
             roomBookings.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'booked-card';
+                let statusLabel = '待審核';
+                if (item.status === 'approved') {
+                    statusLabel = '已核准';
+                } else if (item.status === 'rejected') {
+                    statusLabel = '已駁回';
+                }
                 card.innerHTML = `
                     <div class="booked-left">
                         <div class="booking-time" style="font-weight:700;">${new Date(item.start_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })} - ${new Date(item.end_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
@@ -540,7 +577,7 @@ if ($stmt) {
                         <div class="booking-email">聯絡信箱：${item.user_email ? item.user_email : '無'}</div>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:0.5rem; justify-content:center; align-items:flex-end;">
-                        <span class="badge-status ${item.status}">${item.status === 'approved' ? '已核准' : '待審核'}</span>
+                        <span class="badge-status ${item.status}">${statusLabel}</span>
                     </div>
                 `;
                 bookingDetails.appendChild(card);

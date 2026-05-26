@@ -5,6 +5,7 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
 if (!isset($_SESSION['student_id'])) {
     header('Location: ../login.php');
@@ -13,28 +14,30 @@ if (!isset($_SESSION['student_id'])) {
 
 $message = "";
 $message_type = "";
-
-// 確保 user_id 從 session 中正確獲取，如果沒有則從數據庫查詢
 $user_id = $_SESSION['user_id'] ?? null;
-
-// 如果 session 中沒有 user_id，嘗試從 student_id（email）查詢
-if (!$user_id && isset($_SESSION['student_id'])) {
-    $user_sql = "SELECT user_id FROM users WHERE email = ?";
-    $user_stmt = $conn->prepare($user_sql);
-    $user_stmt->bind_param("s", $_SESSION['student_id']);
-    $user_stmt->execute();
-    $user_result = $user_stmt->get_result();
-    if ($user_result && $user_result->num_rows > 0) {
-        $user_row = $user_result->fetch_assoc();
-        $user_id = $user_row['user_id'];
+$field_coordination_results = [];
+$fc_manager = null;
+if ($user_id) {
+    $fc_manager = new FieldCoordinationManager($conn);
+    $club_sql = "SELECT cm.club_id, c.club_name
+                 FROM club_members cm
+                 JOIN clubs c ON cm.club_id = c.club_id
+                 WHERE cm.user_id = ?
+                 LIMIT 1";
+    $club_stmt = $conn->prepare($club_sql);
+    if ($club_stmt) {
+        $club_stmt->bind_param("i", $user_id);
+        $club_stmt->execute();
+        $club_result = $club_stmt->get_result();
+        if ($club_row = $club_result->fetch_assoc()) {
+            $field_coordination_results = $fc_manager->getAllApprovedFieldCoordinationForClub($club_row['club_id']);
+            if (empty($field_coordination_results)) {
+                $field_coordination_results = [];
+            }
+        }
+        $club_stmt->close();
     }
-    $user_stmt->close();
 }
-
-// 【新增/確保】獲取當前身分的社團 ID 與名稱
-$active_club_id   = $_SESSION['active_club_id'] ?? '';
-$active_club_name = $_SESSION['active_club_name'] ?? '未指定社團';
-
 
 // 從資料庫獲取場地
 $sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available'";
@@ -580,6 +583,41 @@ function getEquipmentIcon($equipId) {
             </div>
             <?php endif; ?>
 
+<<<<<<< Updated upstream
+=======
+            <?php if (!empty($field_coordination_results)): ?>
+            <div class="card">
+                <h3><i class="bi bi-check-circle"></i> 場協登記結果選擇</h3>
+                <p class="text-muted">社團有以下已核准的場協結果，點擊任一項可自動帶入相關資訊到下方表單。</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                    <?php foreach ($field_coordination_results as $idx => $fc_result): ?>
+                    <div class="field-coord-card" onclick="loadFieldCoordinationData(<?= $idx ?>, event)" style="cursor: pointer; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1rem; transition: all 0.25s ease; background: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                            <div>
+                                <div style="font-weight: 700; color: #1f2937; font-size: 1.05rem;"><?= htmlspecialchars($fc_result['event_name'], ENT_QUOTES, 'UTF-8') ?></div>
+                                <div style="font-size: 0.9rem; color: #6b7280;">民國 <?= htmlspecialchars($fc_result['academic_year'], ENT_QUOTES, 'UTF-8') ?> <?= $fc_result['semester'] == 1 ? '上學期' : '下學期' ?></div>
+                            </div>
+                            <input type="radio" name="field_coord_selection" value="<?= $idx ?>" style="margin-top: 0.25rem;">
+                        </div>
+                        <hr style="margin: 0.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
+                        <div style="font-size: 0.9rem; color: #374151;">
+                            <div style="margin-bottom: 0.3rem;"><i class="bi bi-calendar-event"></i> <?= date('Y-m-d', strtotime($fc_result['start_time'])) ?></div>
+                            <div style="margin-bottom: 0.3rem;"><i class="bi bi-clock"></i> <?= date('H:i', strtotime($fc_result['start_time'])) ?> - <?= date('H:i', strtotime($fc_result['end_time'])) ?></div>
+                        </div>
+                        <input type="hidden" class="fc-data" value='<?= json_encode($fc_result) ?>'>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($field_coordination_results): ?>
+            <div class="alert alert-info" style="border-radius: 12px; margin-bottom: 1rem;">
+                <strong>場協大會已通過</strong>，系統已找到社團可用的核准場協結果。請選擇一筆場協結果自動帶入相關欄位，再視需要調整活動名稱和說明。
+            </div>
+            <?php endif; ?>
+
+>>>>>>> Stashed changes
             <form method="POST" id="applicationForm" enctype="multipart/form-data">
                 <!-- 基本資訊 -->
                 <div class="card">
@@ -588,34 +626,40 @@ function getEquipmentIcon($equipId) {
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                             <div class="form-group">
                                 <label for="event_name">活動名稱 *</label>
-                                <input type="text" id="event_name" name="event_name" class="form-control" required>
+                                <input type="text" id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_POST['event_name'] ?? $prefill_event_name, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
+<<<<<<< Updated upstream
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold text-secondary">主辦社團 <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control bg-light" value="<?php echo htmlspecialchars($active_club_name); ?>" readonly>
                                 
                                 <input type="hidden" name="club_name" value="<?php echo htmlspecialchars($active_club_name); ?>">
+=======
+                            <div class="form-group">
+                                <label for="club_name">主辦社團 *</label>
+                                <input type="text" id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_POST['club_name'] ?? $prefill_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
+>>>>>>> Stashed changes
                             </div>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
                             <div class="form-group">
                                 <label for="event_date">活動日期 *</label>
-                                <input type="date" id="event_date" name="event_date" class="form-control" required>
+                                <input type="date" id="event_date" name="event_date" class="form-control" value="<?= htmlspecialchars($_POST['event_date'] ?? $prefill_event_date, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                             <div class="form-group">
                                 <label>開始時間 *</label>
-                                <input type="time" id="start_time" name="start_time" class="form-control" required>
+                                <input type="time" id="start_time" name="start_time" class="form-control" value="<?= htmlspecialchars($_POST['start_time'] ?? $prefill_start_time, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                             <div class="form-group">
                                 <label>結束時間 *</label>
-                                <input type="time" id="end_time" name="end_time" class="form-control" required>
+                                <input type="time" id="end_time" name="end_time" class="form-control" value="<?= htmlspecialchars($_POST['end_time'] ?? $prefill_end_time, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                         </div>
 
                         <div class="form-group">
                             <label for="description">活動說明</label>
-                            <textarea id="description" name="description" class="form-control" rows="3" placeholder="請簡述活動內容及特別需求..."></textarea>
+                            <textarea id="description" name="description" class="form-control" rows="3" placeholder="請簡述活動內容及特別需求..."><?= htmlspecialchars($_POST['description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
                         </div>
                     </div>
                 </div>
@@ -632,7 +676,7 @@ function getEquipmentIcon($equipId) {
                                     <div class="venue-status">可預約</div>
                                 </div>
                                 <div class="venue-capacity"><i class="bi bi-people"></i> 容納：<?= $venue['capacity'] ?> 人</div>
-                                <input type="radio" name="venue_id" value="<?= $venue['space_id'] ?>" style="display: none;">
+                                <input type="radio" name="venue_id" value="<?= $venue['space_id'] ?>" style="display: none;" <?= (isset($_POST['venue_id']) && $_POST['venue_id'] == $venue['space_id']) || (!isset($_POST['venue_id']) && $prefill_venue_id == $venue['space_id']) ? 'checked' : '' ?>>
                             </div>
                             <?php endforeach; ?>
                         </div>
@@ -748,6 +792,17 @@ function getEquipmentIcon($equipId) {
                 e.preventDefault();
                 alert('請選擇活動場地！');
                 return false;
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', function () {
+            const selectedVenue = document.querySelector('input[name="venue_id"]:checked');
+            if (selectedVenue) {
+                const venueId = selectedVenue.value;
+                const selectedCard = document.querySelector(`[data-venue-id="${venueId}"]`);
+                if (selectedCard) {
+                    selectedCard.classList.add('selected');
+                }
             }
         });
     </script>
