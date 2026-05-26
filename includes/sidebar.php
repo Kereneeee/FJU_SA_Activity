@@ -15,6 +15,8 @@ $logoutHref = rtrim($scriptDir, '/\\') . '/logout.php';
 if ($logoutHref === '') {
     $logoutHref = '/logout.php';
 }
+// 計算應用程式在網址中的根資料夾（例如 /FJU_SA_Activity）
+$appRoot = '/' . basename(dirname(__DIR__));
 ?>
 
 <aside class="sidebar">
@@ -34,11 +36,12 @@ if ($logoutHref === '') {
         <a class="nav-link <?php echo ($current_page === 'equipment') ? 'active' : ''; ?>" href="equipment.php">
             <i class="bi bi-tools"></i> 器材狀態
         </a>
-        <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="field_coord.php">
+        <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/student/field_coord.php', ENT_QUOTES, 'UTF-8') ?>">
             <i class="bi bi-people"></i> 場地協調
         </a>
         <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
-        <a class="nav-link <?php echo ($current_page === 'field_coordination_mgmt') ? 'active' : ''; ?>" href="field_coordination_mgmt.php">
+        <?php $baseHref = rtrim($scriptDir, '/\\'); ?>
+        <a class="nav-link <?php echo ($current_page === 'field_coordination_mgmt') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/admin/field_coordination_mgmt.php', ENT_QUOTES, 'UTF-8') ?>">
             <i class="bi bi-people-fill"></i> 場協登記管理
         </a>
         <?php endif; ?>

@@ -94,24 +94,53 @@ $stmt->close();
             color: #1f2937;
         }
 
-        .navbar-custom {
-            background: white;
-            border-bottom: 1px solid #e9ecef;
-            padding: 1rem 2rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        .sidebar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 260px;
+            height: 100vh;
+            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            color: white;
+            padding: 1.5rem 0.8rem;
+            overflow-y: auto;
+            box-shadow: 3px 0 15px rgba(0,0,0,0.12);
+            z-index: 1200;
         }
-
-        .navbar-custom a {
-            color: var(--primary);
+        .sidebar .brand { text-align: center; margin-bottom: 1.5rem; }
+        .sidebar .brand h4 { margin: 0; font-size: 1.1rem; line-height: 1.4; font-weight: 700; }
+        .sidebar .nav-link {
+            display: flex; align-items: center; gap: 0.75rem;
+            color: rgba(255,255,255,0.9);
+            padding: 0.85rem 1rem; margin: 0.2rem 0;
+            border-radius: 16px;
+            transition: background 0.25s ease, transform 0.15s ease;
             text-decoration: none;
-            margin-right: 1rem;
         }
-
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.12); color: #ffffff; transform: translateX(4px);
+        }
+        .sidebar .nav-link i { font-size: 1.1rem; }
+        .sidebar .sidebar-section { padding: 1rem 0.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.12); }
+        .main-content { margin-left: 260px; min-height: 100vh; }
+        .top-navbar {
+            background: white; border-bottom: 1px solid #e9ecef;
+            padding: 1rem 2rem; display: flex;
+            justify-content: space-between; align-items: center;
+            position: sticky; top: 0; z-index: 1100;
+        }
+        .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
+        .top-navbar .user-card { display: flex; align-items: center; gap: 0.85rem; }
+        .user-avatar {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: var(--primary); color: white;
+            display: grid; place-items: center; font-weight: 700;
+        }
         .profile-container {
             max-width: 900px;
             margin: 2rem auto;
-            padding: 0 1rem;
+            padding: 0 2rem;
         }
+        @media (max-width: 1100px) { .main-content { margin-left: 0; } }
 
         .profile-card {
             background: white;
@@ -252,10 +281,28 @@ $stmt->close();
     </style>
 </head>
 <body>
-    <nav class="navbar-custom">
-        <a href="dashboard.php"><i class="bi bi-house-door"></i> 回到儀表板</a>
-        <span class="text-muted">個人檔案</span>
-    </nav>
+    <?php
+    $current_page = 'profile';
+    include __DIR__ . '/../includes/admin_sidebar.php';
+    ?>
+
+    <main class="main-content">
+        <header class="top-navbar">
+            <div>
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">個人檔案</li>
+                </ol>
+                <h4 class="mt-2 mb-0">個人檔案</h4>
+            </div>
+            <div class="user-card">
+                <div class="user-avatar"><?php echo htmlspecialchars(substr($user_name, 0, 1)); ?></div>
+                <div>
+                    <div class="fw-bold"><?php echo htmlspecialchars($user_name); ?></div>
+                    <small class="text-muted">管理員</small>
+                </div>
+            </div>
+        </header>
 
     <div class="profile-container">
         <?php if ($success_msg): ?>
@@ -346,6 +393,8 @@ $stmt->close();
             </div>
         </div>
     </div>
+
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

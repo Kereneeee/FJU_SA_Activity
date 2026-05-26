@@ -403,7 +403,7 @@ foreach ($user_clubs as $club) {
                 </div>
                 <div class="profile-info">
                     <h2><?php echo htmlspecialchars($student_name); ?></h2>
-                    <p><i class="bi bi-person-badge"></i> 學號：<?php echo htmlspecialchars($student_id); ?></p>
+                    <p><i class="bi bi-person-badge"></i> 學號：<?php echo htmlspecialchars($user['student_id'] ?? '—'); ?></p>
                     
                     <!-- 修改此處：顯示目前的社團名稱與職稱 -->
                     <p>

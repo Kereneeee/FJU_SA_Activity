@@ -34,7 +34,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $_SESSION["user_name"] = $user["name"];
                 $_SESSION["role"] = $user["role"];
                 $_SESSION["student_name"] = $user["name"];
-                $_SESSION["student_id"] = $email;
+                $_SESSION["student_id"] = $email;       // 登入識別碼（email）
+                $_SESSION["student_no"] = $user["student_id"]; // 真實學號（int）
 
                 session_regenerate_id(true);
 
@@ -157,13 +158,13 @@ body {
     <form method="POST" onsubmit="showLoading()">
 
         <div class="mb-3">
-            <label class="form-label">帳號（學號）</label>
-            <input 
-                type="text" 
-                name="email" 
+            <label class="form-label">帳號（電子信箱）</label>
+            <input
+                type="text"
+                name="email"
                 class="form-control"
                 value="<?php echo htmlspecialchars($email_value); ?>"
-                placeholder="請輸入學號"
+                placeholder="請輸入電子信箱"
                 required
             >
         </div>
@@ -181,7 +182,9 @@ body {
     </form>
 
     <div class="footer-text">
-        
+        <a href="forgot_password.php" class="text-decoration-none" style="color:#4a6cf7;">
+            <i class="bi bi-key me-1"></i>忘記密碼？
+        </a>
     </div>
 
 </div>

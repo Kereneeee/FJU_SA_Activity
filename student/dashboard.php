@@ -16,6 +16,9 @@ $user_id = $_SESSION['user_id'] ?? null;
 // 設置當前頁面用於側邊欄高亮
 $current_page = 'dashboard';
 
+// 應用根路徑（例如 /FJU_SA_Activity），用於生成不受包含文件位置影響的絕對連結
+$appRoot = '/' . basename(dirname(__DIR__));
+
 // 獲取用戶的社團及幹部身分（初始化變數）
 $current_club = $_SESSION['active_club_name'] ?? null;
 $officer_title = $_SESSION['active_position'] ?? null;
@@ -371,7 +374,7 @@ if ($noti_result) {
                 <div class="user-avatar"><?php echo htmlspecialchars(substr($student_name, 0, 1)); ?></div>
                 <div>
                     <div class="fw-bold"><?php echo htmlspecialchars($student_name); ?></div>
-                    <small class="text-muted">學號：<?php echo htmlspecialchars($student_id); ?></small>
+                    <small class="text-muted">學號：<?php echo htmlspecialchars($_SESSION['student_no'] ?? $student_id); ?></small>
                 </div>
             </div>
         </header>
@@ -406,7 +409,7 @@ if ($noti_result) {
 
             <div class="quick-actions">
                 <?php if ($is_officer): ?>
-                <div class="action-card" onclick="location.href='apply_event.php'">
+                <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/apply_event.php'">
                     <div class="action-top">
                         <span>活動申請</span>
                         <div class="action-icon"><i class="bi bi-plus-lg"></i></div>
@@ -414,7 +417,7 @@ if ($noti_result) {
                     <h6>立即新增活動</h6>
                     <p>快速建立活動申請並查看審核進度。</p>
                 </div>
-                <div class="action-card" onclick="location.href='calendar.php'">
+                <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/calendar.php'">
                     <div class="action-top">
                         <span>場地申請</span>
                         <div class="action-icon"><i class="bi bi-building"></i></div>
@@ -422,7 +425,7 @@ if ($noti_result) {
                     <h6>預約可用場地</h6>
                     <p>檢視場地空檔並提交申請表單。</p>
                 </div>
-                <div class="action-card" onclick="location.href='field_coord.php'">
+                <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/field_coord.php'">
                     <div class="action-top">
                         <span>場地協調</span>
                         <div class="action-icon"><i class="bi bi-people-fill"></i></div>

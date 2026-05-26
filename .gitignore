@@ -1,3 +1,6 @@
+# 含敏感資訊的設定檔（禁止上傳 GitHub）
+includes/mail_config.php
+
 # 使用者上傳的文件
 document/*.pdf
 document/*.doc

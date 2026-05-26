@@ -235,7 +235,7 @@ $active_setting = $fc_manager->getActiveSettings();
     </style>
 </head>
 <body>
-    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
+    <?php include(__DIR__ . "/../includes/admin_sidebar.php"); ?>
 
     <main class="main-content">
         <header class="top-navbar">
