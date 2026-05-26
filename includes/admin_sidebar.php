@@ -3,8 +3,7 @@ $current_page = $current_page ?? '';
 ?>
 <div class="sidebar">
     <div class="brand">
-        <h4>輔仁大學
-            課外活動指導組</h4>
+        <h4>輔仁大學<br>課外活動指導組</h4>
     </div>
     <nav class="nav flex-column">
         <a class="nav-link <?= $current_page === 'dashboard' ? 'active' : '' ?>" href="dashboard.php"><i class="bi bi-speedometer2"></i> 儀表板</a>

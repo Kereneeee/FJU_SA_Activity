@@ -159,6 +159,8 @@ if ($stmt) {
             --danger: #ef4444;
         }
         * { box-sizing: border-box; }
+        html { overflow-y: scroll; }
+
         body {
             margin: 0;
             min-height: 100vh;
@@ -175,7 +177,7 @@ if ($stmt) {
             background: linear-gradient(180deg, var(--primary), var(--sidebar));
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }
