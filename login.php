@@ -70,7 +70,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 body {
     height: 100vh;
     margin: 0;
-    background: linear-gradient(135deg, #74ebd5, #9face6);
+    background: #d5e3ea;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -81,9 +81,8 @@ body {
     width: 380px;
     padding: 35px;
     border-radius: 20px;
-    background: rgba(255,255,255,0.9);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    background: #ffffff;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.09);
 }
 
 .title {
@@ -93,28 +92,36 @@ body {
 
 .title i {
     font-size: 40px;
-    color: #4a6cf7;
+    color: #1e4d6b;
 }
 
 .title h4 {
     margin-top: 10px;
     font-weight: bold;
+    color: #1e4d6b;
 }
 
 .form-control {
     border-radius: 10px;
+    border-color: #d5e3ea;
+}
+
+.form-control:focus {
+    border-color: #1e4d6b;
+    box-shadow: 0 0 0 0.2rem rgba(30,77,107,0.15);
 }
 
 .btn-login {
     border-radius: 10px;
-    background: linear-gradient(135deg, #4a6cf7, #6a8dff);
+    background: #1e4d6b;
     border: none;
     color: white;
     transition: 0.3s;
 }
 
 .btn-login:hover {
-    transform: scale(1.03);
+    background: #14394f;
+    transform: scale(1.02);
 }
 
 .password-wrapper {
@@ -122,13 +129,13 @@ body {
 }
 
 .password-wrapper input {
-    padding-right: 40px; /* 留空間給眼睛 */
+    padding-right: 40px;
 }
 
 .password-wrapper i {
     position: absolute;
     right: 12px;
-    top: 38px;  /* ⭐關鍵：直接固定在 input 中間 */
+    top: 38px;
     cursor: pointer;
     color: #666;
 }
@@ -182,7 +189,7 @@ body {
     </form>
 
     <div class="footer-text">
-        <a href="forgot_password.php" class="text-decoration-none" style="color:#4a6cf7;">
+        <a href="forgot_password.php" class="text-decoration-none" style="color:#1e4d6b;">
             <i class="bi bi-key me-1"></i>忘記密碼？
         </a>
     </div>

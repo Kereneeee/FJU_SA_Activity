@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -359,10 +359,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
-            --sidebar-hover: #6a1d43;
-            --bg: #f4f6fb;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
+            --sidebar-hover: #ece8dd;
+            --bg: #f7f5ef;
             --card: #ffffff;
         }
         * { box-sizing: border-box; }
@@ -379,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             left: 0;
             width: 260px;
             height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
             overflow-y: auto;
@@ -408,8 +408,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
         }
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.12);
-            color: #ffffff;
+            background: #ece8dd;
+            color: #1e4d6b;
             transform: translateX(4px);
         }
         .sidebar .nav-link i { font-size: 1.1rem; }
@@ -424,8 +424,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             transition: margin-left 0.25s ease;
         }
         .top-navbar {
-            background: white;
-            border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea;
+            border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
@@ -439,6 +439,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             background: transparent;
             padding: 0;
         }
+        .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .content-wrapper {
             padding: 1.5rem 2rem 2rem;
         }
@@ -528,7 +533,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             .main-content { margin-left: 0; }
         }
         @media (max-width: 768px) {
-            .top-navbar {
+        .top-navbar {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 1rem;
@@ -541,6 +546,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 box-shadow: none;
             }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
     </style>
 </head>
 <body>

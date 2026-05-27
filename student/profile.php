@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -159,8 +159,8 @@ foreach ($user_clubs as $club) {
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
         }
 
         body {
@@ -170,8 +170,8 @@ foreach ($user_clubs as $club) {
         }
 
         .navbar-custom {
-            background: white;
-            border-bottom: 1px solid #e9ecef;
+            background: #ffffff;
+            border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
@@ -197,7 +197,7 @@ foreach ($user_clubs as $club) {
         }
 
         .profile-header {
-            background: linear-gradient(135deg, var(--primary), #a61e4d);
+            background: var(--primary);
             color: white;
             padding: 2rem;
             display: flex;
@@ -374,6 +374,17 @@ foreach ($user_clubs as $club) {
                 margin: 1rem auto;
             }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+        .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
     </style>
 </head>
 <body>

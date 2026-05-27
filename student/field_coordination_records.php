@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -67,10 +67,10 @@ if (!empty($clubs)) {
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
-            --sidebar-hover: #6a1d43;
-            --bg: #f4f6fb;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
+            --sidebar-hover: #ece8dd;
+            --bg: #f7f5ef;
             --card: #ffffff;
         }
         * { box-sizing: border-box; }
@@ -87,7 +87,7 @@ if (!empty($clubs)) {
             left: 0;
             width: 260px;
             height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
             overflow-y: auto;
@@ -99,8 +99,8 @@ if (!empty($clubs)) {
             min-height: 100vh;
         }
         .top-navbar {
-            background: white;
-            border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea;
+            border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
             position: sticky;
             top: 0;
@@ -146,12 +146,23 @@ if (!empty($clubs)) {
             font-size: 0.85rem;
             font-weight: 600;
         }
-        .status-pending { background: #fbbf24; color: #78350f; }
-        .status-approved { background: #86efac; color: #166534; }
-        .status-rejected { background: #f87171; color: #7f1d1d; }
+        .status-pending { background: #f0e8c0; color: #6b5a20; }
+        .status-approved { background: #70a3a7; color: #1a3f42; }
+        .status-rejected { background: #c9979a; color: #5c1f22; }
         @media (max-width: 1100px) {
             .main-content { margin-left: 0; }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+        .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
     </style>
 </head>
 <body>

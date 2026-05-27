@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -81,9 +81,9 @@ $stmt->close();
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
-            --bg: #f4f6fb;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
+            --bg: #f7f5ef;
         }
 
         html { overflow-y: scroll; }
@@ -100,7 +100,7 @@ $stmt->close();
             top: 0; left: 0;
             width: 260px;
             height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
             overflow-y: hidden;
@@ -118,7 +118,7 @@ $stmt->close();
             text-decoration: none;
         }
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.12); color: #ffffff; transform: translateX(4px);
+            background: #ece8dd; color: #1e4d6b; transform: translateX(4px);
         }
         .sidebar .nav-link i { font-size: 1.1rem; }
         .sidebar .sidebar-section { padding: 1rem 0.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.12); }
@@ -130,6 +130,11 @@ $stmt->close();
             position: sticky; top: 0; z-index: 1100;
         }
         .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
+                .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .top-navbar .user-card { display: flex; align-items: center; gap: 0.85rem; }
         .user-avatar {
             width: 44px; height: 44px; border-radius: 50%;
@@ -152,7 +157,7 @@ $stmt->close();
         }
 
         .profile-header {
-            background: linear-gradient(135deg, var(--primary), #a61e4d);
+            background: var(--primary);
             color: white;
             padding: 2rem;
             display: flex;
@@ -279,6 +284,12 @@ $stmt->close();
                 margin: 1rem auto;
             }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
     </style>
 </head>
 <body>

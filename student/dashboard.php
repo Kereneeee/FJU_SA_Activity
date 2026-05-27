@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -104,10 +104,10 @@ if ($noti_result) {
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
-            --sidebar-hover: #6a1d43;
-            --bg: #f4f6fb;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
+            --sidebar-hover: #ece8dd;
+            --bg: #f7f5ef;
             --card: #ffffff;
         }
         * { box-sizing: border-box; }
@@ -124,7 +124,7 @@ if ($noti_result) {
             left: 0;
             width: 260px;
             height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
             overflow-y: auto;
@@ -153,8 +153,8 @@ if ($noti_result) {
         }
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.12);
-            color: #ffffff;
+            background: #ece8dd;
+            color: #1e4d6b;
             transform: translateX(4px);
         }
         .sidebar .nav-link i { font-size: 1.1rem; }
@@ -169,8 +169,8 @@ if ($noti_result) {
             transition: margin-left 0.25s ease;
         }
         .top-navbar {
-            background: white;
-            border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea;
+            border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
@@ -184,6 +184,11 @@ if ($noti_result) {
             background: transparent;
             padding: 0;
         }
+                .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .top-navbar .user-card {
             display: flex;
             align-items: center;
@@ -244,7 +249,7 @@ if ($noti_result) {
             margin-bottom: 1.5rem;
         }
         .action-card {
-            background: linear-gradient(135deg, #8b1538 0%, #c2185b 100%);
+            background: #1e4d6b;
             color: white;
             border-radius: 18px;
             padding: 1.7rem;
@@ -257,7 +262,7 @@ if ($noti_result) {
         }
         .action-card:hover {
             transform: translateY(-4px);
-            box-shadow: 0 18px 40px rgba(139,21,56,0.2);
+            box-shadow: 0 18px 40px rgba(30,77,107,0.2);
         }
         .action-card .action-top {
             display: flex;
@@ -327,8 +332,8 @@ if ($noti_result) {
             font-size: 0.8rem;
             font-weight: 600;
         }
-        .status-approved { background: #d1e7dd; color: #0f5132; }
-        .status-pending { background: #fff3cd; color: #664d03; }
+        .status-approved { background: #70a3a7; color: #1a3f42; }
+        .status-pending { background: #f0e8c0; color: #6b5a20; }
         .status-alert { background: #f8d7da; color: #842029; }
         .notification-list .notification-card {
             display: grid;
@@ -353,9 +358,15 @@ if ($noti_result) {
             .main-content { margin-left: 0; }
         }
         @media (max-width: 768px) {
-            .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
+        .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
             .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
     </style>
 </head>
 <body>
@@ -380,18 +391,18 @@ if ($noti_result) {
         </header>
 
         <section class="dashboard-grid">
-            <div style="padding: 1.5rem 0; background: #e3f2fd; border-radius: 12px; margin-bottom: 1.5rem; padding: 1.5rem;">
+            <div style="background: #dce9ea; border-radius: 12px; margin-bottom: 1.5rem; padding: 1.5rem;">
                 <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
                     <div style="flex: 1;">
-                        <h5 style="margin: 0 0 0.5rem; color: #1565c0;">
+                        <h5 style="margin: 0 0 0.5rem; color: #1a4a4f;">
                             <i class="bi bi-sunrise"></i> 歡迎回來，<?php echo htmlspecialchars($student_name); ?>！
                         </h5>
-                        <p style="margin: 0; color: #0d47a1; font-size: 0.9rem;">
+                        <p style="margin: 0; color: #2c6b70; font-size: 0.9rem;">
                             今天是 <?php echo date('Y年m月d日'); ?>
                             <?php if ($current_club): ?>
                                 | <i class="bi bi-people"></i> <strong><?php echo htmlspecialchars($current_club); ?></strong>
                                 <?php if ($is_officer): ?>
-                                    <span style="background: #4caf50; color: white; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;">
+                                    <span style="background: #70a3a7; color: white; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;">
                                         <?php echo htmlspecialchars($officer_title ?? '幹部'); ?>
                                     </span>
                                 <?php endif; ?>
@@ -399,7 +410,7 @@ if ($noti_result) {
                         </p>
                     </div>
                     <?php if ($current_club): ?>
-                    <a href="profile.php" style="padding: 0.5rem 1rem; background: #1565c0; color: white; text-decoration: none; border-radius: 8px; font-size: 0.85rem;">
+                    <a href="profile.php" style="padding: 0.5rem 1rem; background: #1e4d6b; color: white; text-decoration: none; border-radius: 8px; font-size: 0.85rem;">
                         切換身分
                     </a>
                     <?php endif; ?>

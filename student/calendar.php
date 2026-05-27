@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -169,16 +169,16 @@ if ($stmt) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>場地協調日曆 - 輔仁大學課外活動指導組</title>
+    <title>空間日曆 - 輔仁大學課外活動指導組</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
 
     <style>
         :root {
-            --primary: #8B1538;
-            --sidebar: #4c0f2a;
-            --bg: #f4f6fb;
+            --primary: #1e4d6b;
+            --sidebar: #14394f;
+            --bg: #f7f5ef;
             --card: #ffffff;
             --success: #10b981;
             --warning: #f59e0b;
@@ -198,7 +198,7 @@ if ($stmt) {
             left: 0;
             width: 260px;
             height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
+            background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
             overflow-y: auto;
@@ -219,15 +219,20 @@ if ($stmt) {
         }
         .sidebar .nav-link:hover,
         .sidebar .nav-link.active {
-            background: rgba(255,255,255,0.12);
-            color: #ffffff;
+            background: #ece8dd;
+            color: #1e4d6b;
             transform: translateX(4px);
         }
         .sidebar .nav-link i { font-size: 1.1rem; }
         .sidebar .sidebar-section { padding: 1rem 0.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.12); }
         .main-content { margin-left: 260px; min-height: 100vh; transition: margin-left 0.25s ease; }
-        .top-navbar { background: white; border-bottom: 1px solid #e9ecef; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
+        .top-navbar { background: #d5e3ea; border-bottom: 1px solid #bdd0d9; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
         .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; }
+        .top-navbar .breadcrumb { font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .content-wrapper { padding: 1.5rem 2rem 2rem; }
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .card h3 { margin-bottom: 1rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
@@ -235,8 +240,8 @@ if ($stmt) {
         .filter-row .form-label { font-weight: 600; color: #374151; margin-bottom: 0.4rem; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 1rem; }
         .day-card { min-height: 98px; border: 2px solid #e5e7eb; border-radius: 14px; padding: 10px; background: white; cursor: pointer; transition: all 0.25s ease; display: flex; flex-direction: column; justify-content: space-between; }
-        .day-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(139,21,56,0.1); }
-        .day-card.selected { border-color: var(--primary); background: rgba(139,21,56,0.08); }
+        .day-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(30,77,107,0.1); }
+        .day-card.selected { border-color: var(--primary); background: rgba(30,77,107,0.08); }
         .day-card.other-month { opacity: 0.35; cursor: default; }
         .day-number { font-size: 1.1rem; font-weight: 700; }
         .day-status { font-size: 0.82rem; color: #374151; margin-top: 6px; }
@@ -255,7 +260,7 @@ if ($stmt) {
         .badge-status.rejected { background: #f8d7da; color: #842029; }
         .btn-action { padding: 0.55rem 1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; transition: all 0.25s ease; }
         .btn-action.primary { background: var(--primary); color: white; }
-        .btn-action.primary:hover { background: #5a0f29; }
+        .btn-action.primary:hover { background: #14394f; }
         .btn-action.secondary { background: #e5e7eb; color: #1f2937; }
         .btn-action.secondary:hover { background: #d1d5db; }
         .btn-action.danger { background: var(--danger); color: white; }
@@ -275,6 +280,12 @@ if ($stmt) {
             .calendar-grid { grid-template-columns: repeat(2, 1fr); }
             .slot-row { grid-template-columns: 1fr; }
         }
+    
+        /* 提示訊息配色 */
+        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
+        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
+        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
+        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
     </style>
 </head>
 <body>
@@ -285,9 +296,9 @@ if ($stmt) {
             <div>
                 <ol class="breadcrumb mb-0">
                     <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">場地協調</li>
+                    <li class="breadcrumb-item active" aria-current="page">空間日曆</li>
                 </ol>
-                <h4 class="mt-2 mb-0">場地協調</h4>
+                <h4 class="mt-2 mb-0">空間日曆</h4>
             </div>
         </header>
 
