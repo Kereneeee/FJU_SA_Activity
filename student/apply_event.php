@@ -25,6 +25,7 @@ $prefill_club_name = '';
 $prefill_event_date = '';
 $prefill_start_time = '';
 $prefill_end_time = '';
+$prefill_end_date = '';
 $prefill_venue_id = '';
 if ($user_id) {
     $fc_manager = new FieldCoordinationManager($conn);
@@ -57,20 +58,24 @@ if ($result_spaces) {
 }
 
 // 從資料庫獲取器材
-// 從資料庫獲取器材 (修正：改為 equipment_status 並移除了未定義的 available_quantity)
-$sql_equipment = "SELECT equipment_id, name, total_quantity FROM equipment WHERE equipment_status = 'available'";
+$sql_equipment = "SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
+if (!$result_equipment) {
+    // 欄位名稱 fallback
+    $sql_equipment = "SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment";
+    $result_equipment = $conn->query($sql_equipment);
+}
 $equipment = [];
 if ($result_equipment) {
     $equipment_list = $result_equipment->fetch_all(MYSQLI_ASSOC);
-    // 轉換為預期的格式
     foreach ($equipment_list as $eq) {
         $equipment[] = [
-            'id' => $eq['equipment_id'],
-            'name' => $eq['name'],
-            'total' => $eq['total_quantity'],
-            'available' => $eq['total_quantity'], // 直接用資料庫的總數量當作初始可用數量
-            'unit' => '件'
+            'id'              => $eq['equipment_id'],
+            'name'            => $eq['name'],
+            'total'           => $eq['total_quantity'],
+            'available'       => $eq['total_quantity'],
+            'borrowing_limit' => (int)($eq['borrowing_limit'] ?? 0),
+            'unit'            => '件'
         ];
     }
 }
@@ -80,8 +85,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $club_name = $_POST['club_name'] ?? '';
     $event_name = $_POST['event_name'] ?? '';
     $event_date = $_POST['event_date'] ?? '';
+    $end_date   = $_POST['end_date']   ?? $event_date;
     $start_time = $_POST['start_time'] ?? '';
-    $end_time = $_POST['end_time'] ?? '';
+    $end_time   = $_POST['end_time']   ?? '';
     $venue_id = $_POST['venue_id'] ?? '';
     $expected_attendees = $_POST['expected_attendees'] ?? '';
     $description = $_POST['description'] ?? '';
@@ -91,8 +97,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     if (empty($event_name)) $errors[] = "請填寫活動名稱";
     if (empty($club_name)) $errors[] = "請填寫社團名稱";
-    if (empty($event_date)) $errors[] = "請選擇活動日期";
+    if (empty($event_date)) $errors[] = "請選擇開始日期";
+    if (empty($end_date))   $errors[] = "請選擇結束日期";
     if (empty($start_time) || empty($end_time)) $errors[] = "請填寫活動時間";
+    if (!empty($start_time) && ($start_time < '08:30' || $start_time > '21:30'))
+        $errors[] = "開始時間必須在 08:30 至 21:30 之間";
+    if (!empty($end_time) && ($end_time < '08:30' || $end_time > '21:30'))
+        $errors[] = "結束時間必須在 08:30 至 21:30 之間";
+    if (!empty($event_date) && !empty($end_date) && $end_date < $event_date)
+        $errors[] = "結束日期不能早於開始日期";
     if (empty($venue_id)) $errors[] = "請選擇場地";
     // 修正後的必填文件檢查
     if (!isset($_FILES['event_document']) || $_FILES['event_document']['error'] == UPLOAD_ERR_NO_FILE) {
@@ -147,7 +160,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         // --- 2. 準備時間與變數 ---
         $event_start = $event_date . " " . $start_time . ":00";
-        $event_end = $event_date . " " . $end_time . ":00";   
+        $event_end   = $end_date   . " " . $end_time   . ":00";
         $venue_id = intval($venue_id);
         $empty_note = ""; 
         
@@ -516,7 +529,18 @@ function getEquipmentIcon($equipId) {
             border-radius: 6px;
             padding: 0.25rem;
             font-weight: 600;
+            background: #fff;
+            cursor: text;
         }
+        .counter input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(30,77,107,0.12);
+        }
+        /* 隱藏瀏覽器預設的數字上下箭頭 */
+        .counter input::-webkit-outer-spin-button,
+        .counter input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .counter input[type=number] { -moz-appearance: textfield; }
         .message {
             padding: 1rem;
             border-radius: 12px;
@@ -637,18 +661,22 @@ function getEquipmentIcon($equipId) {
                             </div>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
                             <div class="form-group">
-                                <label for="event_date">活動日期 *</label>
+                                <label for="event_date">開始日期 *</label>
                                 <input type="date" id="event_date" name="event_date" class="form-control" value="<?= htmlspecialchars($_POST['event_date'] ?? $prefill_event_date, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                             <div class="form-group">
-                                <label>開始時間 *</label>
-                                <input type="time" id="start_time" name="start_time" class="form-control" value="<?= htmlspecialchars($_POST['start_time'] ?? $prefill_start_time, ENT_QUOTES, 'UTF-8') ?>" required>
+                                <label for="start_time">開始時間 * <small class="text-muted">(08:30–21:30)</small></label>
+                                <input type="time" id="start_time" name="start_time" class="form-control" min="08:30" max="21:30" step="1800" value="<?= htmlspecialchars($_POST['start_time'] ?? $prefill_start_time, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                             <div class="form-group">
-                                <label>結束時間 *</label>
-                                <input type="time" id="end_time" name="end_time" class="form-control" value="<?= htmlspecialchars($_POST['end_time'] ?? $prefill_end_time, ENT_QUOTES, 'UTF-8') ?>" required>
+                                <label for="end_date">結束日期 *</label>
+                                <input type="date" id="end_date" name="end_date" class="form-control" value="<?= htmlspecialchars($_POST['end_date'] ?? $prefill_end_date, ENT_QUOTES, 'UTF-8') ?>" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="end_time">結束時間 * <small class="text-muted">(08:30–21:30)</small></label>
+                                <input type="time" id="end_time" name="end_time" class="form-control" min="08:30" max="21:30" step="1800" value="<?= htmlspecialchars($_POST['end_time'] ?? $prefill_end_time, ENT_QUOTES, 'UTF-8') ?>" required>
                             </div>
                         </div>
 
@@ -681,34 +709,83 @@ function getEquipmentIcon($equipId) {
                 <div class="card">
                     <h3><i class="bi bi-tools"></i> 器材借用</h3>
                     <div class="form-section">
+
+                        <!-- 時段選擇 -->
+                        <div style="background:#f0f4f8; border-radius:12px; padding:1rem 1.25rem; margin-bottom:1rem;">
+                            <div style="font-weight:600; color:#1e4d6b; margin-bottom:0.75rem; font-size:0.95rem;">
+                                <i class="bi bi-clock me-1"></i>選擇器材借用時段
+                                <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:0.75rem; align-items:flex-end;">
+                                <div>
+                                    <label style="font-size:0.85rem; color:#374151; display:block; margin-bottom:0.3rem;">
+                                        借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small>
+                                    </label>
+                                    <input type="datetime-local" id="equip_borrow_time" name="equip_borrow_time" class="form-control">
+                                </div>
+                                <div>
+                                    <label style="font-size:0.85rem; color:#374151; display:block; margin-bottom:0.3rem;">
+                                        歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small>
+                                    </label>
+                                    <input type="datetime-local" id="equip_return_time" name="equip_return_time" class="form-control">
+                                </div>
+                                <button type="button" onclick="queryEquipmentAvailability()"
+                                    style="background:#1e4d6b; color:white; border:none; border-radius:8px; padding:0.65rem 1.2rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:background 0.2s;"
+                                    onmouseover="this.style.background='#14394f'" onmouseout="this.style.background='#1e4d6b'">
+                                    <i class="bi bi-search me-1"></i>查詢可用數量
+                                </button>
+                            </div>
+                            <div id="equipTimeWarning" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#f0e8c0; border-radius:8px; color:#6b5a20; font-size:0.88rem;"></div>
+                        </div>
+
+                        <!-- 器材卡片 -->
                         <div class="equipment-grid">
-                            <?php foreach ($equipment as $item): ?><div class="equipment-card">
+                            <?php foreach ($equipment as $item):
+                                $initMax = $item['borrowing_limit'] > 0
+                                    ? min($item['available'], $item['borrowing_limit'])
+                                    : $item['available'];
+                                $stockClass = $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty';
+                            ?>
+                            <div class="equipment-card"
+                                 data-equip-id="<?= $item['id'] ?>"
+                                 data-total="<?= $item['total'] ?>"
+                                 data-limit="<?= $item['borrowing_limit'] ?>">
                                 <div class="equipment-header">
                                     <div class="equipment-name">
                                         <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
                                         <?= htmlspecialchars($item['name']) ?>
                                     </div>
                                     <div class="equipment-stock">
-                                        <div class="stock-<?= $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty' ?>">
-                                            剩餘: <?= $item['available'] ?>/<?= $item['total'] ?>
-                                        </div>                                            
+                                        <div class="avail-text stock-<?= $stockClass ?>">
+                                            剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="counter mt-2">
-                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, -1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
-                                    
-                                    <?php $maxBorrow = $item['available']; ?>
-
-                                    <input type="number" id="qty_<?= $item['id'] ?>" 
-                                    name="equipment[<?= $item['id'] ?>]" 
-                                    value="0" min="0" 
-                                    max="<?= $maxBorrow ?>" 
-                                    readonly>
-
-                                    <button type="button" onclick="changeQuantity(<?= $item['id'] ?>, 1)" <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                <?php if ($item['borrowing_limit'] > 0): ?>
+                                <div style="font-size:0.78rem; color:#9ca3af; margin-bottom:0.4rem;">
+                                    <i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件
                                 </div>
-                            </div><?php endforeach; ?>
+                                <?php endif; ?>
+                                <div class="counter mt-1">
+                                    <button type="button" class="btn-minus"
+                                            onclick="changeQuantity(<?= $item['id'] ?>, -1)"
+                                            <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
+                                    <input type="number"
+                                           id="qty_<?= $item['id'] ?>"
+                                           name="equipment[<?= $item['id'] ?>]"
+                                           value="0" min="0"
+                                           max="<?= $initMax ?>"
+                                           data-borrowing-limit="<?= $item['borrowing_limit'] ?>"
+                                           oninput="clampQtyInput(this)"
+                                           onchange="syncQtyButtons(this)">
+                                    <button type="button" class="btn-plus"
+                                            onclick="changeQuantity(<?= $item['id'] ?>, 1)"
+                                            <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
                         </div>
+
                     </div>
                 </div>
 
@@ -763,23 +840,179 @@ function getEquipmentIcon($equipId) {
             document.querySelector(`input[name="venue_id"][value="${venueId}"]`).checked = true;
         }
 
-        function changeQuantity(equipId, delta) {
-            const input = document.getElementById('qty_' + equipId);
-            const max = parseInt(input.getAttribute('max'));
-            let value = parseInt(input.value) + delta;
-            if (value < 0) value = 0;
-            if (value > max) value = max;
-            input.value = value;
+        // 取得有效上限（庫存 vs 借用上限取小值）
+        function getEffectiveMax(input) {
+            const availMax    = parseInt(input.getAttribute('max')) || 0;
+            const borrowLimit = parseInt(input.getAttribute('data-borrowing-limit')) || 0;
+            return borrowLimit > 0 ? Math.min(availMax, borrowLimit) : availMax;
         }
 
+        // 手動輸入時即時 clamp（打字中）
+        function clampQtyInput(input) {
+            const effectiveMax = getEffectiveMax(input);
+            let v = parseInt(input.value);
+            if (isNaN(v) || v < 0) { input.value = 0; return; }
+            if (v > effectiveMax)   { input.value = effectiveMax; }
+        }
+
+        // 輸入完成後同步按鈕狀態
+        function syncQtyButtons(input) {
+            clampQtyInput(input);
+            const effectiveMax = getEffectiveMax(input);
+            const availMax     = parseInt(input.getAttribute('max')) || 0;
+            const v            = parseInt(input.value) || 0;
+            const card = input.closest('.equipment-card');
+            if (card) {
+                card.querySelector('.btn-minus').disabled = (v <= 0);
+                card.querySelector('.btn-plus').disabled  = (v >= effectiveMax) || (availMax <= 0);
+            }
+        }
+
+        function changeQuantity(equipId, delta) {
+            const input        = document.getElementById('qty_' + equipId);
+            const effectiveMax = getEffectiveMax(input);
+            let value = (parseInt(input.value) || 0) + delta;
+            if (value < 0) value = 0;
+            if (value > effectiveMax) value = effectiveMax;
+            input.value = value;
+            syncQtyButtons(input);
+        }
+
+        // ── 查詢器材可用數量 ──────────────────────────────────
+        async function queryEquipmentAvailability() {
+            const borrowTime = document.getElementById('equip_borrow_time').value;
+            const returnTime = document.getElementById('equip_return_time').value;
+            const warnDiv    = document.getElementById('equipTimeWarning');
+
+            warnDiv.style.display = 'none';
+            warnDiv.innerHTML = '';
+
+            if (!borrowTime || !returnTime) {
+                alert('請先選擇借用時間與歸還時間。'); return;
+            }
+
+            // ① 時段順序
+            if (borrowTime >= returnTime) {
+                alert('歸還時間必須晚於借用時間。'); return;
+            }
+
+            // ② 時間規範 09:30–16:30
+            function timeMinutes(dtStr) {
+                const d = new Date(dtStr);
+                return d.getHours() * 60 + d.getMinutes();
+            }
+            const MIN = 9*60+30, MAX = 16*60+30;
+            if (timeMinutes(borrowTime) < MIN || timeMinutes(borrowTime) > MAX ||
+                timeMinutes(returnTime) < MIN || timeMinutes(returnTime) > MAX) {
+                warnDiv.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>器材借還時間須在 09:30–16:30 之間，請重新選擇。';
+                warnDiv.style.display = 'block';
+                return;
+            }
+
+            // ③ 與活動時間相容性檢查（提示，不阻擋）
+            const actStart = document.getElementById('event_date').value;
+            const actEnd   = document.getElementById('end_date').value;
+            if (actStart && actEnd) {
+                const btDate = borrowTime.split('T')[0];
+                const rtDate = returnTime.split('T')[0];
+                const warns  = [];
+                if (btDate > actStart)
+                    warns.push('借用日期（' + btDate + '）晚於活動開始日（' + actStart + '），建議提前借用器材。');
+                if (rtDate < actEnd)
+                    warns.push('歸還日期（' + rtDate + '）早於活動結束日（' + actEnd + '），建議活動結束後再歸還。');
+                if (warns.length) {
+                    warnDiv.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + warns.join('<br>');
+                    warnDiv.style.display = 'block';
+                }
+            }
+
+            // ④ 呼叫 API 取得可用數量
+            try {
+                const res  = await fetch(`get_equipment_availability.php?borrow_time=${encodeURIComponent(borrowTime)}&return_time=${encodeURIComponent(returnTime)}`);
+                const data = await res.json();
+
+                document.querySelectorAll('.equipment-card[data-equip-id]').forEach(card => {
+                    const id    = card.dataset.equipId;
+                    const total = parseInt(card.dataset.total) || 0;
+                    const limit = parseInt(card.dataset.limit) || 0;
+
+                    const avail = (data[id] !== undefined) ? parseInt(data[id]) : total;
+                    const effectiveMax = limit > 0 ? Math.min(avail, limit) : avail;
+
+                    // 更新顯示
+                    const qtySpan  = card.querySelector('.avail-qty');
+                    const textDiv  = card.querySelector('.avail-text');
+                    const input    = document.getElementById('qty_' + id);
+                    const btnMinus = card.querySelector('.btn-minus');
+                    const btnPlus  = card.querySelector('.btn-plus');
+
+                    if (qtySpan) qtySpan.textContent = avail;
+                    if (textDiv) textDiv.className = 'avail-text stock-' + (avail <= 0 ? 'empty' : avail <= 2 ? 'low' : 'available');
+
+                    if (input) {
+                        input.setAttribute('max', avail);
+                        // 若已選數量超過新的可用量，自動調低
+                        if (parseInt(input.value) > effectiveMax) input.value = effectiveMax;
+                    }
+                    if (btnMinus) btnMinus.disabled = !input || parseInt(input?.value) <= 0;
+                    if (btnPlus)  btnPlus.disabled  = avail <= 0;
+                });
+            } catch (err) {
+                alert('查詢失敗，請稍後再試。');
+            }
+        }
+
+        // ── 器材時間 clamp（09:30–16:30）──────────────────────
+        function clampEquipTime(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            function clamp() {
+                if (!input.value) return;
+                const dt = new Date(input.value);
+                const min = dt.getHours() * 60 + dt.getMinutes();
+                if (min < 9*60+30) dt.setHours(9, 30, 0, 0);
+                else if (min > 16*60+30) dt.setHours(16, 30, 0, 0);
+                else return;
+                const pad = n => String(n).padStart(2, '0');
+                input.value = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+            }
+            input.addEventListener('change', clamp);
+            input.addEventListener('blur', clamp);
+        }
+        clampEquipTime('equip_borrow_time');
+        clampEquipTime('equip_return_time');
+
         document.getElementById('applicationForm').addEventListener('submit', function(e) {
+            const startDate = document.getElementById('event_date').value;
+            const endDate   = document.getElementById('end_date').value;
             const startTime = document.getElementById('start_time').value;
-            const endTime = document.getElementById('end_time').value;
+            const endTime   = document.getElementById('end_time').value;
             const venueSelected = document.querySelector('input[name="venue_id"]:checked');
 
-            if (startTime && endTime && startTime >= endTime) {
+            if (startDate && endDate && startDate > endDate) {
+                e.preventDefault();
+                alert('結束日期不能早於開始日期！');
+                return false;
+            }
+
+            const startDT = startDate + 'T' + startTime;
+            const endDT   = endDate   + 'T' + endTime;
+            if (startTime && endTime && startDT >= endDT) {
                 e.preventDefault();
                 alert('結束時間必須晚於開始時間！');
+                return false;
+            }
+
+            // 時間範圍檢查 08:30–21:30
+            const min = '08:30', max = '21:30';
+            if (startTime && (startTime < min || startTime > max)) {
+                e.preventDefault();
+                alert('開始時間必須在 08:30 至 21:30 之間！');
+                return false;
+            }
+            if (endTime && (endTime < min || endTime > max)) {
+                e.preventDefault();
+                alert('結束時間必須在 08:30 至 21:30 之間！');
                 return false;
             }
 
@@ -788,6 +1021,54 @@ function getEquipmentIcon($equipId) {
                 alert('請選擇活動場地！');
                 return false;
             }
+
+            // ── 器材借用時間驗證（如有選器材才驗） ──
+            const anyEquip = Array.from(
+                document.querySelectorAll('[name^="equipment["]')
+            ).some(i => parseInt(i.value) > 0);
+
+            if (anyEquip) {
+                const ebt = document.getElementById('equip_borrow_time').value;
+                const ert = document.getElementById('equip_return_time').value;
+
+                if (!ebt || !ert) {
+                    e.preventDefault();
+                    alert('有選擇器材時，請填寫器材的借用與歸還時間！');
+                    return false;
+                }
+                if (ebt >= ert) {
+                    e.preventDefault();
+                    alert('器材歸還時間必須晚於借用時間！');
+                    return false;
+                }
+                function chkMin(dtStr) {
+                    const d = new Date(dtStr);
+                    return d.getHours() * 60 + d.getMinutes();
+                }
+                if (chkMin(ebt) < 9*60+30 || chkMin(ebt) > 16*60+30) {
+                    e.preventDefault();
+                    alert('器材借用時間必須在 09:30 至 16:30 之間！');
+                    return false;
+                }
+                if (chkMin(ert) < 9*60+30 || chkMin(ert) > 16*60+30) {
+                    e.preventDefault();
+                    alert('器材歸還時間必須在 09:30 至 16:30 之間！');
+                    return false;
+                }
+            }
+        });
+
+        // 時間範圍自動修正（08:30–21:30）
+        ['start_time', 'end_time'].forEach(function(id) {
+            const input = document.getElementById(id);
+            if (!input) return;
+            function clamp() {
+                if (!input.value) return;
+                if (input.value < '08:30') input.value = '08:30';
+                if (input.value > '21:30') input.value = '21:30';
+            }
+            input.addEventListener('change', clamp);
+            input.addEventListener('blur', clamp);
         });
 
         window.addEventListener('DOMContentLoaded', function () {

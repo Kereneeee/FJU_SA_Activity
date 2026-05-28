@@ -4,23 +4,26 @@ error_reporting(E_ALL);
 
 require_once(__DIR__ . "/DB/db_config.php");
 
-$error = "";
-$email_value = "";
+$error      = "";
+$error_type = "";   // "empty" | "account" | "password"
+$input_value = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
-    $email = trim($_POST["email"]);
-    $password = trim($_POST["password"]);
+    $identifier = trim($_POST["identifier"]);   // 學號 or email
+    $password   = trim($_POST["password"]);
 
-    $email_value = $email;
+    $input_value = $identifier;
 
-    if (empty($email) || empty($password)) {
-        $error = "請輸入帳號與密碼";
+    if (empty($identifier) || empty($password)) {
+        $error      = "請輸入帳號與密碼";
+        $error_type = "empty";
     } else {
 
-        $sql = "SELECT * FROM users WHERE email = ?";
+        // 同時比對 email 及 student_id（學號為數字，MySQL 會自動轉型）
+        $sql  = "SELECT * FROM users WHERE email = ? OR CAST(student_id AS CHAR) = ?";
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("s", $email);
+        $stmt->bind_param("ss", $identifier, $identifier);
         $stmt->execute();
 
         $result = $stmt->get_result();
@@ -30,12 +33,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             if ($password === $user["password"]) {
 
-                $_SESSION["user_id"] = $user["user_id"];
-                $_SESSION["user_name"] = $user["name"];
-                $_SESSION["role"] = $user["role"];
+                $_SESSION["user_id"]      = $user["user_id"];
+                $_SESSION["user_name"]    = $user["name"];
+                $_SESSION["role"]         = $user["role"];
                 $_SESSION["student_name"] = $user["name"];
-                $_SESSION["student_id"] = $email;       // 登入識別碼（email）
-                $_SESSION["student_no"] = $user["student_id"]; // 真實學號（int）
+                $_SESSION["student_id"]   = $user["email"];        // 統一用 email 當識別碼
+                $_SESSION["student_no"]   = $user["student_id"];   // 真實學號（int）
 
                 session_regenerate_id(true);
 
@@ -47,11 +50,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 exit();
 
             } else {
-                $error = "密碼錯誤";
+                $error      = "密碼錯誤，請確認後再試";
+                $error_type = "password";
             }
 
         } else {
-            $error = "帳號不存在";
+            $error      = "查無此帳號，請確認學號或電子信箱是否正確";
+            $error_type = "account";
         }
     }
 }
@@ -146,6 +151,34 @@ body {
     margin-top: 15px;
     color: #666;
 }
+
+/* 分類錯誤提示 */
+.login-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+.login-alert i { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+.login-alert.type-empty {
+    background: #f0e8c0;
+    color: #6b5a20;
+    border: 1px solid #d4c870;
+}
+.login-alert.type-account {
+    background: #dce9ea;
+    color: #1a4a4f;
+    border: 1px solid #9fc4cb;
+}
+.login-alert.type-password {
+    background: #deb8b9;
+    color: #5c1f22;
+    border: 1px solid #c9979a;
+}
 </style>
 </head>
 
@@ -158,20 +191,28 @@ body {
         <h4>課指組管理系統</h4>
     </div>
 
-    <?php if ($error): ?>
-        <div class="alert alert-danger"><?php echo $error; ?></div>
+    <?php if ($error):
+        if ($error_type === 'account')       $icon = 'bi-person-x-fill';
+        elseif ($error_type === 'password')  $icon = 'bi-lock-fill';
+        else                                 $icon = 'bi-exclamation-triangle-fill';
+    ?>
+    <div class="login-alert type-<?= $error_type ?>">
+        <i class="bi <?= $icon ?>"></i>
+        <span><?= htmlspecialchars($error) ?></span>
+    </div>
     <?php endif; ?>
 
     <form method="POST" onsubmit="showLoading()">
 
         <div class="mb-3">
-            <label class="form-label">帳號（電子信箱）</label>
+            <label class="form-label">帳號</label>
             <input
                 type="text"
-                name="email"
+                name="identifier"
                 class="form-control"
-                value="<?php echo htmlspecialchars($email_value); ?>"
-                placeholder="請輸入電子信箱"
+                value="<?php echo htmlspecialchars($input_value); ?>"
+                placeholder="學號 或 電子信箱"
+                autocomplete="username"
                 required
             >
         </div>
@@ -191,6 +232,10 @@ body {
     <div class="footer-text">
         <a href="forgot_password.php" class="text-decoration-none" style="color:#1e4d6b;">
             <i class="bi bi-key me-1"></i>忘記密碼？
+        </a>
+        <span style="color:#ccc; margin: 0 8px;">|</span>
+        <a href="register.php" class="text-decoration-none" style="color:#1e4d6b;">
+            <i class="bi bi-person-plus me-1"></i>註冊帳號
         </a>
     </div>
 
