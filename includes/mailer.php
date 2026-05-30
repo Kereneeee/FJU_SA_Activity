@@ -121,3 +121,121 @@ function buildResetEmailText(string $name, string $link): string
          . "若您未申請此操作，請忽略本信件。\n\n"
          . "— 課指組管理系統";
 }
+
+// ── 共用：建立已設定好 SMTP 的 PHPMailer 實例 ─────────────────
+function _newMailer(): PHPMailer
+{
+    $mail = new PHPMailer(true);
+    $mail->isSMTP();
+    $mail->Host       = SMTP_HOST;
+    $mail->SMTPAuth   = true;
+    $mail->Username   = SMTP_USERNAME;
+    $mail->Password   = SMTP_PASSWORD;
+    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = SMTP_PORT;
+    $mail->CharSet    = 'UTF-8';
+    $mail->setFrom(MAIL_FROM_ADDRESS, MAIL_FROM_NAME);
+    return $mail;
+}
+
+// ── 通知管理員：學生送出新申請 ───────────────────────────────
+function sendApplicationSubmittedMail(string $admin_email, string $admin_name, array $event): array
+{
+    try {
+        $mail = _newMailer();
+        $mail->addAddress($admin_email, $admin_name);
+
+        $event_no   = 'EVENT' . str_pad($event['event_id'], 6, '0', STR_PAD_LEFT);
+        $safe_en    = htmlspecialchars($event['event_name']);
+        $safe_club  = htmlspecialchars($event['club_name']);
+        $safe_stu   = htmlspecialchars($event['student_name']);
+        $safe_start = htmlspecialchars($event['start_time']);
+        $safe_end   = htmlspecialchars($event['end_time']);
+
+        $mail->Subject = "【課指組系統】新活動申請通知 - {$safe_club} {$safe_en}";
+        $mail->isHTML(true);
+        $mail->Body = <<<HTML
+<!DOCTYPE html><html lang="zh-TW"><body style="margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#1e4d6b,#2d6a8f);padding:28px 40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">📋 新活動申請通知</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px;">輔仁大學 課外活動指導組管理系統</p>
+  </td></tr>
+  <tr><td style="padding:32px 40px;">
+    <p style="font-size:15px;color:#1f2937;">親愛的 <strong>{$admin_name}</strong> 您好，</p>
+    <p style="color:#4b5563;line-height:1.7;">有一筆新的活動申請正在等待審核，請盡快登入系統處理。</p>
+    <table style="width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;width:100px;">申請編號</td><td style="padding:6px 12px;font-weight:600;color:#1f2937;">{$event_no}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">活動名稱</td><td style="padding:6px 12px;color:#1f2937;">{$safe_en}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">社團名稱</td><td style="padding:6px 12px;color:#1f2937;">{$safe_club}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">申請人</td><td style="padding:6px 12px;color:#1f2937;">{$safe_stu}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">活動時間</td><td style="padding:6px 12px;color:#1f2937;">{$safe_start} ～ {$safe_end}</td></tr>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">請於 <strong>3 個工作天</strong>內完成審核。</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px 40px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;">
+    © 輔仁大學 課外活動指導組管理系統
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+        $mail->AltBody = "新活動申請通知\n申請編號：{$event_no}\n活動：{$event['event_name']}\n社團：{$event['club_name']}\n申請人：{$event['student_name']}\n時間：{$event['start_time']} ～ {$event['end_time']}\n請於3個工作天內審核。";
+        $mail->send();
+        return ['ok' => true, 'error' => ''];
+    } catch (MailerException $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}
+
+// ── 通知學生：審核結果（核准 / 退件）────────────────────────
+function sendApplicationReviewedMail(string $student_email, string $student_name, array $event, string $action, string $note): array
+{
+    try {
+        $mail = _newMailer();
+        $mail->addAddress($student_email, $student_name);
+
+        $is_approved = ($action === 'approved');
+        $event_no    = 'EVENT' . str_pad($event['event_id'], 6, '0', STR_PAD_LEFT);
+        $safe_en     = htmlspecialchars($event['event_name']);
+        $safe_stu    = htmlspecialchars($student_name);
+        $safe_note   = htmlspecialchars($note ?: '（無備註）');
+        $result_text = $is_approved ? '✅ 已核准' : '❌ 已退件';
+        $result_color= $is_approved ? '#0f5132' : '#721c24';
+        $result_bg   = $is_approved ? '#d1e7dd'  : '#f8d7da';
+        $subject_tag = $is_approved ? '審核通過' : '審核退件';
+
+        $mail->Subject = "【課指組系統】您的申請{$subject_tag} - {$safe_en}";
+        $mail->isHTML(true);
+        $mail->Body = <<<HTML
+<!DOCTYPE html><html lang="zh-TW"><body style="margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#1e4d6b,#2d6a8f);padding:28px 40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">活動申請審核結果通知</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px;">輔仁大學 課外活動指導組管理系統</p>
+  </td></tr>
+  <tr><td style="padding:32px 40px;">
+    <p style="font-size:15px;color:#1f2937;">親愛的 <strong>{$safe_stu}</strong> 您好，</p>
+    <p style="color:#4b5563;line-height:1.7;">您的活動申請已完成審核，結果如下：</p>
+    <div style="text-align:center;margin:20px 0;">
+      <span style="display:inline-block;padding:10px 28px;background:{$result_bg};color:{$result_color};border-radius:999px;font-size:16px;font-weight:700;">{$result_text}</span>
+    </div>
+    <table style="width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;width:100px;">申請編號</td><td style="padding:6px 12px;font-weight:600;color:#1f2937;">{$event_no}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">活動名稱</td><td style="padding:6px 12px;color:#1f2937;">{$safe_en}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">審核備註</td><td style="padding:6px 12px;color:#1f2937;">{$safe_note}</td></tr>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">如有疑問，請至課外活動指導組洽詢。</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px 40px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;">
+    © 輔仁大學 課外活動指導組管理系統
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+        $mail->AltBody = "活動申請審核結果\n申請編號：{$event_no}\n活動：{$event['event_name']}\n結果：" . ($is_approved ? '核准' : '退件') . "\n備註：" . ($note ?: '無') . "\n如有疑問請洽課指組。";
+        $mail->send();
+        return ['ok' => true, 'error' => ''];
+    } catch (MailerException $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}

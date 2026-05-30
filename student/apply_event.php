@@ -254,7 +254,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             // 提交事務
             $conn->commit();
-            
+
+            // 寄信通知管理員
+            try {
+                require_once __DIR__ . '/../includes/mailer.php';
+                $stu_row = $conn->query("SELECT name FROM users WHERE user_id = " . intval($user_id))->fetch_assoc();
+                $student_display = $stu_row['name'] ?? ($_SESSION['student_id'] ?? '學生');
+                $admin_rs = $conn->query("SELECT email, name FROM users WHERE role = 'admin'");
+                if ($admin_rs) {
+                    while ($adm = $admin_rs->fetch_assoc()) {
+                        sendApplicationSubmittedMail($adm['email'], $adm['name'], [
+                            'event_id'     => $event_id,
+                            'event_name'   => $event_name,
+                            'club_name'    => $club_name,
+                            'start_time'   => $event_start,
+                            'end_time'     => $event_end,
+                            'student_name' => $student_display,
+                        ]);
+                    }
+                }
+            } catch (\Exception $mailEx) {
+                // 寄信失敗不影響申請流程，靜默忽略
+            }
+
             $message = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "。我們將在2個工作天內審核您的申請。";
             $message_type = "success";
             
