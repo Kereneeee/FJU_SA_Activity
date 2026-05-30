@@ -30,19 +30,36 @@ if ($user_result && $user_result->num_rows > 0) {
 }
 $user_stmt->close();
 
-$sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time, e.status, e.review_note,
-               e.document_path, e.venue_doc_path, e.equipment_doc_path, s.space_name, e.user_id,
-               COALESCE(e.created_at, NOW()) as created_at
+// 使用子查詢取代直接 JOIN reservations，避免多場次造成重複列
+$sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time,
+               e.status, e.review_note, e.user_id,
+               e.document_path, e.venue_doc_path, e.equipment_doc_path,
+               e.responsible_person, e.event_type, e.activity_location,
+               e.activity_scale, e.proposal_doc_path,
+               COALESCE(e.created_at, NOW()) as created_at,
+               COALESCE(rc.session_count, 0) AS session_count
         FROM events e
-        LEFT JOIN reservations r ON e.event_id = r.event_id
-        LEFT JOIN spaces s ON r.space_id = s.space_id
+        LEFT JOIN (
+            SELECT event_id, COUNT(*) AS session_count
+            FROM reservations GROUP BY event_id
+        ) rc ON rc.event_id = e.event_id
         WHERE e.user_id = ?
-        GROUP BY e.event_id -- 🌟 加入這一行，確保同一個活動只會輸出成一筆資料
         ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
-    die("準備SQL語句失敗: " . $conn->error);
+    // 降級查詢（舊欄位不存在時）
+    $sql_fallback = "SELECT e.event_id, e.event_name, e.club_name, e.description,
+                            e.start_time, e.end_time, e.status, e.review_note, e.user_id,
+                            e.document_path, e.venue_doc_path, e.equipment_doc_path,
+                            COALESCE(e.created_at, NOW()) as created_at,
+                            COALESCE(rc.session_count, 0) AS session_count
+                     FROM events e
+                     LEFT JOIN (SELECT event_id, COUNT(*) AS session_count FROM reservations GROUP BY event_id) rc ON rc.event_id = e.event_id
+                     WHERE e.user_id = ?
+                     ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
+    $stmt = $conn->prepare($sql_fallback);
+    if (!$stmt) die("準備SQL語句失敗: " . $conn->error);
 }
 
 $stmt->bind_param("i", $student_user_id);
@@ -54,25 +71,44 @@ if ($result) {
 }
 $stmt->close();
 
-// 為每個申請獲取器材詳情
+// 為每個申請獲取器材詳情與場次資料
 foreach ($applications as &$app) {
-    // 獲取該活動的所有器材申請
-    $equipment_sql = "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity
-                      FROM equipment_borrow eb
-                      LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
-                      WHERE eb.event_id = ?";
-    $eq_stmt = $conn->prepare($equipment_sql);
+    // 器材清單
+    $eq_stmt = $conn->prepare(
+        "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity
+         FROM equipment_borrow eb
+         LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
+         WHERE eb.event_id = ?"
+    );
     if ($eq_stmt) {
         $eq_stmt->bind_param("i", $app['event_id']);
         $eq_stmt->execute();
         $eq_result = $eq_stmt->get_result();
-        $app['equipment_list'] = $eq_result->fetch_all(MYSQLI_ASSOC) ?? [];
+        $app['equipment_list'] = $eq_result ? $eq_result->fetch_all(MYSQLI_ASSOC) : [];
         $eq_stmt->close();
     } else {
         $app['equipment_list'] = [];
     }
+
+    // 場次清單（含場地）
+    $sess_stmt = $conn->prepare(
+        "SELECT r.start_time, r.end_time, s.space_name
+         FROM reservations r
+         LEFT JOIN spaces s ON r.space_id = s.space_id
+         WHERE r.event_id = ?
+         ORDER BY r.start_time"
+    );
+    if ($sess_stmt) {
+        $sess_stmt->bind_param("i", $app['event_id']);
+        $sess_stmt->execute();
+        $sess_result = $sess_stmt->get_result();
+        $app['sessions'] = $sess_result ? $sess_result->fetch_all(MYSQLI_ASSOC) : [];
+        $sess_stmt->close();
+    } else {
+        $app['sessions'] = [];
+    }
 }
-unset($app); // 🌟 核心修正：斷開傳址綁定，釋放變數！
+unset($app); // 斷開傳址綁定
 
 // 狀態中文對應
 $status_map = [
@@ -546,13 +582,41 @@ function getEquipmentStatusText($equipment_list) {
                         ?>
                             <div class="application-card" data-status="<?php echo htmlspecialchars($filter_status); ?>">
                                 <div class="application-header">
-                                    <div>
-                                        <div class="application-title"><?php echo htmlspecialchars(!empty($app['event_name']) ? $app['event_name'] : (!empty($app['description']) ? $app['description'] : '（未命名申請）')); ?></div>
-                                        <div class="application-meta">申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'] ?? 'now')); ?> | 申請編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?></div>
+                                    <div style="flex:1; min-width:0;">
+                                        <div class="application-title">
+                                            <?php echo htmlspecialchars(!empty($app['event_name']) ? $app['event_name'] : '（未命名申請）'); ?>
+                                            <?php
+                                            $et = $app['event_type'] ?? '';
+                                            if ($et === '校外') {
+                                                echo '<span style="font-size:0.76rem;font-weight:600;background:#d1fae5;color:#065f46;border-radius:5px;padding:0.1rem 0.5rem;margin-left:0.5rem;">校外</span>';
+                                            } elseif ($et === '校內') {
+                                                echo '<span style="font-size:0.76rem;font-weight:600;background:#e7f1ff;color:#0c4a9c;border-radius:5px;padding:0.1rem 0.5rem;margin-left:0.5rem;">校內</span>';
+                                            }
+                                            ?>
+                                        </div>
+                                        <div class="application-meta">
+                                            申請日期：<?php echo date('Y-m-d', strtotime($app['created_at'] ?? 'now')); ?>
+                                            &nbsp;|&nbsp;編號：EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>
+                                            <?php if (!empty($app['responsible_person'])): ?>
+                                            &nbsp;|&nbsp;負責人：<?php echo htmlspecialchars($app['responsible_person']); ?>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php
+                                        $scale_str = $app['activity_scale'] ?? '';
+                                        if ($scale_str && $scale_str !== '一般活動'):
+                                            $scale_parts = array_filter(array_map('trim', explode(',', $scale_str)));
+                                        ?>
+                                        <div style="margin-top:0.35rem; display:flex; gap:0.35rem; flex-wrap:wrap;">
+                                            <?php foreach ($scale_parts as $sp):
+                                                $sc = $sp === '大型活動' ? '#fef3c7;color:#78350f' : ($sp === '含酒精活動' ? '#fff7ed;color:#c2410c' : '#fee2e2;color:#991b1b');
+                                                echo '<span style="font-size:0.75rem;font-weight:600;background:' . $sc . ';border-radius:5px;padding:0.1rem 0.5rem;">' . htmlspecialchars($sp) . '</span>';
+                                            endforeach; ?>
+                                        </div>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="status-boxes">
                                         <div class="status-box event-status">
-                                            <div class="status-box-label">活動、場地</div>
+                                            <div class="status-box-label">活動狀態</div>
                                             <span class="status-badge <?php echo $event_status_class; ?>">
                                                 <?php echo $event_status; ?>
                                             </span>
@@ -571,41 +635,82 @@ function getEquipmentStatusText($equipment_list) {
                                         </div>
                                     </div>
                                 </div>
-                                
-                                <div class="application-details">
-                                    <div class="detail-item">
-                                        <div class="detail-label">活動日期</div>
-                                        <div class="detail-value"><?php echo date('Y-m-d', strtotime($app['start_time'])); ?></div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <div class="detail-label">活動時間</div>
-                                        <div class="detail-value"><?php echo date('H:i', strtotime($app['start_time'])); ?> - <?php echo date('H:i', strtotime($app['end_time'])); ?></div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <div class="detail-label">場地</div>
-                                        <div class="detail-value"><?php echo htmlspecialchars($app['space_name'] ?? '未指定'); ?></div>
-                                    </div>
+
+                                <!-- 基本資訊列 -->
+                                <div class="application-details" style="margin-bottom:0.75rem;">
                                     <div class="detail-item">
                                         <div class="detail-label">社團</div>
                                         <div class="detail-value"><?php echo htmlspecialchars($app['club_name']); ?></div>
                                     </div>
+                                    <?php if ($et === '校外' && !empty($app['activity_location'])): ?>
+                                    <div class="detail-item">
+                                        <div class="detail-label">活動地點</div>
+                                        <div class="detail-value"><?php echo htmlspecialchars($app['activity_location']); ?></div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <div class="detail-item">
+                                        <div class="detail-label">場次數</div>
+                                        <div class="detail-value"><?php echo intval($app['session_count']); ?> 場</div>
+                                    </div>
                                 </div>
+
+                                <!-- 場次明細 -->
+                                <?php if (!empty($app['sessions'])): ?>
+                                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; margin-bottom:0.85rem;">
+                                    <div style="background:#f0f4f8; padding:0.45rem 0.85rem; font-size:0.8rem; font-weight:700; color:#1e4d6b; display:flex; align-items:center; gap:0.4rem;">
+                                        <i class="bi bi-calendar-week"></i> 活動場次
+                                    </div>
+                                    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                                        <thead>
+                                            <tr style="background:#f8f9fb;">
+                                                <th style="padding:0.4rem 0.85rem; color:#6b7280; font-weight:600; border-bottom:1px solid #e5e7eb; width:2rem;">#</th>
+                                                <th style="padding:0.4rem 0.85rem; color:#6b7280; font-weight:600; border-bottom:1px solid #e5e7eb;">開始</th>
+                                                <th style="padding:0.4rem 0.85rem; color:#6b7280; font-weight:600; border-bottom:1px solid #e5e7eb;">結束</th>
+                                                <th style="padding:0.4rem 0.85rem; color:#6b7280; font-weight:600; border-bottom:1px solid #e5e7eb;">場地</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($app['sessions'] as $si => $sess): ?>
+                                            <tr style="border-bottom:1px solid #f0f2f5;">
+                                                <td style="padding:0.4rem 0.85rem; color:#9ca3af;"><?php echo $si+1; ?></td>
+                                                <td style="padding:0.4rem 0.85rem;"><?php echo htmlspecialchars(date('Y/m/d H:i', strtotime($sess['start_time']))); ?></td>
+                                                <td style="padding:0.4rem 0.85rem;"><?php echo htmlspecialchars(date('Y/m/d H:i', strtotime($sess['end_time']))); ?></td>
+                                                <td style="padding:0.4rem 0.85rem; color:#6b7280;"><?php echo htmlspecialchars($sess['space_name'] ?? '（校外）'); ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <?php elseif (!empty($app['start_time'])): ?>
+                                <!-- 無場次紀錄時顯示 events 表的整體時間 -->
+                                <div class="application-details" style="margin-bottom:0.85rem;">
+                                    <div class="detail-item">
+                                        <div class="detail-label">活動開始</div>
+                                        <div class="detail-value"><?php echo htmlspecialchars(date('Y-m-d H:i', strtotime($app['start_time']))); ?></div>
+                                    </div>
+                                    <div class="detail-item">
+                                        <div class="detail-label">活動結束</div>
+                                        <div class="detail-value"><?php echo htmlspecialchars(date('Y-m-d H:i', strtotime($app['end_time']))); ?></div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
 
                                 <?php
                                 $docs = [
-                                    'document_path'    => '活動申請單',
-                                    'venue_doc_path'   => '場地申請單',
-                                    'equipment_doc_path' => '器材借用單',
+                                    'proposal_doc_path'  => ['label' => '活動企劃書',   'icon' => 'bi-file-earmark-text-fill'],
+                                    'document_path'      => ['label' => '活動申請單',   'icon' => 'bi-file-earmark-pdf-fill'],
+                                    'venue_doc_path'     => ['label' => '場地申請單',   'icon' => 'bi-file-earmark-pdf-fill'],
+                                    'equipment_doc_path' => ['label' => '器材借用單',   'icon' => 'bi-file-earmark-pdf-fill'],
                                 ];
                                 $has_docs = false;
                                 foreach ($docs as $col => $_) { if (!empty($app[$col])) { $has_docs = true; break; } }
                                 ?>
                                 <?php if ($has_docs): ?>
                                 <div class="doc-links">
-                                    <?php foreach ($docs as $col => $label): ?>
+                                    <?php foreach ($docs as $col => $info): ?>
                                         <?php if (!empty($app[$col])): ?>
                                         <a href="../document/<?php echo htmlspecialchars($app[$col]); ?>" target="_blank" class="doc-link">
-                                            <i class="bi bi-file-earmark-pdf-fill"></i> <?php echo $label; ?>
+                                            <i class="bi <?php echo $info['icon']; ?>"></i> <?php echo $info['label']; ?>
                                         </a>
                                         <?php endif; ?>
                                     <?php endforeach; ?>

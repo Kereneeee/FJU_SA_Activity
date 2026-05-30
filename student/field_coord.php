@@ -279,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 $full_description = implode("\n", $description_lines);
 
                 $setting_id = $active_setting['setting_id'];
-                $stmt_event->bind_param('issssssi', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end, $setting_id);
+                $stmt_event->bind_param('isssssi', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end, $setting_id);
                 if (!$stmt_event->execute()) {
                     throw new Exception('建立活動記錄失敗：' . $stmt_event->error);
                 }

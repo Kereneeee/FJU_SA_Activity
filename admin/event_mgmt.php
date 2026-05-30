@@ -153,15 +153,19 @@ if (isset($_GET['edit_id'])) {
 // 篩選狀態
 $filter_status = isset($_GET['filter']) ? $_GET['filter'] : 'all';
 
-// 取得活動列表（包含申請人資訊）
+// 取得活動列表（使用子查詢避免多場次重複列）
+$where_clause = $filter_status !== 'all' ? "WHERE e.status = '" . $conn->real_escape_string($filter_status) . "'" : "";
 $sql = "
     SELECT e.*, u.name as applicant_name, u.email as applicant_email, u.username,
-           s.space_name, r.start_time as reservation_start, r.end_time as reservation_end
+           COALESCE(rc.session_count, 0) AS session_count
     FROM events e
     JOIN users u ON e.user_id = u.user_id
-    LEFT JOIN reservations r ON e.event_id = r.event_id
-    LEFT JOIN spaces s ON r.space_id = s.space_id
-    " . ($filter_status !== 'all' ? "WHERE e.status = '" . $conn->real_escape_string($filter_status) . "'" : "") . "
+    LEFT JOIN (
+        SELECT event_id, COUNT(*) AS session_count
+        FROM reservations
+        GROUP BY event_id
+    ) rc ON rc.event_id = e.event_id
+    $where_clause
     ORDER BY e.start_time DESC
 ";
 $result = $conn->query($sql);
@@ -171,15 +175,16 @@ if (!$result) {
 $events = $result->fetch_all(MYSQLI_ASSOC);
 if (!$events) $events = [];
 
-// 統計資料
-$total_count = count($events);
-$pending_count = 0;
-$approved_count = 0;
-$rejected_count = 0;
-foreach ($events as $e) {
-    if ($e['status'] === 'pending') $pending_count++;
-    if ($e['status'] === 'approved') $approved_count++;
-    if ($e['status'] === 'rejected') $rejected_count++;
+// 統計資料（從獨立查詢取得正確數字）
+$count_result = $conn->query("SELECT status, COUNT(*) AS cnt FROM events GROUP BY status");
+$total_count = 0; $pending_count = 0; $approved_count = 0; $rejected_count = 0;
+if ($count_result) {
+    while ($cr = $count_result->fetch_assoc()) {
+        $total_count += intval($cr['cnt']);
+        if ($cr['status'] === 'pending')  $pending_count  = intval($cr['cnt']);
+        if ($cr['status'] === 'approved') $approved_count = intval($cr['cnt']);
+        if ($cr['status'] === 'rejected') $rejected_count = intval($cr['cnt']);
+    }
 }
 ?>
 
@@ -623,7 +628,7 @@ foreach ($events as $e) {
                                 <th>活動名稱</th>
                                 <th>申請人</th>
                                 <th>社團</th>
-                                <th>場地</th>
+                                <th>活動類型 / 場次</th>
                                 <th>時間</th>
                                 <th>狀態</th>
                                 <th>操作</th>
@@ -645,12 +650,25 @@ foreach ($events as $e) {
                                     <small style="color: #6b7280;"><?php echo htmlspecialchars($event['applicant_email']); ?></small>
                                 </td>
                                 <td><?php echo htmlspecialchars($event['club_name']); ?></td>
-                                <td><?php echo htmlspecialchars($event['space_name'] ?? '未指定'); ?></td>
                                 <td>
-                                    <?php 
+                                    <?php
+                                    $et2 = $event['event_type'] ?? '';
+                                    if ($et2 === '校外') {
+                                        echo '<span style="background:#d1fae5;color:#065f46;border-radius:5px;padding:0.15rem 0.5rem;font-size:0.8rem;font-weight:600;">校外</span>';
+                                    } elseif ($et2 === '校內') {
+                                        echo '<span style="background:#e7f1ff;color:#0c4a9c;border-radius:5px;padding:0.15rem 0.5rem;font-size:0.8rem;font-weight:600;">校內</span>';
+                                    } else {
+                                        echo '—';
+                                    }
+                                    $sc2 = intval($event['session_count'] ?? 0);
+                                    if ($sc2 > 0) echo '<br><small style="color:#6b7280;">' . $sc2 . ' 場次</small>';
+                                    ?>
+                                </td>
+                                <td>
+                                    <?php
                                     if ($event['start_time']) {
                                         echo '<span class="time-badge">';
-                                        echo date('Y/m/d<br>H:i', strtotime($event['start_time']));
+                                        echo date('Y/m/d', strtotime($event['start_time']));
                                         echo '</span>';
                                     }
                                     ?>
