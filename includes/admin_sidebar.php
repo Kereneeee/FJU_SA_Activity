@@ -12,6 +12,7 @@ $current_page = $current_page ?? '';
         <a class="nav-link <?= $current_page === 'equipment_mgmt' ? 'active' : '' ?>" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材庫存管理</a>
         <a class="nav-link <?= $current_page === 'space_mgmt' ? 'active' : '' ?>" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
         <a class="nav-link <?= $current_page === 'field_coordination_mgmt' ? 'active' : '' ?>" href="field_coordination_mgmt.php"><i class="bi bi-people-fill"></i> 場協登記管理</a>
+        <a class="nav-link <?= $current_page === 'field_coordination_import' ? 'active' : '' ?>" href="field_coordination_import.php"><i class="bi bi-cloud-upload"></i> 場協結果匯入</a>
         <a class="nav-link <?= $current_page === 'calendar' ? 'active' : '' ?>" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
     </nav>
     <div class="sidebar-section">

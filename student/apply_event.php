@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 session_start();
 
 ini_set('display_errors', 1);
@@ -12,28 +12,16 @@ if (!isset($_SESSION['student_id'])) {
     exit();
 }
 
-// 設置當前頁面用於側邊欄高亮
 $current_page = 'apply_event';
-
 $message = "";
 $message_type = "";
 $user_id = $_SESSION['user_id'] ?? null;
 $field_coordination_results = [];
 $fc_manager = null;
-$prefill_event_name = '';
-$prefill_club_name = '';
-$prefill_event_date = '';
-$prefill_start_time = '';
-$prefill_end_time = '';
-$prefill_end_date = '';
-$prefill_venue_id = '';
+
 if ($user_id) {
     $fc_manager = new FieldCoordinationManager($conn);
-    $club_sql = "SELECT cm.club_id, c.club_name
-                 FROM club_members cm
-                 JOIN clubs c ON cm.club_id = c.club_id
-                 WHERE cm.user_id = ?
-                 LIMIT 1";
+    $club_sql = "SELECT cm.club_id, c.club_name FROM club_members cm JOIN clubs c ON cm.club_id = c.club_id WHERE cm.user_id = ? LIMIT 1";
     $club_stmt = $conn->prepare($club_sql);
     if ($club_stmt) {
         $club_stmt->bind_param("i", $user_id);
@@ -41,218 +29,189 @@ if ($user_id) {
         $club_result = $club_stmt->get_result();
         if ($club_row = $club_result->fetch_assoc()) {
             $field_coordination_results = $fc_manager->getAllApprovedFieldCoordinationForClub($club_row['club_id']);
-            if (empty($field_coordination_results)) {
-                $field_coordination_results = [];
-            }
+            if (empty($field_coordination_results)) $field_coordination_results = [];
         }
         $club_stmt->close();
     }
 }
 
-// 從資料庫獲取場地
-$sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available'";
+// 場地清單
+$sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available' ORDER BY space_name";
 $result_spaces = $conn->query($sql_spaces);
-$venues = [];
-if ($result_spaces) {
-    $venues = $result_spaces->fetch_all(MYSQLI_ASSOC);
-}
+$venues = $result_spaces ? $result_spaces->fetch_all(MYSQLI_ASSOC) : [];
 
-// 從資料庫獲取器材
+// 器材清單
 $sql_equipment = "SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
 if (!$result_equipment) {
-    // 欄位名稱 fallback
-    $sql_equipment = "SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment";
-    $result_equipment = $conn->query($sql_equipment);
+    $result_equipment = $conn->query("SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment");
 }
 $equipment = [];
 if ($result_equipment) {
-    $equipment_list = $result_equipment->fetch_all(MYSQLI_ASSOC);
-    foreach ($equipment_list as $eq) {
+    foreach ($result_equipment->fetch_all(MYSQLI_ASSOC) as $eq) {
         $equipment[] = [
             'id'              => $eq['equipment_id'],
             'name'            => $eq['name'],
             'total'           => $eq['total_quantity'],
             'available'       => $eq['total_quantity'],
             'borrowing_limit' => (int)($eq['borrowing_limit'] ?? 0),
-            'unit'            => '件'
         ];
     }
 }
 
-// 處理表單提交
+// 表單送出時的場次資料（用於還原）
+$sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
+
+// ── 處理表單提交 ──────────────────────────────────────────
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $club_name = $_POST['club_name'] ?? '';
-    $event_name = $_POST['event_name'] ?? '';
-    $event_date = $_POST['event_date'] ?? '';
-    $end_date   = $_POST['end_date']   ?? $event_date;
-    $start_time = $_POST['start_time'] ?? '';
-    $end_time   = $_POST['end_time']   ?? '';
-    $venue_id = $_POST['venue_id'] ?? '';
-    $expected_attendees = $_POST['expected_attendees'] ?? '';
-    $description = $_POST['description'] ?? '';
+    $club_name          = trim($_POST['club_name'] ?? '');
+    $event_name         = trim($_POST['event_name'] ?? '');
+    $responsible_person = trim($_POST['responsible_person'] ?? '');
+    $event_type         = trim($_POST['event_type'] ?? '校內');
+    $activity_location  = trim($_POST['activity_location'] ?? '');
+    $activity_scale     = trim($_POST['activity_scale'] ?? '一般活動');
+    $activity_flags     = isset($_POST['activity_flags']) && is_array($_POST['activity_flags']) ? $_POST['activity_flags'] : [];
+    $description        = trim($_POST['description'] ?? '');
+    $sessions           = isset($_POST['sessions']) && is_array($_POST['sessions']) ? $_POST['sessions'] : [];
 
-    // 驗證必填欄位
+    // 還原場次以便顯示
+    $sessions_data = !empty($sessions) ? $sessions : [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
+
+    $scale_parts = [$activity_scale];
+    foreach ($activity_flags as $f) {
+        if (in_array($f, ['含酒精活動', '使用火源活動'])) $scale_parts[] = $f;
+    }
+    $activity_scale_str = implode(',', $scale_parts);
+
     $errors = [];
+    if (empty($event_name))         $errors[] = "請填寫活動名稱";
+    if (empty($club_name))          $errors[] = "請填寫社團名稱";
+    if (empty($responsible_person)) $errors[] = "請填寫活動負責人";
+    if ($event_type === '校外' && empty($activity_location)) $errors[] = "校外活動請填寫活動地點";
+    if (empty($sessions))           $errors[] = "請至少新增一個場次";
 
-    if (empty($event_name)) $errors[] = "請填寫活動名稱";
-    if (empty($club_name)) $errors[] = "請填寫社團名稱";
-    if (empty($event_date)) $errors[] = "請選擇開始日期";
-    if (empty($end_date))   $errors[] = "請選擇結束日期";
-    if (empty($start_time) || empty($end_time)) $errors[] = "請填寫活動時間";
-    if (!empty($start_time) && ($start_time < '08:30' || $start_time > '21:30'))
-        $errors[] = "開始時間必須在 08:30 至 21:30 之間";
-    if (!empty($end_time) && ($end_time < '08:30' || $end_time > '21:30'))
-        $errors[] = "結束時間必須在 08:30 至 21:30 之間";
-    if (!empty($event_date) && !empty($end_date) && $end_date < $event_date)
-        $errors[] = "結束日期不能早於開始日期";
-    if (empty($venue_id)) $errors[] = "請選擇場地";
-    // 修正後的必填文件檢查
-    if (!isset($_FILES['event_document']) || $_FILES['event_document']['error'] == UPLOAD_ERR_NO_FILE) {
-        $errors[] = "請上傳已簽署的活動申請表(PDF)";
+    foreach ($sessions as $i => $sess) {
+        $n = $i + 1;
+        if (empty($sess['date']))       $errors[] = "場次{$n}：請選擇開始日期";
+        if (empty($sess['start_time'])) $errors[] = "場次{$n}：請填寫開始時間";
+        if (empty($sess['end_date']))   $errors[] = "場次{$n}：請選擇結束日期";
+        if (empty($sess['end_time']))   $errors[] = "場次{$n}：請填寫結束時間";
+        if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['end_date'] < $sess['date'])
+            $errors[] = "場次{$n}：結束日期不能早於開始日期";
+        if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['date'] === $sess['end_date'] &&
+            !empty($sess['start_time']) && !empty($sess['end_time']) && $sess['start_time'] >= $sess['end_time'])
+            $errors[] = "場次{$n}：同日結束時間必須晚於開始時間";
+        if (!empty($sess['start_time']) && ($sess['start_time'] < '08:30' || $sess['start_time'] > '21:30'))
+            $errors[] = "場次{$n}：時間須在 08:30–21:30";
+        if (!empty($sess['end_time']) && ($sess['end_time'] < '08:30' || $sess['end_time'] > '21:30'))
+            $errors[] = "場次{$n}：時間須在 08:30–21:30";
+        if ($event_type === '校內' && empty($sess['venue_id']))
+            $errors[] = "場次{$n}：校內活動請選擇場地";
     }
-    if (!isset($_FILES['venue_document']) || $_FILES['venue_document']['error'] == UPLOAD_ERR_NO_FILE) {
-        $errors[] = "請上傳已簽署的場地申請表(PDF)";
-    }
-    
-        if (empty($errors)) {
-        // 開始事務
+
+    if (empty($errors)) {
         $conn->begin_transaction();
-    
-    try {
-        // --- 1. 處理檔案上傳 (放在最前面，失敗就直接進 catch) ---
-        $base_dir = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'); 
-        $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
-
-        // 確保目錄存在
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
-        }
-
-        // --- 1. 處理 3 個檔案的上傳 ---
-        $files_to_upload = [
-            'event_document' => ['required' => true, 'prefix' => 'event_'],
-            'venue_document' => ['required' => true, 'prefix' => 'venue_'],
-            'equipment_document' => ['required' => false, 'prefix' => 'equip_']
-        ];
-
-        $uploaded_filenames = [
-            'event_document' => null,
-            'venue_document' => null,
-            'equipment_document' => null
-        ];
-
-        foreach ($files_to_upload as $field_name => $config) {
-            if (isset($_FILES[$field_name]) && $_FILES[$field_name]['error'] == UPLOAD_ERR_OK) {
-                $file_ext = pathinfo($_FILES[$field_name]['name'], PATHINFO_EXTENSION);
-                $new_filename = $config['prefix'] . time() . "_" . uniqid() . "." . $file_ext;
-                $target_path = $upload_dir . $new_filename;
-
-                if (move_uploaded_file($_FILES[$field_name]['tmp_name'], $target_path)) {
-                    $uploaded_filenames[$field_name] = $new_filename;
+        try {
+            // 企劃書上傳
+            $base_dir   = realpath(__DIR__ . DIRECTORY_SEPARATOR . '..');
+            $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+            $proposal_filename = null;
+            if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
+                $ext = pathinfo($_FILES['proposal_document']['name'], PATHINFO_EXTENSION);
+                $fn  = 'proposal_' . time() . '_' . uniqid() . '.' . $ext;
+                if (move_uploaded_file($_FILES['proposal_document']['tmp_name'], $upload_dir . $fn)) {
+                    $proposal_filename = $fn;
                 } else {
-                    throw new Exception($field_name . " 檔案搬移失敗。");
+                    throw new Exception("企劃書上傳失敗，請重試。");
                 }
-            } elseif ($config['required']) {
-                throw new Exception("請務必上傳必填的申請表單！");
             }
-        }
 
-        // --- 2. 準備時間與變數 ---
-        $event_start = $event_date . " " . $start_time . ":00";
-        $event_end   = $end_date   . " " . $end_time   . ":00";
-        $venue_id = intval($venue_id);
-        $empty_note = ""; 
-        
-        if (!$user_id) throw new Exception("登入逾時，請重新登入。");
-        // --- 3. 場地衝突檢查 ---
-            $stmt_conflict = $conn->prepare(
-                "SELECT e.club_name, r.created_at
-                 FROM reservations r
-                 JOIN events e ON r.event_id = e.event_id
-                 WHERE r.space_id = ?
-                   AND NOT (r.end_time <= ? OR r.start_time >= ?)
-                   AND e.club_name != ?
-                 ORDER BY r.created_at ASC
-                 LIMIT 1"
-            );
-            $stmt_conflict->bind_param("isss", $venue_id, $event_start, $event_end, $club_name);
-            $stmt_conflict->execute();
-            $conflict_result = $stmt_conflict->get_result();
-
-            if ($conflict_result && $conflict_result->num_rows > 0) {
-                throw new Exception("該時段場地已被其他社團預約，請選擇其他時間或場地。如果是同社團，該時段仍可保留使用權。");
+            // 計算整體 start/end（所有場次的最小開始日期時間、最大結束日期時間）
+            $event_start = null;
+            $event_end   = null;
+            foreach ($sessions as $sess) {
+                $s = $sess['date']                              . ' ' . $sess['start_time'] . ':00';
+                $e = ($sess['end_date'] ?? $sess['date'])       . ' ' . $sess['end_time']   . ':00';
+                if ($event_start === null || $s < $event_start) $event_start = $s;
+                if ($event_end   === null || $e > $event_end)   $event_end   = $e;
             }
-            $stmt_conflict->close();
 
-            // --- 4. 插入活動記錄 (修正欄位與 bind_param) ---
-            // 這裡我們只插入 8 個有變數的欄位，status 在 SQL 裡直接給預設值 'pending'
-            // --- 修改後的 SQL 語法 ---
-            // --- 4. 插入活動記錄 (依照資料庫結構修正) ---
-            // 依照你的 SQL 結構，最穩定的 INSERT 寫法
-            $sql_event = "INSERT INTO events (
-                user_id, event_name, club_name, description, 
-                start_time, end_time, document_path, venue_doc_path, equipment_doc_path,
-                status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')";
+            if (!$user_id) throw new Exception("登入逾時，請重新登入。");
 
-            $stmt_event = $conn->prepare($sql_event);
-            if (!$stmt_event) { throw new Exception("SQL 準備失敗: " . $conn->error); }
-
-            // 修正：綁定 9 個參數，並移除未定義變數與多餘參數
-            $stmt_event->bind_param("issssssss", 
-                $user_id,
-                $event_name,
-                $club_name,
-                $description,
-                $event_start,
-                $event_end,
-                $uploaded_filenames['event_document'],
-                $uploaded_filenames['venue_document'],
-                $uploaded_filenames['equipment_document']
-            );
-
-            if (!$stmt_event->execute()) { throw new Exception("活動記錄插入失敗: " . $stmt_event->error); }
-            $event_id = $conn->insert_id;
-            $stmt_event->close();
-            
-            // 插入預約記錄
-            $stmt_reserve = $conn->prepare(
-                "INSERT INTO reservations (event_id, space_id, start_time, end_time) 
-                 VALUES (?, ?, ?, ?)"
-            );
-            $stmt_reserve->bind_param("iiss", $event_id, $venue_id, $event_start, $event_end);
-            
-            if (!$stmt_reserve->execute()) {
-                throw new Exception("預約記錄插入失敗: " . $stmt_reserve->error);
+            // 校內活動：逐場次衝突檢查
+            if ($event_type === '校內') {
+                foreach ($sessions as $i => $sess) {
+                    $vid = intval($sess['venue_id']);
+                    if ($vid <= 0) continue;
+                    $s = $sess['date']                        . ' ' . $sess['start_time'] . ':00';
+                    $e = ($sess['end_date']??$sess['date'])   . ' ' . $sess['end_time']   . ':00';
+                    $stmt_c = $conn->prepare(
+                        "SELECT e.club_name FROM reservations r JOIN events e ON r.event_id=e.event_id
+                         WHERE r.space_id=? AND NOT(r.end_time<=? OR r.start_time>=?) AND e.club_name!=? LIMIT 1"
+                    );
+                    $stmt_c->bind_param("isss", $vid, $s, $e, $club_name);
+                    $stmt_c->execute();
+                    if ($stmt_c->get_result()->num_rows > 0) {
+                        $n = $i + 1;
+                        throw new Exception("場次{$n}：該時段場地已被其他社團預約，請選擇其他時間或場地。");
+                    }
+                    $stmt_c->close();
+                }
             }
-            
-            $stmt_reserve->close();
-            
-            // 處理器材選擇
-            if (isset($_POST['equipment']) && is_array($_POST['equipment'])) {
-                $stmt_borrow = $conn->prepare(
-                    "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)"
+
+            // INSERT 活動記錄
+            $sql_ev = "INSERT INTO events (user_id,event_name,club_name,description,start_time,end_time,
+                        responsible_person,event_type,activity_location,activity_scale,proposal_doc_path,status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending')";
+            $stmt_ev = $conn->prepare($sql_ev);
+            if (!$stmt_ev) {
+                // 降級（欄位不存在時）
+                $desc_ex = $description . ($description?"\n---\n":"") .
+                           "負責人：{$responsible_person}　類型：{$event_type}" .
+                           ($activity_location?"\n地點：{$activity_location}":"") .
+                           ($activity_scale_str?"\n特殊：{$activity_scale_str}":"");
+                $sql_ev2 = "INSERT INTO events (user_id,event_name,club_name,description,start_time,end_time,status) VALUES (?,?,?,?,?,?,'pending')";
+                $stmt_ev = $conn->prepare($sql_ev2);
+                if (!$stmt_ev) throw new Exception("SQL 準備失敗: " . $conn->error);
+                $stmt_ev->bind_param("isssss", $user_id,$event_name,$club_name,$desc_ex,$event_start,$event_end);
+            } else {
+                $stmt_ev->bind_param("issssssssss",
+                    $user_id,$event_name,$club_name,$description,$event_start,$event_end,
+                    $responsible_person,$event_type,$activity_location,$activity_scale_str,$proposal_filename
                 );
-                if (!$stmt_borrow) {
-                    throw new Exception("器材借用記錄準備失敗: " . $conn->error);
-                }
+            }
+            if (!$stmt_ev->execute()) throw new Exception("活動記錄插入失敗: " . $stmt_ev->error);
+            $event_id = $conn->insert_id;
+            $stmt_ev->close();
 
-                foreach ($_POST['equipment'] as $equip_id => $quantity) {
-                    $quantity = intval($quantity);
-                    if ($quantity > 0) {
-                        $equip_id = intval($equip_id);
-                        $stmt_borrow->bind_param("iii", $event_id, $equip_id, $quantity);
-                        if (!$stmt_borrow->execute()) {
-                            throw new Exception("器材借用記錄插入失敗: " . $stmt_borrow->error);
-                        }
+            // INSERT 場地預約（每場次）
+            $stmt_r = $conn->prepare("INSERT INTO reservations (event_id,space_id,start_time,end_time) VALUES (?,?,?,?)");
+            foreach ($sessions as $sess) {
+                $vid = intval($sess['venue_id'] ?? 0);
+                if ($event_type === '校內' && $vid > 0) {
+                    $rs = $sess['date']                       . ' ' . $sess['start_time'] . ':00';
+                    $re = ($sess['end_date']??$sess['date'])  . ' ' . $sess['end_time']   . ':00';
+                    $stmt_r->bind_param("iiss", $event_id, $vid, $rs, $re);
+                    if (!$stmt_r->execute()) throw new Exception("場地預約插入失敗: " . $stmt_r->error);
+                }
+            }
+            $stmt_r->close();
+
+            // 器材借用
+            if (isset($_POST['equipment']) && is_array($_POST['equipment'])) {
+                $stmt_b = $conn->prepare("INSERT INTO equipment_borrow (event_id,equipment_id,quantity) VALUES (?,?,?)");
+                if (!$stmt_b) throw new Exception("器材借用準備失敗: " . $conn->error);
+                foreach ($_POST['equipment'] as $eid => $qty) {
+                    $qty = intval($qty); $eid = intval($eid);
+                    if ($qty > 0) {
+                        $stmt_b->bind_param("iii", $event_id, $eid, $qty);
+                        if (!$stmt_b->execute()) throw new Exception("器材借用插入失敗: " . $stmt_b->error);
                     }
                 }
-
-                $stmt_borrow->close();
+                $stmt_b->close();
             }
-            
-            // 提交事務
+
             $conn->commit();
 
             // 寄信通知管理員
@@ -277,32 +236,42 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 // 寄信失敗不影響申請流程，靜默忽略
             }
 
-            $message = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "。我們將在2個工作天內審核您的申請。";
+            $message = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "，共 " . count($sessions) . " 個場次。我們將在2個工作天內審核。";
             $message_type = "success";
-            
+            $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
+
         } catch (Exception $e) {
-            // 回滾事務
             $conn->rollback();
-            $message = "❌ 申請失敗：" . $e->getMessage();
+            $message      = "❌ 申請失敗：" . $e->getMessage();
             $message_type = "error";
         }
     } else {
-        $message = "❌ " . implode("<br>", $errors);
+        $message      = "❌ " . implode("<br>", $errors);
         $message_type = "error";
     }
 }
 
-// 輔助函數
-function getEquipmentIcon($equipId) {
-    $icons = [
-        1 => 'mic-fill',        // 投影機
-        2 => 'speaker-fill',    // 音響設備
-        3 => 'chair',           // 折疊椅
-        4 => 'table'            // 長桌
-    ];
-    return $icons[$equipId] ?? 'tools';
+function getEquipmentIcon($id) {
+    return [1=>'mic-fill',2=>'speaker-fill',3=>'chair',4=>'table'][$id] ?? 'tools';
 }
 
+// 表單還原值
+$fv = [
+    'club_name'          => htmlspecialchars($_POST['club_name'] ?? '', ENT_QUOTES, 'UTF-8'),
+    'event_name'         => htmlspecialchars($_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8'),
+    'responsible_person' => htmlspecialchars($_POST['responsible_person'] ?? '', ENT_QUOTES, 'UTF-8'),
+    'event_type'         => $_POST['event_type'] ?? '校內',
+    'activity_location'  => htmlspecialchars($_POST['activity_location'] ?? '', ENT_QUOTES, 'UTF-8'),
+    'activity_scale'     => $_POST['activity_scale'] ?? '一般活動',
+    'activity_flags'     => isset($_POST['activity_flags']) && is_array($_POST['activity_flags']) ? $_POST['activity_flags'] : [],
+    'description'        => htmlspecialchars($_POST['description'] ?? '', ENT_QUOTES, 'UTF-8'),
+];
+
+// 場地選項給 JS 用（PHP 7.3 相容，不使用箭頭函式）
+$venues_for_js = [];
+foreach ($venues as $v) {
+    $venues_for_js[] = ['id' => $v['space_id'], 'name' => $v['space_name']];
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -310,799 +279,658 @@ function getEquipmentIcon($equipId) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>活動申請 - 輔仁大學課外活動指導組</title>
-
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
-
     <style>
-        :root {
-            --primary: #1e4d6b;
-            --sidebar: #14394f;
-            --sidebar-hover: #ece8dd;
-            --bg: #f7f5ef;
-            --card: #ffffff;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg);
-            color: #1f2937;
-        }
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 260px;
-            height: 100vh;
-            background: var(--primary);
-            color: white;
-            padding: 1.5rem 0.8rem;
-            overflow-y: auto;
-            box-shadow: 3px 0 15px rgba(0,0,0,0.12);
-            z-index: 1200;
-        }
-        .sidebar .brand {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .sidebar .brand h4 {
-            margin: 0;
-            font-size: 1.1rem;
-            line-height: 1.4;
-            font-weight: 700;
-        }
-        .sidebar .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            color: rgba(255,255,255,0.9);
-            padding: 0.85rem 1rem;
-            margin: 0.2rem 0;
-            border-radius: 16px;
-            transition: background 0.25s ease, transform 0.15s ease;
-        }
-        .sidebar .nav-link:hover,
-        .sidebar .nav-link.active {
-            background: #ece8dd;
-            color: #1e4d6b;
-            transform: translateX(4px);
-        }
-        .sidebar .nav-link i { font-size: 1.1rem; }
-        .sidebar .sidebar-section {
-            padding: 1rem 0.5rem;
-            margin-top: 1.5rem;
-            border-top: 1px solid rgba(255,255,255,0.12);
-        }
-        .main-content {
-            margin-left: 260px;
-            min-height: 100vh;
-            transition: margin-left 0.25s ease;
-        }
-        .top-navbar {
-            background: #d5e3ea;
-            border-bottom: 1px solid #bdd0d9;
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 1100;
-        }
-        .top-navbar .breadcrumb {
-            margin: 0;
-            background: transparent;
-            padding: 0;
-        }
-        .top-navbar .breadcrumb { font-size: 0.8rem; }
-        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
-        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
-        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
-        .top-navbar .breadcrumb-item.active { color: #6b7280; }
-        .content-wrapper {
-            padding: 1.5rem 2rem 2rem;
-        }
-        .card {
-            background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        .card h3 {
-            margin-bottom: 1rem;
-            font-weight: 700;
-            color: var(--primary);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .form-section {
-            background: #f8fafc;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-        .form-group {
-            margin-bottom: 1rem;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: #374151;
-        }
-        .form-control {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            font-size: 0.95rem;
-        }
-        .form-control:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(30, 77, 107, 0.1);
-        }
-        .venue-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1rem;
-        }
-        .venue-card {
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 1rem;
-            cursor: pointer;
-            transition: all 0.25s ease;
-        }
-        .venue-card:hover {
-            border-color: var(--primary);
-            box-shadow: 0 4px 15px rgba(30, 77, 107, 0.1);
-        }
-        .venue-card.selected {
-            border-color: var(--primary);
-            background: rgba(30, 77, 107, 0.05);
-        }
-        .venue-card .venue-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 0.75rem;
-        }
-        .venue-card .venue-name {
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-        .venue-status {
-            padding: 0.25rem 0.5rem;
-            border-radius: 999px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            background: #d1e7dd;
-            color: #0f5132;
-        }
-        .venue-capacity {
-            color: #6b7280;
-            font-size: 0.9rem;
-        }
-        .equipment-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1rem;
-        }
-        .equipment-card {
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 1rem;
-            background: white;
-        }
-        .equipment-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 1rem;
-        }
-        .equipment-name {
-            font-weight: 600;
-        }
-        .equipment-stock {
-            text-align: right;
-            font-size: 0.9rem;
-        }
-        .stock-available { color: var(--success); font-weight: 600; }
-        .stock-low { color: var(--warning); font-weight: 600; }
-        .stock-empty { color: var(--danger); font-weight: 600; }
-        .counter {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        .counter button {
-            width: 32px;
-            height: 32px;
-            border: 1px solid #d1d5db;
-            background: white;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.25s ease;
-        }
-        .counter button:hover:not(:disabled) {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-        }
-        .counter button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .counter input {
-            width: 60px;
-            text-align: center;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            padding: 0.25rem;
-            font-weight: 600;
-            background: #fff;
-            cursor: text;
-        }
-        .counter input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(30,77,107,0.12);
-        }
-        /* 隱藏瀏覽器預設的數字上下箭頭 */
-        .counter input::-webkit-outer-spin-button,
-        .counter input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .counter input[type=number] { -moz-appearance: textfield; }
-        .message {
-            padding: 1rem;
-            border-radius: 12px;
-            margin-bottom: 1.5rem;
-            font-weight: 600;
-        }
-        .message.success {
-            background: #d1e7dd;
-            color: #0f5132;
-            border: 1px solid #a3cfbb;
-        }
-        .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f1aeb5;
-        }
-        .btn-submit {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 1rem 3rem;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 1.1rem;
-            cursor: pointer;
-            transition: all 0.25s ease;
-            display: block;
-            margin: 2rem auto 0;
-            box-shadow: 0 4px 15px rgba(30, 77, 107, 0.2);
-        }
-        .btn-submit:hover {
-            background: var(--sidebar);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(30, 77, 107, 0.3);
-        }
-        @media (max-width: 1100px) {
-            .venue-grid, .equipment-grid { grid-template-columns: 1fr; }
-            .main-content { margin-left: 0; }
-        }
-        @media (max-width: 768px) {
-        .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
-            .sidebar { position: relative; width: 100%; height: auto; }
-        }
-    
-        /* 提示訊息配色 */
-        .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
-        .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
-        .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
-        .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+        :root { --primary:#1e4d6b; --sidebar:#14394f; --bg:#f7f5ef; --card:#ffffff; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }
+        * { box-sizing:border-box; }
+        body { margin:0; min-height:100vh; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:#1f2937; }
+        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:auto; box-shadow:3px 0 15px rgba(0,0,0,0.12); z-index:1200; }
+        .sidebar .brand { text-align:center; margin-bottom:1.5rem; }
+        .sidebar .brand h4 { margin:0; font-size:1.1rem; line-height:1.4; font-weight:700; }
+        .sidebar .nav-link { display:flex; align-items:center; gap:0.75rem; color:rgba(255,255,255,0.9); padding:0.85rem 1rem; margin:0.2rem 0; border-radius:16px; transition:background 0.25s,transform 0.15s; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { background:#ece8dd; color:#1e4d6b; transform:translateX(4px); }
+        .sidebar .nav-link i { font-size:1.1rem; }
+        .sidebar .sidebar-section { padding:1rem 0.5rem; margin-top:1.5rem; border-top:1px solid rgba(255,255,255,0.12); }
+        .main-content { margin-left:260px; min-height:100vh; }
+        .top-navbar { background:#d5e3ea; border-bottom:1px solid #bdd0d9; padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:1100; }
+        .top-navbar .breadcrumb { margin:0; background:transparent; padding:0; font-size:0.8rem; }
+        .top-navbar .breadcrumb-item+.breadcrumb-item::before { content:'›'; font-size:1rem; color:#c9d0d8; }
+        .top-navbar .breadcrumb-item a { color:#1e4d6b; text-decoration:none; opacity:.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity:1; }
+        .top-navbar .breadcrumb-item.active { color:#6b7280; }
+        .content-wrapper { padding:1.5rem 2rem 2rem; }
+        .card { background:var(--card); border-radius:18px; box-shadow:0 10px 30px rgba(15,23,42,0.06); padding:1.5rem; margin-bottom:1.5rem; }
+        .card h3 { margin-bottom:1rem; font-weight:700; color:var(--primary); display:flex; align-items:center; gap:0.5rem; }
+        .form-section { background:#f8fafc; border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1rem; }
+        .form-control { width:100%; padding:0.65rem 0.9rem; border:1px solid #e5e7eb; border-radius:8px; font-size:0.93rem; }
+        .form-control:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(30,77,107,0.1); }
+        /* 活動類型 Radio */
+        .type-radio-group { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.5rem; }
+        .type-radio-label { display:flex; align-items:center; gap:0.55rem; border:2px solid #e5e7eb; border-radius:10px; padding:0.6rem 1.1rem; cursor:pointer; font-weight:600; font-size:0.9rem; color:#374151; transition:all 0.2s; background:white; }
+        .type-radio-label:has(input:checked) { border-color:var(--primary); background:rgba(30,77,107,0.06); color:var(--primary); }
+        .type-radio-label input { display:none; }
+        /* 場次 */
+        .session-row { border:1px solid #e2e8f0; border-radius:14px; padding:1.1rem 1.25rem; margin-bottom:0.85rem; background:white; transition:box-shadow 0.2s,border-color 0.2s; }
+        .session-row:hover { box-shadow:0 4px 14px rgba(30,77,107,0.09); border-color:#c7d6df; }
+        .session-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; }
+        .session-label { font-weight:700; color:var(--primary); font-size:0.92rem; display:flex; align-items:center; gap:0.4rem; }
+        .btn-remove-session { background:none; border:1px solid #fca5a5; color:#ef4444; border-radius:6px; padding:0.2rem 0.55rem; cursor:pointer; font-size:0.8rem; transition:all 0.2s; display:inline-flex; align-items:center; gap:0.3rem; }
+        .btn-remove-session:hover { background:#fee2e2; }
+        .session-fields { display:grid; grid-template-columns:1.2fr 1fr 1.2fr 1fr 2fr; gap:0.65rem; align-items:end; }
+        .session-field label { display:block; font-size:0.8rem; color:#6b7280; margin-bottom:0.25rem; font-weight:500; }
+        .btn-add-session { display:flex; align-items:center; justify-content:center; gap:0.5rem; width:100%; border:2px dashed #c8d6df; border-radius:12px; padding:0.75rem; background:white; color:var(--primary); font-weight:600; font-size:0.92rem; cursor:pointer; transition:all 0.2s; margin-top:0.25rem; }
+        .btn-add-session:hover { border-color:var(--primary); background:rgba(30,77,107,0.04); }
+        /* 特殊旗標 */
+        .flag-options { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.6rem; }
+        .flag-label { display:flex; align-items:center; gap:0.5rem; border:2px solid #e5e7eb; border-radius:10px; padding:0.55rem 1.1rem; cursor:pointer; font-size:0.88rem; color:#374151; transition:all 0.2s; background:white; }
+        .flag-label:has(input:checked) { border-color:#f59e0b; background:#fffbf0; color:#92400e; }
+        .flag-label input { display:none; }
+        /* 器材 */
+        .equipment-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1rem; }
+        .equipment-card { border:1px solid #e5e7eb; border-radius:12px; padding:1rem; background:white; }
+        .equipment-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem; }
+        .equipment-name { font-weight:600; font-size:0.95rem; }
+        .stock-available { color:var(--success); font-weight:600; }
+        .stock-low { color:var(--warning); font-weight:600; }
+        .stock-empty { color:var(--danger); font-weight:600; }
+        .counter { display:flex; align-items:center; gap:0.5rem; }
+        .counter button { width:32px; height:32px; border:1px solid #d1d5db; background:white; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+        .counter button:hover:not(:disabled) { background:var(--primary); color:white; border-color:var(--primary); }
+        .counter button:disabled { opacity:.45; cursor:not-allowed; }
+        .counter input { width:60px; text-align:center; border:1px solid #d1d5db; border-radius:6px; padding:0.25rem; font-weight:600; }
+        .counter input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(30,77,107,0.12); }
+        .counter input::-webkit-outer-spin-button, .counter input::-webkit-inner-spin-button { -webkit-appearance:none; }
+        .counter input[type=number] { -moz-appearance:textfield; }
+        /* 訊息 */
+        .message { padding:1rem 1.25rem; border-radius:12px; margin-bottom:1.5rem; font-weight:600; }
+        .message.success { background:#d1e7dd; color:#0f5132; border:1px solid #a3cfbb; }
+        .message.error { background:#f8d7da; color:#721c24; border:1px solid #f1aeb5; }
+        .alert-info { background:#dbeafe; border-color:#93c5fd; color:#1e3a5f; }
+        .alert-warning { background:#fef3c7; border-color:#fbbf24; color:#78350f; }
+        .notice-box { display:flex; align-items:start; gap:0.65rem; background:#f0f6fb; border:1px solid #bcd3e5; border-radius:10px; padding:0.85rem 1rem; font-size:0.88rem; color:#1e4d6b; line-height:1.6; }
+        .btn-submit { background:var(--primary); color:white; border:none; padding:0.9rem 3rem; border-radius:12px; font-weight:600; font-size:1.05rem; cursor:pointer; transition:all 0.25s; display:block; margin:1.75rem auto 0; box-shadow:0 4px 15px rgba(30,77,107,0.2); }
+        .btn-submit:hover { background:var(--sidebar); transform:translateY(-2px); box-shadow:0 6px 20px rgba(30,77,107,0.3); }
+        @media (max-width:960px) { .session-fields { grid-template-columns:1fr 1fr 1fr; } .session-fields .session-field:nth-child(4), .session-fields .session-field:nth-child(5) { grid-column:1/-1; } }
+        @media (max-width:600px) { .session-fields { grid-template-columns:1fr; } }
+        @media (max-width:1100px) { .main-content { margin-left:0; } .equipment-grid { grid-template-columns:1fr; } }
+        @media (max-width:768px) { .top-navbar { flex-direction:column; align-items:flex-start; gap:1rem; padding:1rem; } .sidebar { position:relative; width:100%; height:auto; } }
     </style>
 </head>
 <body>
-    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
+<?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
-    <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">活動申請</li>
-                </ol>
-                <h4 class="mt-2 mb-0">新增活動申請</h4>
+<main class="main-content">
+    <header class="top-navbar">
+        <div>
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
+                <li class="breadcrumb-item active">活動申請</li>
+            </ol>
+            <h4 class="mt-2 mb-0">新增活動申請</h4>
+        </div>
+    </header>
+
+    <section class="content-wrapper">
+
+        <?php if ($message): ?>
+        <div class="message <?= $message_type ?>"><?= $message ?></div>
+        <?php endif; ?>
+
+        <?php if (!empty($field_coordination_results)): ?>
+        <div class="card">
+            <h3><i class="bi bi-check-circle"></i> 場協登記結果選擇</h3>
+            <p class="text-muted mb-3">社團有以下已核准的場協結果，點擊任一項可自動帶入場次資訊。</p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem;">
+                <?php foreach ($field_coordination_results as $idx => $fc): ?>
+                <div class="field-coord-card" onclick="loadFCData(<?= $idx ?>)"
+                     style="cursor:pointer; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; transition:all 0.2s; background:white;" id="fc_card_<?= $idx ?>">
+                    <div style="display:flex; justify-content:space-between; align-items:start;">
+                        <div>
+                            <div style="font-weight:700; color:#1f2937; font-size:1rem;"><?= htmlspecialchars($fc['event_name'],ENT_QUOTES,'UTF-8') ?></div>
+                            <div style="font-size:0.85rem; color:#6b7280;">民國 <?= $fc['academic_year'] ?> <?= $fc['semester']==1?'上':'下' ?>學期</div>
+                        </div>
+                        <input type="radio" name="field_coord_selection" value="<?= $idx ?>">
+                    </div>
+                    <hr style="margin:0.6rem 0; border:none; border-top:1px solid #e5e7eb;">
+                    <div style="font-size:0.87rem; color:#374151;">
+                        <div><i class="bi bi-calendar-event me-1"></i><?= date('Y-m-d', strtotime($fc['start_time'])) ?></div>
+                        <div><i class="bi bi-clock me-1"></i><?= date('H:i', strtotime($fc['start_time'])) ?> – <?= date('H:i', strtotime($fc['end_time'])) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
             </div>
-        </header>
+        </div>
+        <?php endif; ?>
 
-        <section class="content-wrapper">
-            <?php if($message): ?>
-            <div class="message <?= $message_type ?>">
-                <?= $message ?>
-            </div>
-            <?php endif; ?>
+        <form method="POST" id="applicationForm" enctype="multipart/form-data">
 
-            <?php if (!empty($field_coordination_results)): ?>
+            <!-- ① 基本資訊 -->
             <div class="card">
-                <h3><i class="bi bi-check-circle"></i> 場協登記結果選擇</h3>
-                <p class="text-muted">社團有以下已核准的場協結果，點擊任一項可自動帶入相關資訊到下方表單。</p>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-                    <?php foreach ($field_coordination_results as $idx => $fc_result): ?>
-                    <div class="field-coord-card" onclick="loadFieldCoordinationData(<?= $idx ?>, event)" style="cursor: pointer; border: 2px solid #e5e7eb; border-radius: 12px; padding: 1rem; transition: all 0.25s ease; background: white;">
-                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
-                            <div>
-                                <div style="font-weight: 700; color: #1f2937; font-size: 1.05rem;"><?= htmlspecialchars($fc_result['event_name'], ENT_QUOTES, 'UTF-8') ?></div>
-                                <div style="font-size: 0.9rem; color: #6b7280;">民國 <?= htmlspecialchars($fc_result['academic_year'], ENT_QUOTES, 'UTF-8') ?> <?= $fc_result['semester'] == 1 ? '上學期' : '下學期' ?></div>
-                            </div>
-                            <input type="radio" name="field_coord_selection" value="<?= $idx ?>" style="margin-top: 0.25rem;">
+                <h3><i class="bi bi-info-circle"></i> 基本資訊</h3>
+                <div class="form-section">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">社團名稱 <span class="text-danger">*</span></label>
+                            <input type="text" name="club_name" class="form-control" value="<?= $fv['club_name'] ?>" required placeholder="主辦社團名稱">
                         </div>
-                        <hr style="margin: 0.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
-                        <div style="font-size: 0.9rem; color: #374151;">
-                            <div style="margin-bottom: 0.3rem;"><i class="bi bi-calendar-event"></i> <?= date('Y-m-d', strtotime($fc_result['start_time'])) ?></div>
-                            <div style="margin-bottom: 0.3rem;"><i class="bi bi-clock"></i> <?= date('H:i', strtotime($fc_result['start_time'])) ?> - <?= date('H:i', strtotime($fc_result['end_time'])) ?></div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">活動名稱 <span class="text-danger">*</span></label>
+                            <input type="text" name="event_name" class="form-control" id="event_name" value="<?= $fv['event_name'] ?>" required placeholder="活動名稱">
                         </div>
-                        <input type="hidden" class="fc-data" value='<?= json_encode($fc_result) ?>'>
                     </div>
-                    <?php endforeach; ?>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">活動負責人 <span class="text-danger">*</span></label>
+                            <input type="text" name="responsible_person" class="form-control" value="<?= $fv['responsible_person'] ?>" required placeholder="例：社長 王小明">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">活動類型 <span class="text-danger">*</span></label>
+                            <div class="type-radio-group">
+                                <label class="type-radio-label">
+                                    <input type="radio" name="event_type" value="校內" id="type_indoor" <?= $fv['event_type']==='校內'?'checked':'' ?> onchange="toggleEventType()">
+                                    <i class="bi bi-building"></i> 校內活動
+                                </label>
+                                <label class="type-radio-label">
+                                    <input type="radio" name="event_type" value="校外" id="type_outdoor" <?= $fv['event_type']==='校外'?'checked':'' ?> onchange="toggleEventType()">
+                                    <i class="bi bi-tree"></i> 校外活動
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 校外活動地點 -->
+                    <div id="location_section" class="mb-3" style="display:<?= $fv['event_type']==='校外'?'block':'none' ?>;">
+                        <label class="form-label fw-semibold">活動地點 <span class="text-danger">*</span> <small class="text-muted fw-normal">（校外活動必填）</small></label>
+                        <input type="text" name="activity_location" id="activity_location" class="form-control" value="<?= $fv['activity_location'] ?>" placeholder="例：陽明山、福隆、清境農場">
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold">活動說明</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="請簡述活動內容及特別需求..."><?= $fv['description'] ?></textarea>
+                    </div>
                 </div>
             </div>
-            <?php endif; ?>
 
-            <?php if ($field_coordination_results): ?>
-            <div class="alert alert-info" style="border-radius: 12px; margin-bottom: 1rem;">
-                <strong>場協大會已通過</strong>，系統已找到社團可用的核准場協結果。請選擇一筆場協結果自動帶入相關欄位，再視需要調整活動名稱和說明。
+            <!-- ② 送件須知 -->
+            <div class="card">
+                <h3><i class="bi bi-flag"></i> 送件須知</h3>
+                <div class="form-section" style="padding:0.9rem 1.25rem;">
+                    <!-- 一列緊湊選擇 -->
+                    <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.65rem;">
+                        <span style="font-size:0.83rem; color:#6b7280; white-space:nowrap;">活動規模：</span>
+                        <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                            <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                            一般活動
+                        </label>
+                        <label id="lbl_scale_large" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                            <input type="radio" name="activity_scale" value="大型活動" id="scale_large" <?= ($fv['activity_scale']??'')=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                            大型活動
+                        </label>
+                        <span style="font-size:0.83rem; color:#6b7280; margin-left:0.4rem; white-space:nowrap;">特殊性質：</span>
+                        <label id="lbl_alcohol" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
+                            <input type="checkbox" name="activity_flags[]" value="含酒精活動" id="flag_alcohol" <?= in_array('含酒精活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                            🍺 含酒精
+                        </label>
+                        <label id="lbl_fire" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
+                            <input type="checkbox" name="activity_flags[]" value="使用火源活動" id="flag_fire" <?= in_array('使用火源活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                            🔥 火源
+                        </label>
+                    </div>
+                    <!-- 動態小提示 -->
+                    <div id="deadline_reminder" class="notice-box" style="padding:0.55rem 0.85rem; font-size:0.86rem; margin-bottom:0;">
+                        <i class="bi bi-clock" style="font-size:0.95rem; flex-shrink:0;"></i>
+                        <span id="deadline_text"></span>
+                    </div>
+                    <div id="flag_warning" class="alert alert-warning mt-2" style="display:none; border-radius:8px; font-size:0.85rem; margin-bottom:0; padding:0.55rem 0.85rem;"></div>
+                </div>
             </div>
-            <?php endif; ?>
 
-            <form method="POST" id="applicationForm" enctype="multipart/form-data">
-                <!-- 基本資訊 -->
-                <div class="card">
-                    <h3><i class="bi bi-info-circle"></i> 基本資訊</h3>
-                    <div class="form-section">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                            <div class="form-group">
-                                <label for="event_name">活動名稱 *</label>
-                                <input type="text" id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_POST['event_name'] ?? $prefill_event_name, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="club_name">主辦社團 *</label>
-                                <input type="text" id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_POST['club_name'] ?? $prefill_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                        </div>
-
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem;">
-                            <div class="form-group">
-                                <label for="event_date">開始日期 *</label>
-                                <input type="date" id="event_date" name="event_date" class="form-control" value="<?= htmlspecialchars($_POST['event_date'] ?? $prefill_event_date, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="start_time">開始時間 * <small class="text-muted">(08:30–21:30)</small></label>
-                                <input type="time" id="start_time" name="start_time" class="form-control" min="08:30" max="21:30" step="1800" value="<?= htmlspecialchars($_POST['start_time'] ?? $prefill_start_time, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="end_date">結束日期 *</label>
-                                <input type="date" id="end_date" name="end_date" class="form-control" value="<?= htmlspecialchars($_POST['end_date'] ?? $prefill_end_date, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="end_time">結束時間 * <small class="text-muted">(08:30–21:30)</small></label>
-                                <input type="time" id="end_time" name="end_time" class="form-control" min="08:30" max="21:30" step="1800" value="<?= htmlspecialchars($_POST['end_time'] ?? $prefill_end_time, ENT_QUOTES, 'UTF-8') ?>" required>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="description">活動說明</label>
-                            <textarea id="description" name="description" class="form-control" rows="3" placeholder="請簡述活動內容及特別需求..."><?= htmlspecialchars($_POST['description'] ?? '', ENT_QUOTES, 'UTF-8') ?></textarea>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 場地選擇 -->
-                <div class="card">
-                    <h3><i class="bi bi-geo-alt"></i> 場地選擇</h3>
-                    <div class="form-section">
-                        <div class="venue-grid">
-                            <?php foreach ($venues as $venue): ?>
-                            <div class="venue-card" data-venue-id="<?= $venue['space_id'] ?>" onclick="selectVenue(<?= $venue['space_id'] ?>)">
-                                <div class="venue-header">
-                                    <div class="venue-name"><?= htmlspecialchars($venue['space_name']) ?></div>
-                                    <div class="venue-status">可預約</div>
-                                </div>
-                                <div class="venue-capacity"><i class="bi bi-people"></i> 容納：<?= $venue['capacity'] ?> 人</div>
-                                <input type="radio" name="venue_id" value="<?= $venue['space_id'] ?>" style="display: none;" <?= (isset($_POST['venue_id']) && $_POST['venue_id'] == $venue['space_id']) || (!isset($_POST['venue_id']) && $prefill_venue_id == $venue['space_id']) ? 'checked' : '' ?>>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3><i class="bi bi-tools"></i> 器材借用</h3>
-                    <div class="form-section">
-
-                        <!-- 時段選擇 -->
-                        <div style="background:#f0f4f8; border-radius:12px; padding:1rem 1.25rem; margin-bottom:1rem;">
-                            <div style="font-weight:600; color:#1e4d6b; margin-bottom:0.75rem; font-size:0.95rem;">
-                                <i class="bi bi-clock me-1"></i>選擇器材借用時段
-                                <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
-                            </div>
-                            <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:0.75rem; align-items:flex-end;">
-                                <div>
-                                    <label style="font-size:0.85rem; color:#374151; display:block; margin-bottom:0.3rem;">
-                                        借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small>
-                                    </label>
-                                    <input type="datetime-local" id="equip_borrow_time" name="equip_borrow_time" class="form-control">
-                                </div>
-                                <div>
-                                    <label style="font-size:0.85rem; color:#374151; display:block; margin-bottom:0.3rem;">
-                                        歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small>
-                                    </label>
-                                    <input type="datetime-local" id="equip_return_time" name="equip_return_time" class="form-control">
-                                </div>
-                                <button type="button" onclick="queryEquipmentAvailability()"
-                                    style="background:#1e4d6b; color:white; border:none; border-radius:8px; padding:0.65rem 1.2rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:background 0.2s;"
-                                    onmouseover="this.style.background='#14394f'" onmouseout="this.style.background='#1e4d6b'">
-                                    <i class="bi bi-search me-1"></i>查詢可用數量
+            <!-- ③ 活動場次（條列式） -->
+            <div class="card">
+                <h3><i class="bi bi-calendar-week"></i> 活動場次安排</h3>
+                <p class="text-muted mb-3" style="font-size:0.92rem;">
+                    每個場次可設定不同日期、時間與場地。例如：每週二晚上定期練習可新增多筆場次。
+                    <br><span style="color:#6b7280;">校內活動請每場次選擇場地；校外活動場地可不選。</span>
+                </p>
+                <div class="form-section">
+                    <div id="sessions_container">
+                        <?php foreach ($sessions_data as $si => $sess): ?>
+                        <div class="session-row" data-idx="<?= $si ?>">
+                            <div class="session-header">
+                                <span class="session-label"><i class="bi bi-calendar3"></i> 場次 <?= $si+1 ?></span>
+                                <button type="button" class="btn-remove-session" onclick="removeSession(this)" style="display:<?= count($sessions_data)>1?'inline-flex':'none' ?>;">
+                                    <i class="bi bi-trash"></i> 刪除
                                 </button>
                             </div>
-                            <div id="equipTimeWarning" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#f0e8c0; border-radius:8px; color:#6b5a20; font-size:0.88rem;"></div>
-                        </div>
-
-                        <!-- 器材卡片 -->
-                        <div class="equipment-grid">
-                            <?php foreach ($equipment as $item):
-                                $initMax = $item['borrowing_limit'] > 0
-                                    ? min($item['available'], $item['borrowing_limit'])
-                                    : $item['available'];
-                                $stockClass = $item['available'] > 0 ? ($item['available'] < 3 ? 'low' : 'available') : 'empty';
-                            ?>
-                            <div class="equipment-card"
-                                 data-equip-id="<?= $item['id'] ?>"
-                                 data-total="<?= $item['total'] ?>"
-                                 data-limit="<?= $item['borrowing_limit'] ?>">
-                                <div class="equipment-header">
-                                    <div class="equipment-name">
-                                        <i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i>
-                                        <?= htmlspecialchars($item['name']) ?>
-                                    </div>
-                                    <div class="equipment-stock">
-                                        <div class="avail-text stock-<?= $stockClass ?>">
-                                            剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?>
-                                        </div>
-                                    </div>
+                            <div class="session-fields">
+                                <div class="session-field">
+                                    <label>開始日期 *</label>
+                                    <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date']??'',ENT_QUOTES,'UTF-8') ?>" required>
                                 </div>
-                                <?php if ($item['borrowing_limit'] > 0): ?>
-                                <div style="font-size:0.78rem; color:#9ca3af; margin-bottom:0.4rem;">
-                                    <i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件
+                                <div class="session-field">
+                                    <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
+                                    <input type="time" name="sessions[<?= $si ?>][start_time]" class="form-control" min="08:30" max="21:30" value="<?= htmlspecialchars($sess['start_time']??'',ENT_QUOTES,'UTF-8') ?>" required>
                                 </div>
-                                <?php endif; ?>
-                                <div class="counter mt-1">
-                                    <button type="button" class="btn-minus"
-                                            onclick="changeQuantity(<?= $item['id'] ?>, -1)"
-                                            <?= $item['available'] == 0 ? 'disabled' : '' ?>>-</button>
-                                    <input type="number"
-                                           id="qty_<?= $item['id'] ?>"
-                                           name="equipment[<?= $item['id'] ?>]"
-                                           value="0" min="0"
-                                           max="<?= $initMax ?>"
-                                           data-borrowing-limit="<?= $item['borrowing_limit'] ?>"
-                                           oninput="clampQtyInput(this)"
-                                           onchange="syncQtyButtons(this)">
-                                    <button type="button" class="btn-plus"
-                                            onclick="changeQuantity(<?= $item['id'] ?>, 1)"
-                                            <?= $item['available'] == 0 ? 'disabled' : '' ?>>+</button>
+                                <div class="session-field">
+                                    <label>結束日期 *</label>
+                                    <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date']??$sess['date']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                </div>
+                                <div class="session-field">
+                                    <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
+                                    <input type="time" name="sessions[<?= $si ?>][end_time]" class="form-control" min="08:30" max="21:30" value="<?= htmlspecialchars($sess['end_time']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                </div>
+                                <div class="session-field">
+                                    <label>場地 <?= $fv['event_type']==='校內'?'*':'（選填）' ?></label>
+                                    <select name="sessions[<?= $si ?>][venue_id]" class="form-control">
+                                        <option value="">-- 選擇場地 --</option>
+                                        <?php foreach ($venues as $v): ?>
+                                        <option value="<?= $v['space_id'] ?>" <?= ($sess['venue_id']??'')==$v['space_id']?'selected':'' ?>><?= htmlspecialchars($v['space_name'],ENT_QUOTES,'UTF-8') ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
                                 </div>
                             </div>
-                            <?php endforeach; ?>
                         </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <button type="button" class="btn-add-session" onclick="addSession()">
+                        <i class="bi bi-plus-circle"></i> 新增場次
+                    </button>
+                </div>
+            </div>
 
+            <!-- ④ 器材借用 -->
+            <div class="card">
+                <h3><i class="bi bi-tools"></i> 器材借用</h3>
+                <div class="form-section">
+                    <div style="background:#f0f4f8; border-radius:12px; padding:1rem 1.25rem; margin-bottom:1rem;">
+                        <div style="font-weight:600; color:#1e4d6b; margin-bottom:0.75rem; font-size:0.93rem;">
+                            <i class="bi bi-clock me-1"></i>選擇器材借用時段
+                            <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:0.75rem; align-items:flex-end;">
+                            <div>
+                                <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
+                                <input type="datetime-local" id="equip_borrow_time" name="equip_borrow_time" class="form-control">
+                            </div>
+                            <div>
+                                <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
+                                <input type="datetime-local" id="equip_return_time" name="equip_return_time" class="form-control">
+                            </div>
+                            <button type="button" onclick="queryEquipmentAvailability()"
+                                style="background:#1e4d6b; color:white; border:none; border-radius:8px; padding:0.65rem 1.1rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:background 0.2s;"
+                                onmouseover="this.style.background='#14394f'" onmouseout="this.style.background='#1e4d6b'">
+                                <i class="bi bi-search me-1"></i>查詢可用數量
+                            </button>
+                        </div>
+                        <div id="equipTimeWarning" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#f0e8c0; border-radius:8px; color:#6b5a20; font-size:0.87rem;"></div>
+                    </div>
+                    <div class="equipment-grid">
+                        <?php foreach ($equipment as $item):
+                            $initMax = $item['borrowing_limit']>0 ? min($item['available'],$item['borrowing_limit']) : $item['available'];
+                            $sc = $item['available']>0 ? ($item['available']<3?'low':'available') : 'empty';
+                        ?>
+                        <div class="equipment-card" data-equip-id="<?= $item['id'] ?>" data-total="<?= $item['total'] ?>" data-limit="<?= $item['borrowing_limit'] ?>">
+                            <div class="equipment-header">
+                                <div class="equipment-name"><i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i> <?= htmlspecialchars($item['name']) ?></div>
+                                <div style="text-align:right; font-size:0.88rem;">
+                                    <div class="avail-text stock-<?= $sc ?>">剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?></div>
+                                </div>
+                            </div>
+                            <?php if ($item['borrowing_limit']>0): ?>
+                            <div style="font-size:0.76rem; color:#9ca3af; margin-bottom:0.4rem;"><i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件</div>
+                            <?php endif; ?>
+                            <div class="counter mt-1">
+                                <button type="button" class="btn-minus" onclick="changeQuantity(<?= $item['id'] ?>,-1)" <?= $item['available']==0?'disabled':'' ?>>-</button>
+                                <input type="number" id="qty_<?= $item['id'] ?>" name="equipment[<?= $item['id'] ?>]" value="0" min="0" max="<?= $initMax ?>" data-borrowing-limit="<?= $item['borrowing_limit'] ?>" oninput="clampQtyInput(this)" onchange="syncQtyButtons(this)">
+                                <button type="button" class="btn-plus" onclick="changeQuantity(<?= $item['id'] ?>,1)" <?= $item['available']==0?'disabled':'' ?>>+</button>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
+            </div>
 
-                <div class="card">
-                    <h3><i class="bi bi-file-earmark-arrow-up"></i> 三單下載與上傳</h3>
-                    <div class="form-section">
-                        <div class="row align-items-center">
-                            <div class="col-md-6">
-                                <p class="mb-2"><strong>下載空白三單</strong></p>
-                                <p>
-                                <div><a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download>
-                                    <i class="bi bi-download"></i> 下載活動申請表(黃單)
-                                </a></div><br>
-                                <div><a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download>
-                                    <i class="bi bi-download"></i> 下載例行活動場地核定登記表
-                                </a></div><br>
-                                <div><a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download>
-                                    <i class="bi bi-download"></i> 下載器材借用申請表
-                                </a></div>
-                                </p>
-                                <p class="text-muted small mt-2">請填寫完整並加蓋社團公章後掃描上傳。</p>
+            <!-- ⑤ 文件上傳 -->
+            <div class="card">
+                <h3><i class="bi bi-file-earmark-arrow-up"></i> 文件</h3>
+                <div class="form-section">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h5 class="fw-bold mb-1"><i class="bi bi-download me-1"></i>紙本三單下載</h5>
+                            <p class="text-muted small mb-3">請下載後填寫並親自繳交至課指組（紙本流程）。</p>
+                            <div class="d-flex flex-column gap-2">
+                                <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載活動申請表（黃單）</a>
+                                <a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載場地核定登記表</a>
+                                <a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載器材借用申請表</a>
                             </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">1. 活動申請單 (PDF) <span class="text-danger">*</span></label>
-                                    <input type="file" name="event_document" class="form-control" accept=".pdf" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">2. 場地申請單 (PDF) <span class="text-danger">*</span></label>
-                                    <input type="file" name="venue_document" class="form-control" accept=".pdf" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">3. 器材借用單 (PDF，若無借用可不傳)</label>
-                                    <input type="file" name="equipment_document" class="form-control" accept=".pdf">
-                                </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5 class="fw-bold mb-1"><i class="bi bi-upload me-1"></i>活動企劃書上傳</h5>
+                            <p class="text-muted small mb-3">可上傳活動企劃書供審核參考（選填，PDF / Word）。</p>
+                            <input type="file" name="proposal_document" class="form-control" accept=".pdf,.doc,.docx">
+                            <div class="alert alert-info mt-2" style="border-radius:8px; font-size:0.85rem; margin-bottom:0;">
+                                <i class="bi bi-info-circle me-1"></i>三單仍需紙本繳交，<strong>無須電子上傳</strong>。
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <button type="submit" class="btn-submit"><i class="bi bi-send"></i> 提交申請</button>
-            </form>
-        </section>
-    </main>
-    <script>
-        function selectVenue(venueId) {
-            document.querySelectorAll('.venue-card').forEach(card => card.classList.remove('selected'));
-            const selectedCard = document.querySelector(`[data-venue-id="${venueId}"]`);
-            selectedCard.classList.add('selected');
-            document.querySelector(`input[name="venue_id"][value="${venueId}"]`).checked = true;
+            <button type="submit" class="btn-submit"><i class="bi bi-send me-1"></i> 提交申請</button>
+        </form>
+    </section>
+</main>
+
+<script>
+// ── 場協資料 ───────────────────────────────────────────────
+const fcResults = <?= json_encode($field_coordination_results) ?>;
+function loadFCData(idx) {
+    const fc = fcResults[idx];
+    if (!fc) return;
+    document.querySelectorAll('.field-coord-card').forEach(c => { c.style.borderColor='#e5e7eb'; c.style.background='white'; });
+    const card = document.getElementById('fc_card_' + idx);
+    card.style.borderColor = '#1e4d6b';
+    card.style.background  = 'rgba(30,77,107,0.05)';
+    card.querySelector('input[type="radio"]').checked = true;
+    document.getElementById('event_name').value = fc.event_name || '';
+    // 帶入第一個場次
+    const s = fc.start_time ? fc.start_time.split(' ') : ['',''];
+    const e = fc.end_time   ? fc.end_time.split(' ')   : ['',''];
+    const rows = document.querySelectorAll('.session-row');
+    if (rows.length > 0) {
+        rows[0].querySelector('[name*="[date]"]').value       = s[0] || '';
+        rows[0].querySelector('[name*="[start_time]"]').value = s[1] ? s[1].substring(0,5) : '';
+        rows[0].querySelector('[name*="[end_time]"]').value   = e[1] ? e[1].substring(0,5) : '';
+        if (fc.space_id) {
+            const sel = rows[0].querySelector('[name*="[venue_id]"]');
+            if (sel) sel.value = fc.space_id;
         }
+    }
+    document.getElementById('type_indoor').checked = true;
+    toggleEventType();
+}
 
-        // 取得有效上限（庫存 vs 借用上限取小值）
-        function getEffectiveMax(input) {
-            const availMax    = parseInt(input.getAttribute('max')) || 0;
-            const borrowLimit = parseInt(input.getAttribute('data-borrowing-limit')) || 0;
-            return borrowLimit > 0 ? Math.min(availMax, borrowLimit) : availMax;
+// ── 活動類型切換 ─────────────────────────────────────────
+function toggleEventType() {
+    const isOutdoor = document.getElementById('type_outdoor').checked;
+    document.getElementById('location_section').style.display = isOutdoor ? 'block' : 'none';
+    document.querySelectorAll('.session-field:last-child label').forEach(lbl => {
+        lbl.textContent = isOutdoor ? '場地（選填）' : '場地 *';
+    });
+}
+
+// ── 送件期限提示 ─────────────────────────────────────────
+function updateDeadlineReminder() {
+    const isLarge = document.getElementById('scale_large').checked;
+    document.getElementById('deadline_text').innerHTML = isLarge
+        ? '大型活動請於活動前 <strong>30 天</strong> 完成送件。紙本三單須親自繳交至課指組。'
+        : '一般活動請於活動前 <strong>7 天</strong> 完成送件。紙本三單須親自繳交至課指組。';
+    // 更新選中樣式
+    document.getElementById('lbl_scale_normal').style.cssText += isLarge
+        ? ';border-color:#cbd5e1;background:white;color:#374151;'
+        : ';border-color:#1e4d6b;background:rgba(30,77,107,0.07);color:#1e4d6b;';
+    document.getElementById('lbl_scale_large').style.cssText += isLarge
+        ? ';border-color:#1e4d6b;background:rgba(30,77,107,0.07);color:#1e4d6b;'
+        : ';border-color:#cbd5e1;background:white;color:#374151;';
+}
+
+// ── 特殊旗標警告 ─────────────────────────────────────────
+function updateFlagWarning() {
+    const alcohol = document.getElementById('flag_alcohol').checked;
+    const fire    = document.getElementById('flag_fire').checked;
+    const w       = document.getElementById('flag_warning');
+    const msgs    = [];
+    if (alcohol) msgs.push('含酒精活動需額外審核，請確認符合相關法規。');
+    if (fire)    msgs.push('使用火源活動需額外審核，請備有安全措施。');
+    w.innerHTML     = msgs.map(m=>`<div><i class="bi bi-exclamation-triangle-fill me-1"></i>${m}</div>`).join('');
+    w.style.display = msgs.length ? 'block' : 'none';
+    // 更新 checkbox 樣式
+    ['lbl_alcohol','lbl_fire'].forEach(id => {
+        const lbl = document.getElementById(id);
+        const cb  = lbl ? lbl.querySelector('input[type=checkbox]') : null;
+        if (lbl && cb) {
+            lbl.style.borderColor  = cb.checked ? '#f59e0b' : '#cbd5e1';
+            lbl.style.background   = cb.checked ? '#fffbf0' : 'white';
+            lbl.style.color        = cb.checked ? '#92400e' : '#374151';
         }
+    });
+}
 
-        // 手動輸入時即時 clamp（打字中）
-        function clampQtyInput(input) {
-            const effectiveMax = getEffectiveMax(input);
-            let v = parseInt(input.value);
-            if (isNaN(v) || v < 0) { input.value = 0; return; }
-            if (v > effectiveMax)   { input.value = effectiveMax; }
-        }
+// ── 場次管理 ─────────────────────────────────────────────
+const venueOptions = <?= json_encode($venues_for_js) ?>;
+let sessionCount   = <?= count($sessions_data) ?>;
 
-        // 輸入完成後同步按鈕狀態
-        function syncQtyButtons(input) {
-            clampQtyInput(input);
-            const effectiveMax = getEffectiveMax(input);
-            const availMax     = parseInt(input.getAttribute('max')) || 0;
-            const v            = parseInt(input.value) || 0;
-            const card = input.closest('.equipment-card');
-            if (card) {
-                card.querySelector('.btn-minus').disabled = (v <= 0);
-                card.querySelector('.btn-plus').disabled  = (v >= effectiveMax) || (availMax <= 0);
-            }
-        }
+function buildVenueOptions(selectedId) {
+    let html = '<option value="">-- 選擇場地 --</option>';
+    venueOptions.forEach(v => {
+        const sel = (selectedId && String(v.id) === String(selectedId)) ? 'selected' : '';
+        html += `<option value="${v.id}" ${sel}>${escHtml(v.name)}</option>`;
+    });
+    return html;
+}
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-        function changeQuantity(equipId, delta) {
-            const input        = document.getElementById('qty_' + equipId);
-            const effectiveMax = getEffectiveMax(input);
-            let value = (parseInt(input.value) || 0) + delta;
-            if (value < 0) value = 0;
-            if (value > effectiveMax) value = effectiveMax;
-            input.value = value;
-            syncQtyButtons(input);
-        }
+function addSession(date, startTime, endDate, endTime, venueId) {
+    const idx  = sessionCount;
+    sessionCount++;
+    const isOutdoor = document.getElementById('type_outdoor').checked;
+    const html = `
+        <div class="session-row" data-idx="${idx}">
+            <div class="session-header">
+                <span class="session-label"><i class="bi bi-calendar3"></i> 場次</span>
+                <button type="button" class="btn-remove-session" onclick="removeSession(this)">
+                    <i class="bi bi-trash"></i> 刪除
+                </button>
+            </div>
+            <div class="session-fields">
+                <div class="session-field">
+                    <label>開始日期 *</label>
+                    <input type="date" name="sessions[${idx}][date]" class="form-control" value="${date||''}" required>
+                </div>
+                <div class="session-field">
+                    <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
+                    <input type="time" name="sessions[${idx}][start_time]" class="form-control" min="08:30" max="21:30" value="${startTime||''}" required>
+                </div>
+                <div class="session-field">
+                    <label>結束日期 *</label>
+                    <input type="date" name="sessions[${idx}][end_date]" class="form-control" value="${endDate||date||''}" required>
+                </div>
+                <div class="session-field">
+                    <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
+                    <input type="time" name="sessions[${idx}][end_time]" class="form-control" min="08:30" max="21:30" value="${endTime||''}" required>
+                </div>
+                <div class="session-field">
+                    <label>${isOutdoor ? '場地（選填）' : '場地 *'}</label>
+                    <select name="sessions[${idx}][venue_id]" class="form-control">
+                        ${buildVenueOptions(venueId)}
+                    </select>
+                </div>
+            </div>
+        </div>`;
+    document.getElementById('sessions_container').insertAdjacentHTML('beforeend', html);
+    renumberSessions();
+}
 
-        // ── 查詢器材可用數量 ──────────────────────────────────
-        async function queryEquipmentAvailability() {
-            const borrowTime = document.getElementById('equip_borrow_time').value;
-            const returnTime = document.getElementById('equip_return_time').value;
-            const warnDiv    = document.getElementById('equipTimeWarning');
+function removeSession(btn) {
+    const rows = document.querySelectorAll('.session-row');
+    if (rows.length <= 1) { alert('至少需要保留一個場次！'); return; }
+    btn.closest('.session-row').remove();
+    renumberSessions();
+}
 
-            warnDiv.style.display = 'none';
-            warnDiv.innerHTML = '';
-
-            if (!borrowTime || !returnTime) {
-                alert('請先選擇借用時間與歸還時間。'); return;
-            }
-
-            // ① 時段順序
-            if (borrowTime >= returnTime) {
-                alert('歸還時間必須晚於借用時間。'); return;
-            }
-
-            // ② 時間規範 09:30–16:30
-            function timeMinutes(dtStr) {
-                const d = new Date(dtStr);
-                return d.getHours() * 60 + d.getMinutes();
-            }
-            const MIN = 9*60+30, MAX = 16*60+30;
-            if (timeMinutes(borrowTime) < MIN || timeMinutes(borrowTime) > MAX ||
-                timeMinutes(returnTime) < MIN || timeMinutes(returnTime) > MAX) {
-                warnDiv.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>器材借還時間須在 09:30–16:30 之間，請重新選擇。';
-                warnDiv.style.display = 'block';
-                return;
-            }
-
-            // ③ 與活動時間相容性檢查（提示，不阻擋）
-            const actStart = document.getElementById('event_date').value;
-            const actEnd   = document.getElementById('end_date').value;
-            if (actStart && actEnd) {
-                const btDate = borrowTime.split('T')[0];
-                const rtDate = returnTime.split('T')[0];
-                const warns  = [];
-                if (btDate > actStart)
-                    warns.push('借用日期（' + btDate + '）晚於活動開始日（' + actStart + '），建議提前借用器材。');
-                if (rtDate < actEnd)
-                    warns.push('歸還日期（' + rtDate + '）早於活動結束日（' + actEnd + '），建議活動結束後再歸還。');
-                if (warns.length) {
-                    warnDiv.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + warns.join('<br>');
-                    warnDiv.style.display = 'block';
-                }
-            }
-
-            // ④ 呼叫 API 取得可用數量
-            try {
-                const res  = await fetch(`get_equipment_availability.php?borrow_time=${encodeURIComponent(borrowTime)}&return_time=${encodeURIComponent(returnTime)}`);
-                const data = await res.json();
-
-                document.querySelectorAll('.equipment-card[data-equip-id]').forEach(card => {
-                    const id    = card.dataset.equipId;
-                    const total = parseInt(card.dataset.total) || 0;
-                    const limit = parseInt(card.dataset.limit) || 0;
-
-                    const avail = (data[id] !== undefined) ? parseInt(data[id]) : total;
-                    const effectiveMax = limit > 0 ? Math.min(avail, limit) : avail;
-
-                    // 更新顯示
-                    const qtySpan  = card.querySelector('.avail-qty');
-                    const textDiv  = card.querySelector('.avail-text');
-                    const input    = document.getElementById('qty_' + id);
-                    const btnMinus = card.querySelector('.btn-minus');
-                    const btnPlus  = card.querySelector('.btn-plus');
-
-                    if (qtySpan) qtySpan.textContent = avail;
-                    if (textDiv) textDiv.className = 'avail-text stock-' + (avail <= 0 ? 'empty' : avail <= 2 ? 'low' : 'available');
-
-                    if (input) {
-                        input.setAttribute('max', avail);
-                        // 若已選數量超過新的可用量，自動調低
-                        if (parseInt(input.value) > effectiveMax) input.value = effectiveMax;
-                    }
-                    if (btnMinus) btnMinus.disabled = !input || parseInt(input?.value) <= 0;
-                    if (btnPlus)  btnPlus.disabled  = avail <= 0;
-                });
-            } catch (err) {
-                alert('查詢失敗，請稍後再試。');
-            }
-        }
-
-        // ── 器材時間 clamp（09:30–16:30）──────────────────────
-        function clampEquipTime(inputId) {
-            const input = document.getElementById(inputId);
-            if (!input) return;
-            function clamp() {
-                if (!input.value) return;
-                const dt = new Date(input.value);
-                const min = dt.getHours() * 60 + dt.getMinutes();
-                if (min < 9*60+30) dt.setHours(9, 30, 0, 0);
-                else if (min > 16*60+30) dt.setHours(16, 30, 0, 0);
-                else return;
-                const pad = n => String(n).padStart(2, '0');
-                input.value = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-            }
-            input.addEventListener('change', clamp);
-            input.addEventListener('blur', clamp);
-        }
-        clampEquipTime('equip_borrow_time');
-        clampEquipTime('equip_return_time');
-
-        document.getElementById('applicationForm').addEventListener('submit', function(e) {
-            const startDate = document.getElementById('event_date').value;
-            const endDate   = document.getElementById('end_date').value;
-            const startTime = document.getElementById('start_time').value;
-            const endTime   = document.getElementById('end_time').value;
-            const venueSelected = document.querySelector('input[name="venue_id"]:checked');
-
-            if (startDate && endDate && startDate > endDate) {
-                e.preventDefault();
-                alert('結束日期不能早於開始日期！');
-                return false;
-            }
-
-            const startDT = startDate + 'T' + startTime;
-            const endDT   = endDate   + 'T' + endTime;
-            if (startTime && endTime && startDT >= endDT) {
-                e.preventDefault();
-                alert('結束時間必須晚於開始時間！');
-                return false;
-            }
-
-            // 時間範圍檢查 08:30–21:30
-            const min = '08:30', max = '21:30';
-            if (startTime && (startTime < min || startTime > max)) {
-                e.preventDefault();
-                alert('開始時間必須在 08:30 至 21:30 之間！');
-                return false;
-            }
-            if (endTime && (endTime < min || endTime > max)) {
-                e.preventDefault();
-                alert('結束時間必須在 08:30 至 21:30 之間！');
-                return false;
-            }
-
-            if (!venueSelected) {
-                e.preventDefault();
-                alert('請選擇活動場地！');
-                return false;
-            }
-
-            // ── 器材借用時間驗證（如有選器材才驗） ──
-            const anyEquip = Array.from(
-                document.querySelectorAll('[name^="equipment["]')
-            ).some(i => parseInt(i.value) > 0);
-
-            if (anyEquip) {
-                const ebt = document.getElementById('equip_borrow_time').value;
-                const ert = document.getElementById('equip_return_time').value;
-
-                if (!ebt || !ert) {
-                    e.preventDefault();
-                    alert('有選擇器材時，請填寫器材的借用與歸還時間！');
-                    return false;
-                }
-                if (ebt >= ert) {
-                    e.preventDefault();
-                    alert('器材歸還時間必須晚於借用時間！');
-                    return false;
-                }
-                function chkMin(dtStr) {
-                    const d = new Date(dtStr);
-                    return d.getHours() * 60 + d.getMinutes();
-                }
-                if (chkMin(ebt) < 9*60+30 || chkMin(ebt) > 16*60+30) {
-                    e.preventDefault();
-                    alert('器材借用時間必須在 09:30 至 16:30 之間！');
-                    return false;
-                }
-                if (chkMin(ert) < 9*60+30 || chkMin(ert) > 16*60+30) {
-                    e.preventDefault();
-                    alert('器材歸還時間必須在 09:30 至 16:30 之間！');
-                    return false;
-                }
-            }
+function renumberSessions() {
+    const rows = document.querySelectorAll('.session-row');
+    rows.forEach((row, i) => {
+        row.dataset.idx = i;
+        row.querySelector('.session-label').innerHTML = `<i class="bi bi-calendar3"></i> 場次 ${i + 1}`;
+        row.querySelectorAll('input[name], select[name]').forEach(el => {
+            el.name = el.name.replace(/sessions\[\d+\]/, `sessions[${i}]`);
         });
+        const removeBtn = row.querySelector('.btn-remove-session');
+        if (removeBtn) removeBtn.style.display = rows.length > 1 ? 'inline-flex' : 'none';
+    });
+    sessionCount = rows.length;
+}
 
-        // 時間範圍自動修正（08:30–21:30）
-        ['start_time', 'end_time'].forEach(function(id) {
-            const input = document.getElementById(id);
-            if (!input) return;
-            function clamp() {
-                if (!input.value) return;
-                if (input.value < '08:30') input.value = '08:30';
-                if (input.value > '21:30') input.value = '21:30';
-            }
-            input.addEventListener('change', clamp);
-            input.addEventListener('blur', clamp);
-        });
+// ── 器材數量控制 ─────────────────────────────────────────
+function getEffectiveMax(input) {
+    const avail = parseInt(input.getAttribute('max'))||0;
+    const limit = parseInt(input.getAttribute('data-borrowing-limit'))||0;
+    return limit>0 ? Math.min(avail,limit) : avail;
+}
+function clampQtyInput(input) {
+    const max = getEffectiveMax(input);
+    let v = parseInt(input.value);
+    if (isNaN(v)||v<0) { input.value=0; return; }
+    if (v>max) input.value=max;
+}
+function syncQtyButtons(input) {
+    clampQtyInput(input);
+    const max=getEffectiveMax(input), avail=parseInt(input.getAttribute('max'))||0, v=parseInt(input.value)||0;
+    const card=input.closest('.equipment-card');
+    if (card) { card.querySelector('.btn-minus').disabled=(v<=0); card.querySelector('.btn-plus').disabled=(v>=max)||(avail<=0); }
+}
+function changeQuantity(id, delta) {
+    const input=document.getElementById('qty_'+id), max=getEffectiveMax(input);
+    let v=(parseInt(input.value)||0)+delta;
+    if (v<0) v=0; if (v>max) v=max;
+    input.value=v; syncQtyButtons(input);
+}
 
-        window.addEventListener('DOMContentLoaded', function () {
-            const selectedVenue = document.querySelector('input[name="venue_id"]:checked');
-            if (selectedVenue) {
-                const venueId = selectedVenue.value;
-                const selectedCard = document.querySelector(`[data-venue-id="${venueId}"]`);
-                if (selectedCard) {
-                    selectedCard.classList.add('selected');
-                }
-            }
+// ── 查詢器材可用數量 ──────────────────────────────────────
+async function queryEquipmentAvailability() {
+    const bt=document.getElementById('equip_borrow_time').value;
+    const rt=document.getElementById('equip_return_time').value;
+    const wd=document.getElementById('equipTimeWarning');
+    wd.style.display='none'; wd.innerHTML='';
+    if (!bt||!rt) { alert('請先選擇借用時間與歸還時間。'); return; }
+    if (bt>=rt) { alert('歸還時間必須晚於借用時間。'); return; }
+    const tm=s=>{const d=new Date(s);return d.getHours()*60+d.getMinutes();};
+    const MIN=9*60+30,MAX=16*60+30;
+    if (tm(bt)<MIN||tm(bt)>MAX||tm(rt)<MIN||tm(rt)>MAX) {
+        wd.innerHTML='<i class="bi bi-exclamation-triangle me-1"></i>器材借還時間須在 09:30–16:30 之間。';
+        wd.style.display='block'; return;
+    }
+    try {
+        const res=await fetch(`get_equipment_availability.php?borrow_time=${encodeURIComponent(bt)}&return_time=${encodeURIComponent(rt)}`);
+        const data=await res.json();
+        document.querySelectorAll('.equipment-card[data-equip-id]').forEach(card=>{
+            const id=card.dataset.equipId, total=parseInt(card.dataset.total)||0, limit=parseInt(card.dataset.limit)||0;
+            const avail=(data[id]!==undefined)?parseInt(data[id]):total;
+            const emax=limit>0?Math.min(avail,limit):avail;
+            const qs=card.querySelector('.avail-qty'), td=card.querySelector('.avail-text');
+            const inp=document.getElementById('qty_'+id), bm=card.querySelector('.btn-minus'), bp=card.querySelector('.btn-plus');
+            if (qs) qs.textContent=avail;
+            if (td) td.className='avail-text stock-'+(avail<=0?'empty':avail<=2?'low':'available');
+            if (inp) { inp.setAttribute('max',avail); if (parseInt(inp.value)>emax) inp.value=emax; }
+            if (bm) bm.disabled=!inp||parseInt(inp?.value)<=0;
+            if (bp) bp.disabled=avail<=0;
         });
-    </script>
+    } catch(e) { alert('查詢失敗，請稍後再試。'); }
+}
+
+// 器材時間 clamp 09:30–16:30
+function clampEquipTime(id) {
+    const inp=document.getElementById(id); if (!inp) return;
+    function clamp() {
+        if (!inp.value) return;
+        const dt=new Date(inp.value), m=dt.getHours()*60+dt.getMinutes();
+        if (m<9*60+30) dt.setHours(9,30,0,0); else if (m>16*60+30) dt.setHours(16,30,0,0); else return;
+        const p=n=>String(n).padStart(2,'0');
+        inp.value=`${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+    }
+    inp.addEventListener('change',clamp); inp.addEventListener('blur',clamp);
+}
+clampEquipTime('equip_borrow_time'); clampEquipTime('equip_return_time');
+
+// ── 場次時間 clamp（08:30–21:30，即時修正+小提示）────────
+function clampSessionTime(input) {
+    if (!input.value) return;
+    const original = input.value;
+    if (input.value < '08:30') input.value = '08:30';
+    if (input.value > '21:30') input.value = '21:30';
+    if (input.value !== original) showTimeAdjustNotice(input);
+}
+
+function showTimeAdjustNotice(input) {
+    // 顯示在整個場次卡片底部，不影響欄位格線排列
+    const row = input.closest('.session-row');
+    if (!row) return;
+    let notice = row.querySelector('.time-adj-notice');
+    if (!notice) {
+        notice = document.createElement('div');
+        notice.className = 'time-adj-notice';
+        notice.style.cssText = 'margin-top:0.6rem; font-size:0.78rem; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:0.3rem 0.65rem; display:none;';
+        row.appendChild(notice);
+    }
+    const fieldName = input.name && input.name.includes('start_time') ? '開始時間' : '結束時間';
+    notice.textContent = '⚠ ' + fieldName + ' 已自動調整為 ' + input.value + '（限 08:30–21:30）';
+    notice.style.display = 'block';
+    clearTimeout(row._adjTimer);
+    row._adjTimer = setTimeout(function() { notice.style.display = 'none'; }, 3500);
+}
+
+// 事件委派：處理所有場次的時間輸入（含動態新增）
+document.getElementById('sessions_container').addEventListener('change', function(e) {
+    if (e.target && e.target.type === 'time') clampSessionTime(e.target);
+});
+document.getElementById('sessions_container').addEventListener('blur', function(e) {
+    if (e.target && e.target.type === 'time') clampSessionTime(e.target);
+}, true);
+
+// ── 表單送出驗證 ─────────────────────────────────────────
+document.getElementById('applicationForm').addEventListener('submit', function(e) {
+    const isOutdoor = document.getElementById('type_outdoor').checked;
+
+    if (isOutdoor) {
+        const loc = document.getElementById('activity_location').value.trim();
+        if (!loc) { e.preventDefault(); alert('校外活動請填寫活動地點！'); return; }
+    }
+
+    const rows = document.querySelectorAll('.session-row');
+    if (rows.length === 0) { e.preventDefault(); alert('請至少新增一個場次！'); return; }
+
+    for (let i=0; i<rows.length; i++) {
+        const n   = i+1;
+        const di  = rows[i].querySelector('[name*="[date]"]');
+        const sti = rows[i].querySelector('[name*="[start_time]"]');
+        const edi = rows[i].querySelector('[name*="[end_date]"]');
+        const eti = rows[i].querySelector('[name*="[end_time]"]');
+        const vsl = rows[i].querySelector('[name*="[venue_id]"]');
+
+        if (!di.value)  { e.preventDefault(); alert(`場次${n}：請選擇開始日期！`);   di.focus();  return; }
+        if (!sti.value) { e.preventDefault(); alert(`場次${n}：請填寫開始時間！`);   sti.focus(); return; }
+        if (!edi.value) { e.preventDefault(); alert(`場次${n}：請選擇結束日期！`);   edi.focus(); return; }
+        if (!eti.value) { e.preventDefault(); alert(`場次${n}：請填寫結束時間！`);   eti.focus(); return; }
+        if (edi.value < di.value) { e.preventDefault(); alert(`場次${n}：結束日期不能早於開始日期！`); return; }
+        if (edi.value===di.value && sti.value>=eti.value) { e.preventDefault(); alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
+        if (sti.value<'08:30'||sti.value>'21:30'||eti.value<'08:30'||eti.value>'21:30') {
+            e.preventDefault(); alert(`場次${n}：時間須在 08:30–21:30！`); return;
+        }
+        if (!isOutdoor && vsl && !vsl.value) { e.preventDefault(); alert(`場次${n}：校內活動請選擇場地！`); vsl.focus(); return; }
+    }
+
+    // 器材借用時間驗證
+    const anyEquip = Array.from(document.querySelectorAll('[name^="equipment["]')).some(i=>parseInt(i.value)>0);
+    if (anyEquip) {
+        const ebt=document.getElementById('equip_borrow_time').value;
+        const ert=document.getElementById('equip_return_time').value;
+        if (!ebt||!ert) { e.preventDefault(); alert('有選擇器材時，請填寫器材借用與歸還時間！'); return; }
+        if (ebt>=ert)   { e.preventDefault(); alert('器材歸還時間必須晚於借用時間！'); return; }
+        const tm=s=>{const d=new Date(s);return d.getHours()*60+d.getMinutes();};
+        if (tm(ebt)<9*60+30||tm(ebt)>16*60+30||tm(ert)<9*60+30||tm(ert)>16*60+30) {
+            e.preventDefault(); alert('器材借還時間須在 09:30–16:30！'); return;
+        }
+    }
+});
+
+// 初始化
+(function(){
+    updateDeadlineReminder();
+    updateFlagWarning();
+    toggleEventType();
+})();
+</script>
 </body>
 </html>

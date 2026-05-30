@@ -379,23 +379,33 @@ class FieldCoordinationManager {
      */
     public function createFieldCoordinationSetting($academic_year, $semester, $start_date, $end_date, $meeting_date, $borrow_start_date, $borrow_end_date, $borrow_start_time, $borrow_end_time, $description, $created_by_student_id) {
         $status = 'active';
-        $allow_conflict = 1;
-        
-        $sql = "INSERT INTO field_coordination_settings 
-                (academic_year, semester, registration_start_date, registration_end_date, 
-                 coordination_meeting_date, borrow_start_date, borrow_end_date, borrow_start_time, borrow_end_time, 
-                 status, allow_conflict_during_coordination, description, created_by_student_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
+
+        // 不插入 allow_conflict_during_coordination，讓資料庫使用 DEFAULT 1
+        $sql = "INSERT INTO field_coordination_settings
+                (academic_year, semester, registration_start_date, registration_end_date,
+                 coordination_meeting_date, borrow_start_date, borrow_end_date,
+                 borrow_start_time, borrow_end_time, status, description, created_by_student_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("iissssssssisi", $academic_year, $semester, $start_date, $end_date, $meeting_date, 
-                         $borrow_start_date, $borrow_end_date, $borrow_start_time, $borrow_end_time,
-                         $status, $allow_conflict, $description, $created_by_student_id);
-        $result = $stmt->execute();
-        
+        if (!$stmt) {
+            error_log("createFieldCoordinationSetting prepare failed: " . $this->conn->error);
+            return false;
+        }
+
+        // 12 個參數：i i s s s s s s s s s i
+        $stmt->bind_param("iisssssssssi",
+            $academic_year, $semester,
+            $start_date, $end_date, $meeting_date,
+            $borrow_start_date, $borrow_end_date,
+            $borrow_start_time, $borrow_end_time,
+            $status, $description, $created_by_student_id
+        );
+
+        $result     = $stmt->execute();
         $setting_id = $stmt->insert_id;
         $stmt->close();
-        
+
         return $result ? $setting_id : false;
     }
 

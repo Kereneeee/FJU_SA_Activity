@@ -44,6 +44,9 @@ $appRoot = '/' . basename(dirname(__DIR__));
         <a class="nav-link <?php echo ($current_page === 'field_coordination_mgmt') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/admin/field_coordination_mgmt.php', ENT_QUOTES, 'UTF-8') ?>">
             <i class="bi bi-people-fill"></i> 場協登記管理
         </a>
+        <a class="nav-link <?php echo ($current_page === 'field_coordination_import') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/admin/field_coordination_import.php', ENT_QUOTES, 'UTF-8') ?>">
+            <i class="bi bi-cloud-upload"></i> 場協結果匯入
+        </a>
         <?php endif; ?>
         <a class="nav-link <?php echo ($current_page === 'my_applications') ? 'active' : ''; ?>" href="my_applications.php">
             <i class="bi bi-card-list"></i> 我的申請
