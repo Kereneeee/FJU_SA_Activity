@@ -562,6 +562,10 @@ foreach ($venues as $v) {
                                 <i class="bi bi-search me-1"></i>查詢可用數量
                             </button>
                         </div>
+                        <div class="alert alert-info" style="margin-top:0.85rem; border-radius:12px; padding:0.95rem 1rem; font-size:0.92rem; line-height:1.5; color:#1e3a5f; background:#dbeafe; border-color:#93c5fd;">
+                            <i class="bi bi-info-circle-fill me-1"></i>
+                            申請器材時請務必填寫器材證持有人，器材證期限為一年，請確認是否過期。
+                        </div>
                         <div id="equipTimeWarning" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#f0e8c0; border-radius:8px; color:#6b5a20; font-size:0.87rem;"></div>
                     </div>
                     <div style="position:relative; margin-bottom:1rem;">
