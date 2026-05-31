@@ -118,7 +118,7 @@ $borrowed_by_equipment = [];
 $borrow_sql = "SELECT eb.equipment_id, COALESCE(SUM(eb.quantity), 0) AS borrowed_quantity
                FROM equipment_borrow eb
                LEFT JOIN events ev ON eb.event_id = ev.event_id
-               WHERE ev.status IN ('pending', 'approved')
+               WHERE ev.status = 'approved'
                GROUP BY eb.equipment_id";
 $result_borrowed = $conn->query($borrow_sql);
 if ($result_borrowed) {
