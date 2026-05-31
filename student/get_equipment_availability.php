@@ -20,7 +20,7 @@ SELECT
         CASE
             WHEN ev.start_time < ?
              AND ev.end_time > ?
-             AND ev.status IN ('pending', 'approved')
+             AND ev.status IN ('approved')
             THEN eb.quantity
             ELSE 0
         END
