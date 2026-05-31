@@ -29,22 +29,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $edit_equipment = $result->fetch_assoc();
         $stmt->close();
     } elseif ($action === 'save' && $equipment_id > 0) {
+        $code = trim($_POST['code'] ?? '');
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $total_quantity = intval($_POST['total_quantity'] ?? 0);
-        $available_quantity = intval($_POST['available_quantity'] ?? 0);
-        $status = trim($_POST['status'] ?? 'available');
+        $equipment_status = trim($_POST['equipment_status'] ?? 'available');
         $borrowing_limit = intval($_POST['borrowing_limit'] ?? 0);
+        $status_value = intval($_POST['status'] ?? 0);
         
         // 驗證
         if ($name === '') {
             $edit_error = '請填寫器材名稱';
-        } elseif ($available_quantity > $total_quantity) {
-            $edit_error = '可借數量不能大於總數量';
         } else {
-            $stmt = $conn->prepare("UPDATE equipment SET name = ?, description = ?, total_quantity = ?, available_quantity = ?, status = ?, borrowing_limit = ? WHERE equipment_id = ?");
+            $stmt = $conn->prepare("UPDATE equipment SET code = ?, name = ?, description = ?, borrowing_limit = ?, total_quantity = ?, equipment_status = ?, status = ? WHERE equipment_id = ?");
             if ($stmt) {
-                $stmt->bind_param("ssiisii", $name, $description, $total_quantity, $available_quantity, $status, $borrowing_limit, $equipment_id);
+                $stmt->bind_param("sssiisii", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status, $status_value, $equipment_id);
                 if ($stmt->execute()) {
                     $success_msg = '器材已更新';
                     $edit_equipment = null;
@@ -79,22 +78,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
     } elseif ($action === 'add') {
+        $code = trim($_POST['code'] ?? '');
         $name = trim($_POST['name'] ?? '');
         $description = trim($_POST['description'] ?? '');
         $total_quantity = intval($_POST['total_quantity'] ?? 0);
-        $available_quantity = intval($_POST['available_quantity'] ?? 0);
-        $status = trim($_POST['status'] ?? 'available');
+        $equipment_status = trim($_POST['equipment_status'] ?? 'available');
         $borrowing_limit = intval($_POST['borrowing_limit'] ?? 0);
+        $status_value = 0;
         
         // 驗證
         if ($name === '') {
             $edit_error = '請填寫器材名稱';
-        } elseif ($available_quantity > $total_quantity) {
-            $edit_error = '可借數量不能大於總數量';
         } else {
-            $stmt = $conn->prepare("INSERT INTO equipment (name, description, total_quantity, available_quantity, status, borrowing_limit) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO equipment (code, name, description, borrowing_limit, total_quantity, equipment_status, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("ssiisi", $name, $description, $total_quantity, $available_quantity, $status, $borrowing_limit);
+                $stmt->bind_param("sssiisi", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status, $status_value);
                 if ($stmt->execute()) {
                     $success_msg = '器材已新增';
                 } else {
@@ -115,26 +113,42 @@ if (!$result) {
 $equipment_list = $result->fetch_all(MYSQLI_ASSOC);
 if (!$equipment_list) $equipment_list = [];
 
-// 統計資料
+// 計算借出數量與可用數量
+$borrowed_by_equipment = [];
+$borrow_sql = "SELECT eb.equipment_id, COALESCE(SUM(eb.quantity), 0) AS borrowed_quantity
+               FROM equipment_borrow eb
+               LEFT JOIN events ev ON eb.event_id = ev.event_id
+               WHERE ev.status = 'approved'
+               GROUP BY eb.equipment_id";
+$result_borrowed = $conn->query($borrow_sql);
+if ($result_borrowed) {
+    while ($row = $result_borrowed->fetch_assoc()) {
+        $borrowed_by_equipment[intval($row['equipment_id'])] = intval($row['borrowed_quantity']);
+    }
+}
+
 $total_equipment = count($equipment_list);
 $total_quantity = 0;
 $available_quantity = 0;
+$borrowed_quantity = 0;
 foreach ($equipment_list as $eq) {
     $total_quantity += intval($eq['total_quantity'] ?? 0);
-    $available_quantity += intval($eq['available_quantity'] ?? 0);
+    $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
+    $available = max(0, intval($eq['total_quantity'] ?? 0) - $borrowed);
+    $available_quantity += $available;
+    $borrowed_quantity += $borrowed;
 }
-$borrowed_quantity = $total_quantity - $available_quantity;
 
 // 取得借用中的器材詳情（連結學生端）
 $borrowing_details = [];
-$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity, eb.status, eq.name as equipment_name,
+$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity, e.status AS event_status, eq.name as equipment_name,
                       e.event_name, e.club_name, e.start_time, e.end_time, u.name as student_name, u.email
                FROM equipment_borrow eb
                LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                LEFT JOIN events e ON eb.event_id = e.event_id
                LEFT JOIN users u ON e.user_id = u.user_id
-               WHERE eb.status IN ('pending', 'approved')
-               ORDER BY eb.created_at DESC";
+               WHERE e.status IN ('pending', 'approved')
+               ORDER BY e.start_time DESC";
 $result_borrow = $conn->query($sql_borrow);
 if ($result_borrow) {
     $borrowing_details = $result_borrow->fetch_all(MYSQLI_ASSOC);
@@ -145,9 +159,9 @@ $total_borrows = count($borrowing_details);
 $pending_borrows = 0;
 $approved_borrows = 0;
 foreach ($borrowing_details as $borrow) {
-    if ($borrow['status'] === 'pending') {
+    if ($borrow['event_status'] === 'pending') {
         $pending_borrows++;
-    } elseif ($borrow['status'] === 'approved') {
+    } elseif ($borrow['event_status'] === 'approved') {
         $approved_borrows++;
     }
 }
@@ -357,6 +371,7 @@ foreach ($borrowing_details as $borrow) {
         }
         .status-available { background: #d1e7dd; color: #0f5132; }
         .status-unavailable { background: #f8d7da; color: #842029; }
+        .status-maintenance { background: #fff3cd; color: #664d03; }
         .quantity-bar {
             display: flex;
             align-items: center;
@@ -640,9 +655,9 @@ foreach ($borrowing_details as $borrow) {
                                     <small><?php echo $borrow['start_time'] ? date('m/d H:i', strtotime($borrow['start_time'])) : '未知'; ?></small>
                                 </td>
                                 <td>
-                                    <span class="borrow-status <?php echo htmlspecialchars($borrow['status']); ?>">
-                                        <i class="bi bi-<?php echo $borrow['status'] === 'pending' ? 'hourglass-split' : 'check-lg'; ?>"></i>
-                                        <?php echo $borrow['status'] === 'pending' ? '待審核' : '已核准'; ?>
+                                    <span class="borrow-status <?php echo htmlspecialchars($borrow['event_status']); ?>">
+                                        <i class="bi bi-<?php echo $borrow['event_status'] === 'pending' ? 'hourglass-split' : 'check-lg'; ?>"></i>
+                                        <?php echo $borrow['event_status'] === 'pending' ? '待審核' : '已核准'; ?>
                                     </span>
                                 </td>
                             </tr>
@@ -662,25 +677,26 @@ foreach ($borrowing_details as $borrow) {
                 <form method="POST" class="mb-4">
                     <input type="hidden" name="action" value="save">
                     <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
+                    <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
                     <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">器材代碼</label>
+                            <input type="text" name="code" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['code'] ?? ''); ?>">
+                        </div>
                         <div class="col-md-6">
                             <label class="form-label">器材名稱</label>
                             <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['name']); ?>" required>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label">狀態</label>
-                            <select name="status" class="form-select" required>
-                                <option value="available" <?php echo $edit_equipment['status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
-                                <option value="unavailable" <?php echo $edit_equipment['status'] === 'unavailable' ? 'selected' : ''; ?>>不可借用</option>
+                            <select name="equipment_status" class="form-select" required>
+                                <option value="available" <?php echo $edit_equipment['equipment_status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
+                                <option value="maintenance" <?php echo $edit_equipment['equipment_status'] === 'maintenance' ? 'selected' : ''; ?>>維修中</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">總數量</label>
                             <input type="number" name="total_quantity" class="form-control" value="<?php echo intval($edit_equipment['total_quantity'] ?? 0); ?>" min="0" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">可借數量</label>
-                            <input type="number" name="available_quantity" class="form-control" value="<?php echo intval($edit_equipment['available_quantity'] ?? 0); ?>" min="0" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">借用限制數量</label>
@@ -707,23 +723,23 @@ foreach ($borrowing_details as $borrow) {
                     <input type="hidden" name="action" value="add">
                     <div class="row g-3">
                         <div class="col-md-6">
+                            <label class="form-label">器材代碼</label>
+                            <input type="text" name="code" class="form-control">
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label">器材名稱</label>
                             <input type="text" name="name" class="form-control" required>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label">狀態</label>
-                            <select name="status" class="form-select" required>
+                            <select name="equipment_status" class="form-select" required>
                                 <option value="available">可借用</option>
-                                <option value="unavailable">不可借用</option>
+                                <option value="maintenance">維修中</option>
                             </select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">總數量</label>
                             <input type="number" name="total_quantity" class="form-control" value="0" min="0" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">可借數量</label>
-                            <input type="number" name="available_quantity" class="form-control" value="0" min="0" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">借用限制數量</label>
@@ -748,6 +764,7 @@ foreach ($borrowing_details as $borrow) {
                 <table>
                     <thead>
                         <tr>
+                            <th>器材代碼</th>
                             <th>器材名稱</th>
                             <th>總數量</th>
                             <th>可借數量</th>
@@ -762,20 +779,22 @@ foreach ($borrowing_details as $borrow) {
                         <?php foreach ($equipment_list as $eq): ?>
                         <?php 
                             $total_q = intval($eq['total_quantity'] ?? 0);
-                            $avail_q = intval($eq['available_quantity'] ?? 0);
-                            $borrowed = $total_q - $avail_q;
+                            $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
+                            $avail_q = max(0, $total_q - $borrowed);
                             $usage_percent = $total_q > 0 ? ($borrowed / $total_q) * 100 : 0;
+                            $equip_status = $eq['equipment_status'] ?? 'available';
                         ?>
                         <tr>
+                            <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
                             <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
                             <td><?php echo $total_q; ?></td>
                             <td><?php echo $avail_q; ?></td>
                             <td><?php echo $borrowed; ?></td>
                             <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
                             <td>
-                                <span class="status-badge status-<?php echo $eq['status']; ?>">
-                                    <i class="bi bi-<?php echo $eq['status'] === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
-                                    <?php echo $eq['status'] === 'available' ? '可借用' : '不可借用'; ?>
+                                <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
+                                    <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
+                                    <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
                                 </span>
                             </td>
                             <td>

@@ -20,7 +20,7 @@ SELECT
         CASE
             WHEN ev.start_time < ?
              AND ev.end_time > ?
-             AND ev.status IN ('pending', 'approved')
+             AND ev.status IN ('approved')
             THEN eb.quantity
             ELSE 0
         END
@@ -34,7 +34,7 @@ LEFT JOIN equipment_borrow eb
 LEFT JOIN events ev
     ON eb.event_id = ev.event_id
 
-WHERE e.status = 'available'
+WHERE e.equipment_status = 'available'
 
 GROUP BY e.equipment_id
 ";

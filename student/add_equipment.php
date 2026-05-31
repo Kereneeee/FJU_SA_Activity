@@ -70,7 +70,7 @@ if ($event_info) {
                 CASE 
                     WHEN ev.start_time < ? 
                      AND ev.end_time > ? 
-                     AND ev.status IN ('pending', 'approved')
+                     AND ev.status = 'approved'
                     THEN eb.quantity 
                     ELSE 0 
                 END
@@ -161,7 +161,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                         CASE 
                             WHEN ev.start_time < ? 
                              AND ev.end_time > ? 
-                             AND ev.status IN ('pending', 'approved')
+                             AND ev.status = 'approved'
                             THEN eb.quantity 
                             ELSE 0 
                         END

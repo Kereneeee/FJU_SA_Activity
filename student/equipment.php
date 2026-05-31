@@ -10,12 +10,10 @@ if (!isset($_SESSION['student_id'])) {
 }
 
 // 取得所有器材資料
-$sql = "SELECT * FROM equipment WHERE status = 'available'";
+$sql = "SELECT * FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql);
-// 若欄位名稱為 equipment_status，fallback 查全部
 if (!$result_equipment) {
-    $sql = "SELECT * FROM equipment";
-    $result_equipment = $conn->query($sql);
+    die("查詢錯誤: " . $conn->error);
 }
 
 $equipment = [];
