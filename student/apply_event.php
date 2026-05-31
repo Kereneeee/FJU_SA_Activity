@@ -41,10 +41,10 @@ $result_spaces = $conn->query($sql_spaces);
 $venues = $result_spaces ? $result_spaces->fetch_all(MYSQLI_ASSOC) : [];
 
 // 器材清單
-$sql_equipment = "SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment WHERE equipment_status = 'available'";
+$sql_equipment = "SELECT equipment_id, name, code, total_quantity, borrowing_limit FROM equipment WHERE equipment_status = 'available'";
 $result_equipment = $conn->query($sql_equipment);
 if (!$result_equipment) {
-    $result_equipment = $conn->query("SELECT equipment_id, name, total_quantity, borrowing_limit FROM equipment");
+    $result_equipment = $conn->query("SELECT equipment_id, name, code, total_quantity, borrowing_limit FROM equipment");
 }
 $equipment = [];
 if ($result_equipment) {
@@ -52,6 +52,7 @@ if ($result_equipment) {
         $equipment[] = [
             'id'              => $eq['equipment_id'],
             'name'            => $eq['name'],
+            'code'            => $eq['code'] ?? '',
             'total'           => $eq['total_quantity'],
             'available'       => $eq['total_quantity'],
             'borrowing_limit' => (int)($eq['borrowing_limit'] ?? 0),
@@ -563,20 +564,28 @@ foreach ($venues as $v) {
                         </div>
                         <div id="equipTimeWarning" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#f0e8c0; border-radius:8px; color:#6b5a20; font-size:0.87rem;"></div>
                     </div>
+                    <div style="position:relative; margin-bottom:1rem;">
+                        <input type="text" id="searchEquipmentApply" class="form-control" placeholder="搜尋器材名稱或編號…" style="border-radius:10px; border:1px solid #e5e7eb;">
+                        <i class="bi bi-search" style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:#9ca3af; pointer-events:none;"></i>
+                    </div>
                     <div class="equipment-grid">
                         <?php foreach ($equipment as $item):
                             $initMax = $item['borrowing_limit']>0 ? min($item['available'],$item['borrowing_limit']) : $item['available'];
                             $sc = $item['available']>0 ? ($item['available']<3?'low':'available') : 'empty';
                         ?>
-                        <div class="equipment-card" data-equip-id="<?= $item['id'] ?>" data-total="<?= $item['total'] ?>" data-limit="<?= $item['borrowing_limit'] ?>">
-                            <div class="equipment-header">
-                                <div class="equipment-name"><i class="bi bi-<?= getEquipmentIcon($item['id']) ?>"></i> <?= htmlspecialchars($item['name']) ?></div>
-                                <div style="text-align:right; font-size:0.88rem;">
-                                    <div class="avail-text stock-<?= $sc ?>">剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?></div>
+                        <div class="equipment-card" data-equip-id="<?= $item['id'] ?>" data-name="<?= htmlspecialchars($item['name']) ?>" data-code="<?= htmlspecialchars($item['code']) ?>" data-total="<?= $item['total'] ?>" data-limit="<?= $item['borrowing_limit'] ?>">
+                            <div class="equipment-header" style="display:flex; align-items:center; gap:0.9rem; margin-bottom:0.85rem;">
+                                <div style="width:46px; height:46px; border-radius:12px; background:#1e4d6b; color:white; display:flex; align-items:center; justify-content:center; font-size:0.9rem; font-weight:700; flex-shrink:0;"><?= htmlspecialchars($item['code']) ?></div>
+                                <div style="display:flex; flex-direction:column; justify-content:center; flex:1; min-width:0;">
+                                    <div class="equipment-name" style="text-align:left; font-weight:600; font-size:1rem; margin:0 0 0.15rem;"><?= htmlspecialchars($item['name']) ?></div>
+                                    <div style="color:#9ca3af; font-size:0.78rem; text-align:left;">編號：<?= htmlspecialchars($item['code']) ?></div>
                                 </div>
                             </div>
+                            <div style="text-align:right; font-size:0.88rem; margin-top:0.5rem;">
+                                <div class="avail-text stock-<?= $sc ?>">剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?></div>
+                            </div>
                             <?php if ($item['borrowing_limit']>0): ?>
-                            <div style="font-size:0.76rem; color:#9ca3af; margin-bottom:0.4rem;"><i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件</div>
+                            <div style="font-size:0.76rem; color:#9ca3af; margin:0.4rem 0;"><i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件</div>
                             <?php endif; ?>
                             <div class="counter mt-1">
                                 <button type="button" class="btn-minus" onclick="changeQuantity(<?= $item['id'] ?>,-1)" <?= $item['available']==0?'disabled':'' ?>>-</button>
@@ -843,6 +852,16 @@ function clampEquipTime(id) {
     inp.addEventListener('change',clamp); inp.addEventListener('blur',clamp);
 }
 clampEquipTime('equip_borrow_time'); clampEquipTime('equip_return_time');
+
+// ── 搜尋器材名稱或編號 ──────────────────────────────────────
+document.getElementById('searchEquipmentApply').addEventListener('input', function() {
+    const keyword = this.value.toLowerCase();
+    document.querySelectorAll('.equipment-card').forEach(card => {
+        const name = (card.dataset.name || '').toLowerCase();
+        const code = (card.dataset.code || '').toLowerCase();
+        card.style.display = (name.includes(keyword) || code.includes(keyword)) ? '' : 'none';
+    });
+});
 
 // ── 場次時間 clamp（08:30–21:30，即時修正+小提示）────────
 function clampSessionTime(input) {
