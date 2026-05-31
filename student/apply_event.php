@@ -213,7 +213,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
 
             $conn->commit();
-            $message      = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "，共 " . count($sessions) . " 個場次。我們將在2個工作天內審核。";
+            $message      = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "，共 " . count($sessions) . " 個場次。我們將在3個工作天內審核。";
             $message_type = "success";
             $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
 
