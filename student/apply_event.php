@@ -27,7 +27,10 @@ if ($user_id) {
         $club_stmt->bind_param("i", $user_id);
         $club_stmt->execute();
         $club_result = $club_stmt->get_result();
+        
+        $current_user_club = ""; 
         if ($club_row = $club_result->fetch_assoc()) {
+            $current_user_club = $club_row['club_name']; // 儲存正確的社團名稱
             $field_coordination_results = $fc_manager->getAllApprovedFieldCoordinationForClub($club_row['club_id']);
             if (empty($field_coordination_results)) $field_coordination_results = [];
         }
@@ -258,7 +261,7 @@ function getEquipmentIcon($id) {
 
 // 表單還原值
 $fv = [
-    'club_name'          => htmlspecialchars($_POST['club_name'] ?? '', ENT_QUOTES, 'UTF-8'),
+    'club_name'          => htmlspecialchars($_POST['club_name'] ?? $current_user_club ?? '', ENT_QUOTES, 'UTF-8'),
     'event_name'         => htmlspecialchars($_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8'),
     'responsible_person' => htmlspecialchars($_POST['responsible_person'] ?? '', ENT_QUOTES, 'UTF-8'),
     'event_type'         => $_POST['event_type'] ?? '校內',
@@ -413,7 +416,7 @@ foreach ($venues as $v) {
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">社團名稱 <span class="text-danger">*</span></label>
-                            <input type="text" name="club_name" class="form-control" value="<?= $fv['club_name'] ?>" required placeholder="主辦社團名稱">
+                            <input type="text" name="club_name" class="form-control" value="<?= $fv['club_name'] ?>" required placeholder="主辦社團名稱"readonly>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">活動名稱 <span class="text-danger">*</span></label>
