@@ -14,6 +14,7 @@ $current_page = $current_page ?? '';
         <a class="nav-link <?= $current_page === 'field_coordination_mgmt' ? 'active' : '' ?>" href="field_coordination_mgmt.php"><i class="bi bi-people-fill"></i> 場協登記管理</a>
         <a class="nav-link <?= $current_page === 'field_coordination_import' ? 'active' : '' ?>" href="field_coordination_import.php"><i class="bi bi-cloud-upload"></i> 場協結果匯入</a>
         <a class="nav-link <?= $current_page === 'calendar' ? 'active' : '' ?>" href="calendar.php"><i class="bi bi-calendar3"></i> 完整行事曆</a>
+        <a class="nav-link <?= $current_page === 'user_mgmt' ? 'active' : '' ?>" href="user_mgmt.php"><i class="bi bi-person-gear"></i> 身分權限管理</a>
     </nav>
     <div class="sidebar-section">
         <p class="mb-2">快捷操作</p>
