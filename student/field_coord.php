@@ -116,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
     } else {
         $event_name           = trim($_POST['event_name'] ?? '');
         $club_name            = trim($_POST['club_name'] ?? $selected_club_name);
+        $responsible_person   = trim($_POST['responsible_person'] ?? '');
         $activity_purpose     = trim($_POST['activity_purpose'] ?? '');
         $description          = trim($_POST['description'] ?? '');
         $sessions             = isset($_POST['sessions']) && is_array($_POST['sessions']) ? $_POST['sessions'] : [];
@@ -125,9 +126,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
         $sessions_data = !empty($sessions) ? $sessions : [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','space_id'=>'']];
 
         $errors = [];
-        if (empty($event_name)) $errors[] = '請填寫活動名稱';
-        if (empty($club_name))  $errors[] = '請填寫社團名稱';
-        if (empty($sessions))   $errors[] = '請至少新增一個場次';
+        if (empty($event_name))         $errors[] = '請填寫活動名稱';
+        if (empty($club_name))          $errors[] = '請填寫社團名稱';
+        if (empty($responsible_person)) $errors[] = '請填寫活動負責人';
+        if (empty($sessions))           $errors[] = '請至少新增一個場次';
 
         foreach ($sessions as $i => $sess) {
             $n = $i + 1;
@@ -213,8 +215,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
             $conn->begin_transaction();
             try {
                 $stmt_event = $conn->prepare(
-                    "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, is_field_coordination, field_coordination_setting_id)
-                     VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?)"
+                    "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, is_field_coordination, field_coordination_setting_id, responsible_person)
+                     VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?)"
                 );
                 if (!$user_id) throw new Exception('尚未取得使用者識別碼，請重新登入。');
 
@@ -224,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 $full_description = implode("\n", $description_lines);
 
                 $setting_id = $active_setting['setting_id'];
-                $stmt_event->bind_param('isssssi', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end, $setting_id);
+                $stmt_event->bind_param('isssssis', $user_id, $event_name, $club_name, $full_description, $event_start, $event_end, $setting_id, $responsible_person);
                 if (!$stmt_event->execute()) throw new Exception('建立活動記錄失敗：' . $stmt_event->error);
                 $event_id = $conn->insert_id;
                 $stmt_event->close();
@@ -625,6 +627,10 @@ foreach ($buildings as $building) {
                             <label class="form-label" for="event_name">活動名稱 *</label>
                             <input id="event_name" name="event_name" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['event_name'] ?? $_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
                         </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label" for="responsible_person">活動負責人 *</label>
+                        <input id="responsible_person" name="responsible_person" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['responsible_person'] ?? $_POST['responsible_person'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="負責人姓名（例：社長 王小明）" required>
                     </div>
                     <div class="mt-3">
                         <label class="form-label" for="activity_purpose">場地用途</label>
