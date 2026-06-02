@@ -66,8 +66,31 @@ if ($result_equipment) {
 // 表單送出時的場次資料（用於還原）
 $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
 
+// ── Flash 訊息（PRG 後顯示）────────────────────────────────
+if (!empty($_SESSION['flash_message'])) {
+    $message      = $_SESSION['flash_message'];
+    $message_type = $_SESSION['flash_message_type'] ?? 'success';
+    unset($_SESSION['flash_message'], $_SESSION['flash_message_type']);
+}
+
+// 防重複提交 Token（GET 時生成；POST 時驗證後銷毀）
+$form_token_ok = false;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $_SESSION['form_submit_token'] = bin2hex(random_bytes(16));
+} else {
+    $submitted_token = trim($_POST['form_token'] ?? '');
+    if (!empty($submitted_token) && !empty($_SESSION['form_submit_token']) &&
+        hash_equals((string)$_SESSION['form_submit_token'], (string)$submitted_token)) {
+        $form_token_ok = true;
+        unset($_SESSION['form_submit_token']);
+    } else {
+        $message      = "⚠️ 申請已提交，請勿重複送出。如需新增申請，請重新整理此頁面。";
+        $message_type = "warning";
+    }
+}
+
 // ── 處理表單提交 ──────────────────────────────────────────
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
     $club_name          = trim($_POST['club_name'] ?? '');
     $event_name         = trim($_POST['event_name'] ?? '');
     $responsible_person = trim($_POST['responsible_person'] ?? '');
@@ -234,11 +257,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             $conn->commit();
 
-            // 寄信通知管理員
+            // ── PRG：立即將 302 送給瀏覽器，SMTP 在背景執行 ────────────
+            $_SESSION['flash_message']      = "✅ 活動申請已提交成功！申請編號：#" . $event_id
+                . "，共 " . count($sessions) . " 個場次。我們將在3個工作天內審核。";
+            $_SESSION['flash_message_type'] = "success";
+            $_SESSION['form_submit_token']  = bin2hex(random_bytes(16)); // 為下次申請預先生成
+            session_write_close();   // 寫入 session 並釋放鎖
+
+            ignore_user_abort(true); // 即使瀏覽器已斷開也繼續執行（寄信用）
+            header('Location: apply_event.php');
+            header('Connection: close');
+            header('Content-Encoding: none');
+            while (ob_get_level() > 0) ob_end_clean();
+            header('Content-Length: 0');
+            flush();                 // 確保 302 回應先送出
+
+            // 背景寄送通知信（瀏覽器已收到 302 並跳轉，不再等待）
             try {
                 require_once __DIR__ . '/../includes/mailer.php';
                 $stu_row = $conn->query("SELECT name FROM users WHERE user_id = " . intval($user_id))->fetch_assoc();
-                $student_display = $stu_row['name'] ?? ($_SESSION['student_id'] ?? '學生');
+                $student_display = $stu_row['name'] ?? '學生';
                 $admin_rs = $conn->query("SELECT email, name FROM users WHERE role = 'admin'");
                 if ($admin_rs) {
                     while ($adm = $admin_rs->fetch_assoc()) {
@@ -252,13 +290,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         ]);
                     }
                 }
-            } catch (\Throwable $mailEx) {
-                // 寄信失敗不影響申請流程，靜默忽略
-            }
-
-            $message      = "✅ 活動申請已提交成功！申請編號：#" . $event_id . "，共 " . count($sessions) . " 個場次。我們將在3個工作天內審核。";
-            $message_type = "success";
-            $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
+            } catch (\Throwable $mailEx) { /* 靜默忽略 */ }
+            exit();
 
         } catch (Exception $e) {
             $conn->rollback();
@@ -371,6 +404,9 @@ foreach ($venues as $v) {
         .notice-box { display:flex; align-items:start; gap:0.65rem; background:#f0f6fb; border:1px solid #bcd3e5; border-radius:10px; padding:0.85rem 1rem; font-size:0.88rem; color:#1e4d6b; line-height:1.6; }
         .btn-submit { background:var(--primary); color:white; border:none; padding:0.9rem 3rem; border-radius:12px; font-weight:600; font-size:1.05rem; cursor:pointer; transition:all 0.25s; display:block; margin:1.75rem auto 0; box-shadow:0 4px 15px rgba(30,77,107,0.2); }
         .btn-submit:hover { background:var(--sidebar); transform:translateY(-2px); box-shadow:0 6px 20px rgba(30,77,107,0.3); }
+        .btn-submit:disabled { cursor:not-allowed !important; opacity:.75 !important; transform:none !important; box-shadow:0 4px 15px rgba(30,77,107,.2) !important; }
+        .submit-spinner { display:inline-block; width:1em; height:1em; border:2px solid rgba(255,255,255,.4); border-top-color:white; border-radius:50%; animation:submit-spin .65s linear infinite; vertical-align:-.2em; margin-right:.4em; }
+        @keyframes submit-spin { to { transform:rotate(360deg); } }
         @media (max-width:960px) { .session-fields { grid-template-columns:1fr 1fr 1fr; } .session-fields .session-field:nth-child(4), .session-fields .session-field:nth-child(5) { grid-column:1/-1; } }
         @media (max-width:600px) { .session-fields { grid-template-columns:1fr; } }
         @media (max-width:1100px) { .main-content { margin-left:0; } .equipment-grid { grid-template-columns:1fr; } }
@@ -424,6 +460,7 @@ foreach ($venues as $v) {
         <?php endif; ?>
 
         <form method="POST" id="applicationForm" enctype="multipart/form-data">
+            <input type="hidden" name="form_token" value="<?= htmlspecialchars($_SESSION['form_submit_token'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
 
             <!-- ① 基本資訊 -->
             <div class="card">
@@ -966,11 +1003,11 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
         }
     }
 
-    // 驗證全部通過，鎖定按鈕防止重複送出
-    const btn = this.querySelector('button[type="submit"]');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> 提交中...';
+    // ── 驗證全部通過 → 立即禁用送出按鈕，防止重複點擊 ──────────────
+    const submitBtn = document.querySelector('.btn-submit');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="submit-spinner"></span>送出中，請稍候…';
     }
 });
 
