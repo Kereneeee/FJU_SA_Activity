@@ -77,15 +77,10 @@ if ($selected_setting_id) {
     $sql = "SELECT
                 fcr.registration_id, fcr.club_name, fcr.is_approved, fcr.approval_note,
                 e.event_id, e.event_name, e.start_time, e.end_time,
-                GROUP_CONCAT(DISTINCT s.space_name  ORDER BY s.space_name  SEPARATOR '、') AS space_names,
-                GROUP_CONCAT(DISTINCT res.space_id  ORDER BY res.space_id)                 AS space_ids
+                e.responsible_person, e.description
             FROM field_coordination_registrations fcr
-            JOIN events e            ON fcr.event_id = e.event_id
-            LEFT JOIN reservations res ON e.event_id = res.event_id
-            LEFT JOIN spaces s         ON res.space_id = s.space_id
+            JOIN events e ON fcr.event_id = e.event_id
             WHERE fcr.setting_id = ?
-            GROUP BY fcr.registration_id, fcr.club_name, fcr.is_approved, fcr.approval_note,
-                     e.event_id, e.event_name, e.start_time, e.end_time
             ORDER BY e.start_time ASC, fcr.club_name ASC";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("i", $selected_setting_id);
@@ -95,21 +90,52 @@ if ($selected_setting_id) {
     $stmt->close();
 }
 
-// ── 偵測衝突（BFS 分組）────────────────────────────────────────
+// ── 取得每個登記的場次明細（用於衝突偵測與顯示）──────────────────
+$reg_sessions = []; // [registration_id => [['space_id'=>, 'space_name'=>, 'start_time'=>, 'end_time'=>], ...]]
+if ($selected_setting_id && !empty($registrations)) {
+    $sql_sess = "SELECT res.reservation_id, res.space_id, res.start_time, res.end_time,
+                        s.space_name, fcr.registration_id
+                 FROM field_coordination_registrations fcr
+                 JOIN events e ON fcr.event_id = e.event_id
+                 JOIN reservations res ON e.event_id = res.event_id
+                 LEFT JOIN spaces s ON res.space_id = s.space_id
+                 WHERE fcr.setting_id = ?
+                 ORDER BY fcr.registration_id, res.start_time";
+    $stmt_s = $conn->prepare($sql_sess);
+    $stmt_s->bind_param("i", $selected_setting_id);
+    $stmt_s->execute();
+    $res_s = $stmt_s->get_result();
+    while ($row_s = $res_s->fetch_assoc()) {
+        $reg_sessions[$row_s['registration_id']][] = $row_s;
+    }
+    $stmt_s->close();
+}
+
+// ── 偵測衝突（BFS 分組，以場次為單位精確比對）────────────────────
 $adj = [];
 foreach ($registrations as $r) { $adj[$r['registration_id']] = []; }
+$reg_ids = array_column($registrations, 'registration_id');
 
-for ($i = 0; $i < count($registrations); $i++) {
-    $a = $registrations[$i];
-    $a_spaces = $a['space_ids'] ? explode(',', $a['space_ids']) : [];
-    for ($j = $i + 1; $j < count($registrations); $j++) {
-        $b = $registrations[$j];
-        $b_spaces = $b['space_ids'] ? explode(',', $b['space_ids']) : [];
-        if (empty(array_intersect($a_spaces, $b_spaces))) continue;
-        // 時間重疊
-        if ($a['start_time'] < $b['end_time'] && $b['start_time'] < $a['end_time']) {
-            $adj[$a['registration_id']][] = $b['registration_id'];
-            $adj[$b['registration_id']][] = $a['registration_id'];
+for ($i = 0; $i < count($reg_ids); $i++) {
+    for ($j = $i + 1; $j < count($reg_ids); $j++) {
+        $a_rid = $reg_ids[$i];
+        $b_rid = $reg_ids[$j];
+        $a_sessions = $reg_sessions[$a_rid] ?? [];
+        $b_sessions = $reg_sessions[$b_rid] ?? [];
+        $found = false;
+        foreach ($a_sessions as $sa) {
+            foreach ($b_sessions as $sb) {
+                if ($sa['space_id'] == $sb['space_id'] &&
+                    $sa['start_time'] < $sb['end_time'] &&
+                    $sb['start_time'] < $sa['end_time']) {
+                    $found = true;
+                    break 2;
+                }
+            }
+        }
+        if ($found) {
+            $adj[$a_rid][] = $b_rid;
+            $adj[$b_rid][] = $a_rid;
         }
     }
 }
@@ -343,11 +369,28 @@ foreach ($registrations as $r) {
                     $group_regs = array_values(array_filter($registrations, function($r) use ($group_ids) {
                         return in_array($r['registration_id'], $group_ids);
                     }));
-                    // 找代表時間（取第一筆）
-                    $rep = $group_regs[0];
-                    $timeStr = date('m/d', strtotime($rep['start_time'])) . '　' .
-                               date('H:i', strtotime($rep['start_time'])) . ' – ' .
-                               date('H:i', strtotime($rep['end_time']));
+                    // 找衝突場次：找出真正重疊的那些場次做標題
+                    $conflict_sess_labels = [];
+                    for ($ci = 0; $ci < count($group_ids); $ci++) {
+                        for ($cj = $ci + 1; $cj < count($group_ids); $cj++) {
+                            $sa_list = $reg_sessions[$group_ids[$ci]] ?? [];
+                            $sb_list = $reg_sessions[$group_ids[$cj]] ?? [];
+                            foreach ($sa_list as $sa) {
+                                foreach ($sb_list as $sb) {
+                                    if ($sa['space_id'] == $sb['space_id'] &&
+                                        $sa['start_time'] < $sb['end_time'] &&
+                                        $sb['start_time'] < $sa['end_time']) {
+                                        $key = $sa['space_id'] . '|' . $sa['start_time'];
+                                        if (!isset($conflict_sess_labels[$key])) {
+                                            $conflict_sess_labels[$key] = date('m/d H:i', strtotime($sa['start_time']))
+                                                . '–' . date('H:i', strtotime($sa['end_time']))
+                                                . ' ' . htmlspecialchars($sa['space_name'] ?? '');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // 預設 winner（若已有核准紀錄）
                     $defaultWinner = 'none';
@@ -360,8 +403,9 @@ foreach ($registrations as $r) {
                 <div class="conflict-card">
                     <div class="conflict-header">
                         <span class="conflict-badge">衝突</span>
-                        <span class="conflict-time"><i class="bi bi-clock me-1"></i><?= $timeStr ?></span>
-                        <span class="conflict-venue"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($rep['space_names'] ?? '場地未定') ?></span>
+                        <?php foreach ($conflict_sess_labels as $lbl): ?>
+                        <span class="conflict-time"><i class="bi bi-clock me-1"></i><?= $lbl ?></span>
+                        <?php endforeach; ?>
                     </div>
 
                     <!-- 傳遞 group members 到後端 -->
@@ -391,7 +435,22 @@ foreach ($registrations as $r) {
                                 </div>
                                 <div class="winner-label-event">
                                     <i class="bi bi-calendar2-event me-1"></i><?= htmlspecialchars($gr['event_name']) ?>
+                                    <?php if (!empty($gr['responsible_person'])): ?>
+                                    <span style="color:#9ca3af;"> · <?= htmlspecialchars($gr['responsible_person']) ?></span>
+                                    <?php endif; ?>
                                 </div>
+                                <?php
+                                    $gr_sess = $reg_sessions[$gr['registration_id']] ?? [];
+                                    if (!empty($gr_sess)):
+                                ?>
+                                <div style="margin-top:.4rem; font-size:.78rem; color:#6b7280;">
+                                    <?php foreach ($gr_sess as $gsess): ?>
+                                    <div><?= date('m/d', strtotime($gsess['start_time'])) ?>
+                                         <?= date('H:i', strtotime($gsess['start_time'])) ?>–<?= date('H:i', strtotime($gsess['end_time'])) ?>
+                                         <?= htmlspecialchars($gsess['space_name'] ?? '') ?></div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php endif; ?>
                             </label>
                         </div>
                         <?php endforeach; ?>
@@ -442,9 +501,8 @@ foreach ($registrations as $r) {
                             <tr>
                                 <th>#</th>
                                 <th>社團</th>
-                                <th>活動名稱</th>
-                                <th>場地</th>
-                                <th>時段</th>
+                                <th>活動名稱 / 負責人</th>
+                                <th>場次（日期 時間 場地）</th>
                                 <th>目前狀態</th>
                                 <th>結果</th>
                                 <th>備註</th>
@@ -456,15 +514,42 @@ foreach ($registrations as $r) {
                             $defaultDec = ($ap === null) ? 'pending' : ((int)$ap === 1 ? 'approved' : 'rejected');
                             $rowCls = ($ap === null) ? '' : ((int)$ap === 1 ? 'row-approved' : 'row-rejected');
                             $rid = (int)$reg['registration_id'];
+                            // 解析場地用途（從 description 第2行）
+                            $desc_lines = explode("\n", $reg['description'] ?? '');
+                            $purpose_line = '';
+                            foreach ($desc_lines as $dl) {
+                                if (strpos($dl, '用途：') === 0) { $purpose_line = substr($dl, 3); break; }
+                            }
+                            $sess_list = $reg_sessions[$rid] ?? [];
                         ?>
                         <tr class="<?= $rowCls ?>">
                             <td style="color:#9ca3af;"><?= $idx + 1 ?></td>
                             <td style="font-weight:600;"><?= htmlspecialchars($reg['club_name']) ?></td>
-                            <td><?= htmlspecialchars($reg['event_name']) ?></td>
-                            <td><?= htmlspecialchars($reg['space_names'] ?? '－') ?></td>
-                            <td style="white-space:nowrap; font-size:.82rem;">
-                                <?= date('m/d', strtotime($reg['start_time'])) ?><br>
-                                <?= date('H:i', strtotime($reg['start_time'])) ?>–<?= date('H:i', strtotime($reg['end_time'])) ?>
+                            <td>
+                                <div style="font-weight:600; color:#1f2937;"><?= htmlspecialchars($reg['event_name']) ?></div>
+                                <?php if (!empty($reg['responsible_person'])): ?>
+                                <div style="font-size:.8rem; color:#6b7280; margin-top:.15rem;">
+                                    <i class="bi bi-person me-1"></i><?= htmlspecialchars($reg['responsible_person']) ?>
+                                </div>
+                                <?php endif; ?>
+                                <?php if (!empty($purpose_line)): ?>
+                                <div style="font-size:.78rem; color:#9ca3af; margin-top:.1rem;">
+                                    用途：<?= htmlspecialchars($purpose_line) ?>
+                                </div>
+                                <?php endif; ?>
+                            </td>
+                            <td style="font-size:.82rem;">
+                                <?php if (!empty($sess_list)): ?>
+                                    <?php foreach ($sess_list as $sl): ?>
+                                    <div style="white-space:nowrap; padding:.1rem 0; border-bottom:1px solid #f3f4f6;">
+                                        <span style="color:#374151; font-weight:500;"><?= date('m/d', strtotime($sl['start_time'])) ?></span>
+                                        <span style="color:#6b7280;"> <?= date('H:i', strtotime($sl['start_time'])) ?>–<?= date('H:i', strtotime($sl['end_time'])) ?></span><br>
+                                        <span style="color:#9ca3af; font-size:.76rem;"><?= htmlspecialchars($sl['space_name'] ?? '場地未定') ?></span>
+                                    </div>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span style="color:#9ca3af;">無場次資料</span>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?php if ($ap === null): ?>
