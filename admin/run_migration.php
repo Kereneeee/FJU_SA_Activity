@@ -3,8 +3,9 @@ require_once(__DIR__ . "/../DB/db_config.php");
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') { die('Access denied'); }
 
 $migrations = [
-    'migration_field_coordination.sql' => '場協相關資料表',
-    'migration_event_fields.sql'       => '活動申請新欄位',
+    'migration_field_coordination.sql'   => '場協相關資料表',
+    'migration_event_fields.sql'         => '活動申請新欄位',
+    'migration_officer_nominations.sql'  => '幹部提名資料表',
 ];
 
 $target = $_GET['file'] ?? 'migration_field_coordination.sql';

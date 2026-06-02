@@ -52,8 +52,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             "UPDATE club_members SET is_officer=?, officer_title=?, officer_confirmation_date=? WHERE membership_id=?"
         );
         $stmt->bind_param("issi", $is_officer, $officer_title, $confirm_date, $membership_id);
-        $message      = $stmt->execute() ? '身分已更新。' : '更新失敗：' . $stmt->error;
-        $message_type = $stmt->execute() ? 'success' : 'danger';
+        $ok           = $stmt->execute();
+        $message      = $ok ? '身分已更新。' : '更新失敗：' . $stmt->error;
+        $message_type = $ok ? 'success' : 'danger';
         $stmt->close();
     }
 
@@ -76,9 +77,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt = $conn->prepare(
                 "INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date) VALUES (?,?,?,?,?)"
             );
-            $stmt->bind_param("isiis", $target_user_id, $add_club_id, $is_officer, $officer_title, $join_date);
-            $message      = $stmt->execute() ? '已加入社團。' : '新增失敗：' . $stmt->error;
-            $message_type = $stmt->execute() ? 'success' : 'danger';
+            $stmt->bind_param("isiss", $target_user_id, $add_club_id, $is_officer, $officer_title, $join_date);
+            $ok           = $stmt->execute();
+            $message      = $ok ? '已加入社團。' : '新增失敗：' . $stmt->error;
+            $message_type = $ok ? 'success' : 'danger';
             $stmt->close();
         }
         $check->close();
@@ -90,8 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $membership_id = intval($_POST['membership_id'] ?? 0);
         $stmt = $conn->prepare("DELETE FROM club_members WHERE membership_id=?");
         $stmt->bind_param("i", $membership_id);
-        $message      = $stmt->execute() ? '已移除成員資格。' : '移除失敗：' . $stmt->error;
-        $message_type = $stmt->execute() ? 'success' : 'danger';
+        $ok           = $stmt->execute();
+        $message      = $ok ? '已移除成員資格。' : '移除失敗：' . $stmt->error;
+        $message_type = $ok ? 'success' : 'danger';
         $stmt->close();
     }
 
@@ -169,6 +172,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
     }
 
+    // 編輯提名職稱（僅限 pending）
+    if ($action === 'edit_nomination') {
+        $nomination_id = intval($_POST['nomination_id'] ?? 0);
+        $new_title     = trim($_POST['officer_title'] ?? '');
+
+        $ns = $conn->prepare("SELECT club_id FROM officer_nominations WHERE nomination_id=? AND status='pending'");
+        $ns->bind_param("i", $nomination_id);
+        $ns->execute();
+        $nom_row = $ns->get_result()->fetch_assoc();
+        $ns->close();
+
+        if ($nom_row) {
+            $upn = $conn->prepare("UPDATE officer_nominations SET officer_title=? WHERE nomination_id=?");
+            $upn->bind_param("si", $new_title, $nomination_id);
+            $ok           = $upn->execute();
+            $message      = $ok ? '提名職稱已更新。' : '更新失敗：' . $upn->error;
+            $message_type = $ok ? 'success' : 'danger';
+            $back_club    = $nom_row['club_id'];
+            $upn->close();
+        } else {
+            $message      = '找不到此提名或已完成審核。';
+            $message_type = 'danger';
+        }
+    }
+
+    // 刪除提名（直接移除 pending 記錄）
+    if ($action === 'delete_nomination') {
+        $nomination_id = intval($_POST['nomination_id'] ?? 0);
+
+        $ns = $conn->prepare("SELECT club_id FROM officer_nominations WHERE nomination_id=? AND status='pending'");
+        $ns->bind_param("i", $nomination_id);
+        $ns->execute();
+        $nom_row = $ns->get_result()->fetch_assoc();
+        $ns->close();
+
+        if ($nom_row) {
+            $del = $conn->prepare("DELETE FROM officer_nominations WHERE nomination_id=? AND status='pending'");
+            $del->bind_param("i", $nomination_id);
+            $ok           = $del->execute();
+            $message      = $ok ? '提名已刪除。' : '刪除失敗：' . $del->error;
+            $message_type = $ok ? 'success' : 'danger';
+            $back_club    = $nom_row['club_id'];
+            $del->close();
+        } else {
+            $message      = '找不到此提名或已完成審核。';
+            $message_type = 'danger';
+        }
+    }
+
     $qs = $back_club ? '?club_id=' . urlencode($back_club) . '&' : '?';
     header("Location: user_mgmt.php{$qs}msg=" . urlencode($message) . '&type=' . $message_type);
     exit();
@@ -186,7 +238,9 @@ $club_where  = $search_club ? "WHERE c.club_name LIKE '%" . $conn->real_escape_s
 $all_clubs = $conn->query(
     "SELECT c.club_id, c.club_name,
             COUNT(cm.membership_id) AS member_count,
-            SUM(cm.is_officer)      AS officer_count
+            SUM(cm.is_officer)      AS officer_count,
+            COALESCE((SELECT COUNT(*) FROM officer_nominations n
+                      WHERE n.club_id = c.club_id AND n.status = 'pending'), 0) AS pending_nominations
      FROM clubs c
      LEFT JOIN club_members cm ON c.club_id = cm.club_id
      $club_where
@@ -379,6 +433,21 @@ if ($club_id !== '') {
         .reject-form { display: none; margin-top: .75rem; padding-top: .75rem; border-top: 1px solid #fde68a; }
         .reject-form.show { display: block; }
         .nom-badge { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 600; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+        /* ── 待審核提名小角標（社團卡片） ── */
+        .pending-dot {
+            display: inline-flex; align-items: center; gap: .25rem;
+            background: #f59e0b; color: white;
+            border-radius: 999px; padding: .15rem .55rem;
+            font-size: .72rem; font-weight: 700; margin-left: auto;
+        }
+
+        /* ── 編輯提名 inline 表單（藍色調） ── */
+        .edit-nom-form {
+            display: none; margin-top: .75rem; padding-top: .75rem;
+            border-top: 1px solid #bfdbfe;
+        }
+        .edit-nom-form.show { display: block; }
     </style>
 </head>
 <body>
@@ -442,8 +511,18 @@ if ($club_id !== '') {
                 <div class="club-grid">
                     <?php foreach ($all_clubs as $c): ?>
                     <a href="user_mgmt.php?club_id=<?= urlencode($c['club_id']) ?>" class="club-card">
-                        <div class="club-id"><?= htmlspecialchars($c['club_id']) ?></div>
-                        <div class="club-name"><?= htmlspecialchars($c['club_name']) ?></div>
+                        <div class="d-flex align-items-start">
+                            <div style="flex:1;min-width:0;">
+                                <div class="club-id"><?= htmlspecialchars($c['club_id']) ?></div>
+                                <div class="club-name"><?= htmlspecialchars($c['club_name']) ?></div>
+                            </div>
+                            <?php if ($c['pending_nominations'] > 0): ?>
+                            <span class="pending-dot flex-shrink-0 ms-1">
+                                <i class="bi bi-hourglass-split" style="font-size:.7rem;"></i>
+                                <?= intval($c['pending_nominations']) ?> 待審
+                            </span>
+                            <?php endif; ?>
+                        </div>
                         <div class="club-stats">
                             <div class="club-stat officers">
                                 <div class="num"><?= intval($c['officer_count']) ?></div>
@@ -503,7 +582,7 @@ if ($club_id !== '') {
                                 <span style="color:#9ca3af;font-size:.82rem;margin-left:.4rem;">學號 <?= htmlspecialchars($n['nominated_sid']) ?></span>
                             </div>
                         </div>
-                        <div class="d-flex gap-2 align-items-center">
+                        <div class="d-flex gap-2 align-items-center flex-wrap">
                             <!-- 核准 -->
                             <form method="POST" onsubmit="return confirm('確定核准此提名？')">
                                 <input type="hidden" name="action" value="approve_nomination">
@@ -513,12 +592,46 @@ if ($club_id !== '') {
                                     <i class="bi bi-check-circle"></i> 核准
                                 </button>
                             </form>
+                            <!-- 編輯職稱 -->
+                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                    onclick="toggleNomEdit(<?= $n['nomination_id'] ?>)">
+                                <i class="bi bi-pencil"></i> 編輯
+                            </button>
                             <!-- 駁回（展開填原因） -->
                             <button type="button" class="btn btn-outline-danger btn-sm"
-                                    onclick="document.getElementById('reject-<?= $n['nomination_id'] ?>').classList.toggle('show')">
+                                    onclick="document.getElementById('reject-<?= $n['nomination_id'] ?>').classList.toggle('show');document.getElementById('edit-<?= $n['nomination_id'] ?>').classList.remove('show')">
                                 <i class="bi bi-x-circle"></i> 駁回
                             </button>
+                            <!-- 刪除提名 -->
+                            <form method="POST" style="display:inline;"
+                                  onsubmit="return confirm('確定刪除此提名紀錄？刪除後社長不會看到駁回原因。')">
+                                <input type="hidden" name="action" value="delete_nomination">
+                                <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
+                                <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm" title="刪除此提名">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
                         </div>
+                    </div>
+                    <!-- 編輯職稱表單 -->
+                    <div id="edit-<?= $n['nomination_id'] ?>" class="edit-nom-form">
+                        <form method="POST">
+                            <input type="hidden" name="action" value="edit_nomination">
+                            <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
+                            <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
+                            <div class="d-flex gap-2 align-items-center flex-wrap">
+                                <label class="fw-semibold" style="font-size:.85rem;white-space:nowrap;">幹部職稱</label>
+                                <input type="text" name="officer_title" class="form-control form-control-sm"
+                                       value="<?= htmlspecialchars($n['officer_title']) ?>"
+                                       placeholder="例：器材幹部、活動幹部…" style="max-width:240px;" required maxlength="50">
+                                <button type="submit" class="btn btn-primary btn-sm">儲存</button>
+                                <button type="button" class="btn btn-secondary btn-sm"
+                                        onclick="document.getElementById('edit-<?= $n['nomination_id'] ?>').classList.remove('show')">
+                                    取消
+                                </button>
+                            </div>
+                        </form>
                     </div>
                     <!-- 駁回表單 -->
                     <div id="reject-<?= $n['nomination_id'] ?>" class="reject-form">
@@ -543,7 +656,7 @@ if ($club_id !== '') {
         </div>
         <?php endif; ?>
 
-        <!-- 幹部名單表格 -->
+        <!-- 成員名單表格 -->
         <div class="panel">
             <div class="panel-header">
                 <span class="left"><i class="bi bi-person-badge"></i> 成員名單（共 <?= count($members) ?> 人）</span>
@@ -560,14 +673,19 @@ if ($club_id !== '') {
                             <th>身分</th>
                             <th>職稱</th>
                             <th>確認日期</th>
-                            <th>操作</th>
+                            <th style="text-align:center;">操作</th>
                         </tr>
                     </thead>
-                    <tbody id="memberTableBody">
+                    <tbody>
                         <?php foreach ($members as $m): ?>
-                        <?php $role_label = get_role_label($m); ?>
-                        <!-- 顯示列 -->
-                        <tr id="view-<?= $m['membership_id'] ?>">
+                        <?php
+                        $role_label = get_role_label($m);
+                        if ($role_label === '社長')      { $badge_class='role-president'; $icon='bi-star-fill'; }
+                        elseif ($role_label === '副社長') { $badge_class='role-vp';        $icon='bi-star-half'; }
+                        elseif ($role_label === '幹部')   { $badge_class='role-officer';   $icon='bi-shield-check'; }
+                        else                             { $badge_class='role-member';    $icon='bi-person'; }
+                        ?>
+                        <tr>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="user-avatar-sm"><?= htmlspecialchars(mb_substr($m['user_name'], 0, 1)) ?></div>
@@ -579,73 +697,30 @@ if ($club_id !== '') {
                             </td>
                             <td style="color:#6b7280;"><?= htmlspecialchars($m['student_id']) ?></td>
                             <td>
-                                <?php
-                                if ($role_label === '社長') {
-                                    $badge_class = 'role-president';
-                                    $icon = 'bi-star-fill';
-                                } elseif ($role_label === '副社長') {
-                                    $badge_class = 'role-vp';
-                                    $icon = 'bi-star-half';
-                                } elseif ($role_label === '幹部') {
-                                    $badge_class = 'role-officer';
-                                    $icon = 'bi-shield-check';
-                                } else {
-                                    $badge_class = 'role-member';
-                                    $icon = 'bi-person';
-                                }
-                                ?>
                                 <span class="role-badge <?= $badge_class ?>">
-                                    <i class="bi <?= $icon ?>"></i>
-                                    <?= $role_label ?>
+                                    <i class="bi <?= $icon ?>"></i> <?= $role_label ?>
                                 </span>
                             </td>
                             <td><?= htmlspecialchars($m['officer_title'] ?: '—') ?></td>
                             <td style="color:#6b7280;font-size:.85rem;"><?= htmlspecialchars($m['officer_confirmation_date'] ?? '—') ?></td>
-                            <td>
-                                <button class="btn-xs btn-edit" onclick="showEdit(<?= $m['membership_id'] ?>)">
+                            <td style="text-align:center;white-space:nowrap;">
+                                <button class="btn btn-sm btn-outline-primary me-1"
+                                        data-mid="<?= $m['membership_id'] ?>"
+                                        data-name="<?= htmlspecialchars($m['user_name']) ?>"
+                                        data-role="<?= htmlspecialchars($role_label) ?>"
+                                        data-title="<?= htmlspecialchars($m['officer_title'] ?? '') ?>"
+                                        data-date="<?= htmlspecialchars($m['officer_confirmation_date'] ?? '') ?>"
+                                        onclick="openEditModal(this.dataset.mid,this.dataset.name,this.dataset.role,this.dataset.title,this.dataset.date)">
                                     <i class="bi bi-pencil"></i> 編輯
                                 </button>
                                 <form method="POST" style="display:inline;"
-                                      onsubmit="return confirm('確定移除 <?= htmlspecialchars($m['user_name']) ?> 的成員資格？')">
+                                      onsubmit="return confirm('確定移除 <?= addslashes(htmlspecialchars($m['user_name'])) ?> 的成員資格？')">
                                     <input type="hidden" name="action" value="remove_membership">
                                     <input type="hidden" name="membership_id" value="<?= $m['membership_id'] ?>">
                                     <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
-                                    <button type="submit" class="btn-xs btn-remove"><i class="bi bi-trash"></i></button>
-                                </form>
-                            </td>
-                        </tr>
-                        <!-- 編輯列（預設隱藏） -->
-                        <tr id="edit-<?= $m['membership_id'] ?>" class="edit-row" style="display:none;">
-                            <td colspan="6">
-                                <form method="POST" class="edit-form-inline py-1">
-                                    <input type="hidden" name="action" value="update_membership">
-                                    <input type="hidden" name="membership_id" value="<?= $m['membership_id'] ?>">
-                                    <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
-
-                                    <select name="role" class="form-select-xs" onchange="handleRoleChange(this)" style="min-width:100px;">
-                                        <option value="一般成員" <?= $role_label === '一般成員' ? 'selected' : '' ?>>一般成員</option>
-                                        <option value="幹部"    <?= $role_label === '幹部'    ? 'selected' : '' ?>>幹部</option>
-                                        <option value="副社長"  <?= $role_label === '副社長'  ? 'selected' : '' ?>>副社長</option>
-                                        <option value="社長"    <?= $role_label === '社長'    ? 'selected' : '' ?>>社長</option>
-                                    </select>
-
-                                    <?php
-                                    $t_readonly = ($role_label !== '幹部') ? 'readonly' : '';
-                                    $t_val      = ($role_label === '幹部')  ? htmlspecialchars($m['officer_title'] ?? '') : '';
-                                    ?>
-                                    <input type="text" name="officer_title"
-                                           class="form-control-xs" style="min-width:150px;"
-                                           placeholder="幹部職稱（如：器材幹部）"
-                                           value="<?= $t_val ?>"
-                                           <?= $t_readonly ?>
-                                           style="<?= $t_readonly ? 'background:#f3f4f6;' : '' ?>">
-
-                                    <input type="date" name="officer_confirmation_date"
-                                           class="form-control-xs"
-                                           value="<?= htmlspecialchars($m['officer_confirmation_date'] ?? '') ?>">
-
-                                    <button type="submit" class="btn-xs btn-save"><i class="bi bi-check-lg"></i> 儲存</button>
-                                    <button type="button" class="btn-xs btn-cancel" onclick="hideEdit(<?= $m['membership_id'] ?>)">取消</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 </form>
                             </td>
                         </tr>
@@ -653,6 +728,68 @@ if ($club_id !== '') {
                     </tbody>
                 </table>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- 編輯身分 Modal -->
+        <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" style="max-width:440px;">
+                <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+                    <div class="modal-header" style="background:var(--primary);color:white;border:none;">
+                        <h5 class="modal-title mb-0"><i class="bi bi-pencil-square me-2"></i>編輯成員身分</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="update_membership">
+                        <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
+                        <input type="hidden" name="membership_id" id="modal_membership_id">
+
+                        <div class="modal-body p-4">
+                            <!-- 成員資訊 -->
+                            <div class="d-flex align-items-center gap-3 mb-4 p-3"
+                                 style="background:#f8fafc;border-radius:10px;border:1px solid #e9ecef;">
+                                <div class="user-avatar-sm" style="width:44px;height:44px;font-size:1.1rem;" id="modal_avatar"></div>
+                                <div>
+                                    <div style="font-weight:700;font-size:1rem;" id="modal_name"></div>
+                                    <div style="font-size:.82rem;color:#9ca3af;">正在編輯此成員的身分設定</div>
+                                </div>
+                            </div>
+
+                            <!-- 身分選擇 -->
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">身分</label>
+                                <select name="role" id="modal_role" class="form-select" onchange="modalRoleChange()">
+                                    <option value="一般成員">一般成員</option>
+                                    <option value="幹部">幹部</option>
+                                    <option value="副社長">副社長</option>
+                                    <option value="社長">社長</option>
+                                </select>
+                            </div>
+
+                            <!-- 職稱（幹部才顯示） -->
+                            <div class="mb-3" id="modal_title_wrap">
+                                <label class="form-label fw-semibold">幹部職稱 <span class="text-danger">*</span></label>
+                                <input type="text" name="officer_title" id="modal_officer_title"
+                                       class="form-control" placeholder="例：器材幹部、活動幹部…" maxlength="50">
+                                <div class="form-text">選擇「幹部」時請填寫具體職稱；其他身分自動帶入。</div>
+                            </div>
+
+                            <!-- 確認日期 -->
+                            <div class="mb-1">
+                                <label class="form-label fw-semibold">確認日期</label>
+                                <input type="date" name="officer_confirmation_date" id="modal_confirm_date"
+                                       class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="modal-footer" style="border:none;padding:1rem 1.5rem 1.5rem;">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="bi bi-check-lg me-1"></i>儲存變更
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -691,7 +828,7 @@ if ($club_id !== '') {
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label fw-semibold" style="font-size:.85rem;">職稱（幹部才填）</label>
+                            <label class="form-label fw-semibold" style="font-size:.85rem;">職稱</label>
                             <input type="text" name="officer_title" class="form-control form-control-sm"
                                    placeholder="例：器材幹部、活動幹部…"
                                    readonly style="background:#f3f4f6;color:#6b7280;">
@@ -716,41 +853,75 @@ if ($club_id !== '') {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-function showEdit(id) {
-    document.getElementById('view-' + id).style.display = 'none';
-    document.getElementById('edit-' + id).style.display = '';
-}
-function hideEdit(id) {
-    document.getElementById('edit-' + id).style.display = 'none';
-    document.getElementById('view-' + id).style.display = '';
+function toggleNomEdit(nomId) {
+    const editEl   = document.getElementById('edit-'   + nomId);
+    const rejectEl = document.getElementById('reject-' + nomId);
+    rejectEl.classList.remove('show');
+    editEl.classList.toggle('show');
 }
 
-function handleRoleChange(select) {
-    const form       = select.closest('form');
-    const titleInput = form.querySelector('input[name="officer_title"]');
-    const role       = select.value;
+function openEditModal(membershipId, name, role, title, confirmDate) {
+    document.getElementById('modal_membership_id').value  = membershipId;
+    document.getElementById('modal_name').textContent     = name;
+    document.getElementById('modal_avatar').textContent   = name.charAt(0);
+    document.getElementById('modal_role').value           = role;
+    document.getElementById('modal_confirm_date').value   = confirmDate || '';
 
-    if (role === '社長') {
-        titleInput.value    = '社長';
-        titleInput.readOnly = true;
-        titleInput.style.background = '#f3f4f6';
-        titleInput.style.color      = '#6b7280';
-    } else if (role === '副社長') {
-        titleInput.value    = '副社長';
-        titleInput.readOnly = true;
-        titleInput.style.background = '#f3f4f6';
-        titleInput.style.color      = '#6b7280';
-    } else if (role === '幹部') {
-        titleInput.value    = '';
+    modalRoleChange(title);
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('editModal')).show();
+}
+
+// 新增成員表單：角色切換時自動帶入職稱
+function handleRoleChange(sel) {
+    const titleInput = sel.closest('form').querySelector('[name="officer_title"]');
+    const role = sel.value;
+    const AUTO = { '社長': '社長', '副社長': '副社長' };
+
+    if (role === '幹部') {
         titleInput.readOnly = false;
         titleInput.style.background = '';
-        titleInput.style.color      = '';
-        titleInput.focus();
-    } else {
-        titleInput.value    = '';
+        titleInput.style.color = '';
+        titleInput.value = '';
+        titleInput.placeholder = '例：器材幹部、活動幹部…';
+    } else if (AUTO[role]) {
         titleInput.readOnly = true;
         titleInput.style.background = '#f3f4f6';
-        titleInput.style.color      = '#6b7280';
+        titleInput.style.color = '#6b7280';
+        titleInput.value = AUTO[role];
+    } else {
+        // 一般成員
+        titleInput.readOnly = true;
+        titleInput.style.background = '#f3f4f6';
+        titleInput.style.color = '#6b7280';
+        titleInput.value = '';
+    }
+}
+
+// 編輯成員 Modal：角色切換時自動帶入職稱
+function modalRoleChange(forceTitle) {
+    const role       = document.getElementById('modal_role').value;
+    const titleWrap  = document.getElementById('modal_title_wrap');
+    const titleInput = document.getElementById('modal_officer_title');
+    const AUTO = { '社長': '社長', '副社長': '副社長' };
+
+    if (role === '幹部') {
+        titleWrap.style.display = '';
+        titleInput.readOnly = false;
+        titleInput.style.background = '';
+        titleInput.style.color = '';
+        titleInput.value = (forceTitle !== undefined) ? forceTitle : '';
+    } else if (AUTO[role]) {
+        titleWrap.style.display = '';
+        titleInput.readOnly = true;
+        titleInput.style.background = '#f3f4f6';
+        titleInput.style.color = '#6b7280';
+        titleInput.value = AUTO[role];
+    } else {
+        // 一般成員：隱藏職稱欄
+        titleWrap.style.display = 'none';
+        titleInput.value = '';
+        titleInput.readOnly = true;
     }
 }
 </script>
