@@ -491,10 +491,10 @@ if ($event_id === 0) {
                                 <h6 class="mt-4">活動說明</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['description'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
                                 <h6 class="mt-4">申請時間</h6>
-                                <p><?= !empty($detail_event['created_at']) ? date('Y/m/d H:i', strtotime($detail_event['created_at'])) : '<span style="color:#9ca3af;">—</span>' ?></p>
+                                <p><?= !empty($detail_event['created_at']) ? date('Y/m/d H:i:s', strtotime($detail_event['created_at'])) : '<span style="color:#9ca3af;">—</span>' ?></p>
                                 <?php if (!empty($detail_event['reviewed_at'])): ?>
                                 <h6 class="mt-3">審核時間</h6>
-                                <p><?= date('Y/m/d H:i', strtotime($detail_event['reviewed_at'])) ?></p>
+                                <p><?= date('Y/m/d H:i:s', strtotime($detail_event['reviewed_at'])) ?></p>
                                 <?php endif; ?>
                                 <h6 class="mt-4">審核備註</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['review_note'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
@@ -705,7 +705,7 @@ if ($event_id === 0) {
                                             <td>
                                                 <?php if (!empty($ev['created_at'])): ?>
                                                 <span class="time-badge"><?= date('Y/m/d', strtotime($ev['created_at'])) ?></span>
-                                                <br><small style="color:#6b7280;"><?= date('H:i', strtotime($ev['created_at'])) ?></small>
+                                                <br><small style="color:#6b7280;"><?= date('H:i:s', strtotime($ev['created_at'])) ?></small>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
@@ -722,7 +722,7 @@ if ($event_id === 0) {
                                             <td>
                                                 <?php if (!empty($ev['reviewed_at'])): ?>
                                                 <span class="time-badge"><?= date('Y/m/d', strtotime($ev['reviewed_at'])) ?></span>
-                                                <br><small style="color:#6b7280;"><?= date('H:i', strtotime($ev['reviewed_at'])) ?></small>
+                                                <br><small style="color:#6b7280;"><?= date('H:i:s', strtotime($ev['reviewed_at'])) ?></small>
                                                 <?php else: ?>
                                                 <small style="color:#9ca3af;">—</small>
                                                 <?php endif; ?>
