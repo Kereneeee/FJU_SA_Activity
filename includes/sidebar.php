@@ -51,7 +51,24 @@ $appRoot = '/' . basename(dirname(__DIR__));
         <a class="nav-link <?php echo ($current_page === 'my_applications') ? 'active' : ''; ?>" href="my_applications.php">
             <i class="bi bi-card-list"></i> 我的申請
         </a>
-    
+        <?php
+        // 若目前身分是社長，顯示幹部提名連結
+        $is_president = false;
+        if (!empty($_SESSION['user_id']) && !empty($_SESSION['active_club_id'])) {
+            global $conn;
+            $chk = $conn->prepare("SELECT membership_id FROM club_members WHERE user_id=? AND club_id=? AND is_officer=1 AND officer_title='社長' LIMIT 1");
+            if ($chk) {
+                $chk->bind_param("is", $_SESSION['user_id'], $_SESSION['active_club_id']);
+                $chk->execute();
+                $is_president = $chk->get_result()->num_rows > 0;
+                $chk->close();
+            }
+        }
+        if ($is_president): ?>
+        <a class="nav-link <?php echo ($current_page === 'nominate_officers') ? 'active' : ''; ?>" href="nominate_officers.php">
+            <i class="bi bi-person-check"></i> 幹部提名
+        </a>
+        <?php endif; ?>
     </nav>
     <div class="sidebar-section">
         <p class="mb-2">快捷操作</p>
