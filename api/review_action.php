@@ -23,7 +23,7 @@ if (!$event_id || !in_array($action, ['approved', 'rejected'])) {
 }
 
 $status = $action;
-$stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ? WHERE event_id = ?");
+$stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ?, reviewed_at = NOW() WHERE event_id = ?");
 $stmt->bind_param("ssi", $status, $note, $event_id);
 
 if (!$stmt->execute()) {
@@ -56,7 +56,7 @@ try {
             $note
         );
     }
-} catch (\Exception $mailEx) {
+} catch (\Throwable $mailEx) {
     // 寄信失敗不影響審核結果
 }
 

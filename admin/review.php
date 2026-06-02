@@ -1,43 +1,15 @@
 ﻿<?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/functions.php");
 
-if (!isset($_SESSION['user_id'])) {
+checkLogin();
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
-    exit();
+    exit;
 }
 
 $user_name = $_SESSION['user_name'] ?? '管理員';
 $current_page = 'review';
-$message = '';
-$message_type = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['event_id'])) {
-    $event_id = intval($_POST['event_id']);
-    $action = $_POST['action'];
-    $review_note = trim($_POST['review_note'] ?? '');
-    $status = 'pending';
-
-    if ($action === 'approve') {
-        $status = 'approved';
-        $message = '申請已全部核准。';
-        $message_type = 'success';
-    } elseif ($action === 'reject') {
-        $status = 'rejected';
-        $message = '申請已駁回。';
-        $message_type = 'error';
-    }
-
-    $stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ? WHERE event_id = ?");
-    $stmt->bind_param("ssi", $status, $review_note, $event_id);
-    $stmt->execute();
-    $stmt->close();
-
-    header("Location: review.php?event_id=" . $event_id);
-    exit;
-}
 
 // 統計資料
 $status_counts = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
@@ -130,14 +102,16 @@ if ($event_id > 0) {
     }
 }
 
-// 篩選案件類型
-$filter_type = isset($_GET['filter']) ? $_GET['filter'] : 'all';
+// 狀態篩選
+$allowed_statuses = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
+$status_filter = in_array($_GET['status'] ?? '', $allowed_statuses) ? $_GET['status'] : 'all';
 
 $pending_events = [];
 if ($event_id === 0) {
-    // 🟢 【修改】查詢條件：
-    // 只查詢待審核的事件，包含原始活動申請、活動+器材申請，以及器材申請
-    // 使用子查詢取代直接 JOIN reservations，避免多場次產生重複列
+    $where_status = $status_filter !== 'all'
+        ? "WHERE e.status = '" . $conn->real_escape_string($status_filter) . "'"
+        : '';
+
     $sql_pending =
         "SELECT e.*, u.name AS applicant_name, u.email AS applicant_email,
                 COALESCE(ec.equipment_count, 0) AS equipment_count,
@@ -156,45 +130,27 @@ if ($event_id === 0) {
              GROUP BY event_id
          ) rc ON rc.event_id = e.event_id
          LEFT JOIN events oe ON e.original_event_id = oe.event_id
-         WHERE e.status = 'pending'
-         ORDER BY e.start_time DESC";
+         {$where_status}
+         ORDER BY e.created_at DESC";
     $result_pending = $conn->query($sql_pending);
     if ($result_pending) {
         $pending_events = $result_pending->fetch_all(MYSQLI_ASSOC);
         foreach ($pending_events as &$ev) {
-            // 🟢 【修改】新的分類邏輯：根據 original_event_id 和器材相關欄位判斷案件類型
             $has_activity = (trim($ev['event_name']) !== '' || trim($ev['club_name']) !== '');
             $has_equipment = intval($ev['equipment_count']) > 0;
             $has_original_event = !empty($ev['original_event_id']);
 
             if ($has_original_event) {
-                // 【器材申請】標籤：status = 'pending' AND original_event_id IS NOT NULL
                 $ev['case_type'] = '器材申請';
             } elseif ($has_activity && $has_equipment) {
-                // 【活動+器材申請】標籤：status = 'pending' AND original_event_id IS NULL AND 有器材相關欄位
                 $ev['case_type'] = '活動+器材申請';
             } elseif ($has_activity) {
-                // 【活動申請】標籤：status = 'pending' AND original_event_id IS NULL AND 沒有器材相關欄位
                 $ev['case_type'] = '活動申請';
             } else {
                 $ev['case_type'] = '一般申請';
             }
         }
         unset($ev);
-
-        // 根據篩選條件過濾
-        if ($filter_type !== 'all') {
-            $pending_events = array_filter($pending_events, function($ev) use ($filter_type) {
-                if ($filter_type === '活動申請') {
-                    return $ev['case_type'] === '活動申請';
-                } elseif ($filter_type === '器材申請') {
-                    return $ev['case_type'] === '器材申請';
-                } elseif ($filter_type === '活動+器材申請') {
-                    return $ev['case_type'] === '活動+器材申請';
-                }
-                return true;
-            });
-        }
     }
 }
 ?>
@@ -318,9 +274,10 @@ if ($event_id === 0) {
         th { background: #f3f4f6; color: #374151; font-weight: 600; }
         tbody tr:hover { background: #f9fafb; }
         .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-        .status-pending { background: #f0e8c0; color: #6b5a20; }
-        .status-approved { background: #70a3a7; color: #1a3f42; }
-        .status-rejected { background: #c9979a; color: #5c1f22; }
+        .status-pending   { background: #f0e8c0; color: #6b5a20; }
+        .status-approved  { background: #70a3a7; color: #1a3f42; }
+        .status-rejected  { background: #c9979a; color: #5c1f22; }
+        .status-cancelled { background: #e5e7eb; color: #4b5563; }
         .case-tag { display: inline-flex; align-items: center; padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.78rem; color: #0f5132; background: #e7f5e6; margin-bottom: 0.5rem; }
         .case-tag.activity { background: #e7f1ff; color: #0c4a9c; }
         .case-tag.activity-equip { background: #fff4e5; color: #7a4a00; }
@@ -533,6 +490,12 @@ if ($event_id === 0) {
                                 </div>
                                 <h6 class="mt-4">活動說明</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['description'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
+                                <h6 class="mt-4">申請時間</h6>
+                                <p><?= !empty($detail_event['created_at']) ? date('Y/m/d H:i', strtotime($detail_event['created_at'])) : '<span style="color:#9ca3af;">—</span>' ?></p>
+                                <?php if (!empty($detail_event['reviewed_at'])): ?>
+                                <h6 class="mt-3">審核時間</h6>
+                                <p><?= date('Y/m/d H:i', strtotime($detail_event['reviewed_at'])) ?></p>
+                                <?php endif; ?>
                                 <h6 class="mt-4">審核備註</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['review_note'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
                             </div>
@@ -641,44 +604,51 @@ if ($event_id === 0) {
                         <?php endif; ?>
 
                         <div class="detail-block mt-3">
-                            <form method="POST" class="mt-4">
-                                <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
-                                <div class="mb-3">
-                                    <label class="form-label">審核備註（選填）</label>
-                                    <textarea name="review_note" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
-                                </div>
-                                <div class="d-flex flex-wrap gap-3">
-                                    <button type="submit" name="action" value="approve" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
-                                    <button type="submit" name="action" value="reject" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
-                                    <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
-                                </div>
-                            </form>
+                            <input type="hidden" id="reviewEventId" value="<?= $detail_event['event_id'] ?>">
+                            <div class="mb-3">
+                                <label class="form-label">審核備註（選填）</label>
+                                <textarea id="reviewNote" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
+                            </div>
+                            <div id="reviewResult" class="mb-3"></div>
+                            <div class="d-flex flex-wrap gap-3">
+                                <?php if ($detail_event['status'] === 'pending'): ?>
+                                <button type="button" onclick="submitReview('approved')" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
+                                <button type="button" onclick="submitReview('rejected')" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
+                                <?php else: ?>
+                                <div class="alert alert-info mb-0 py-2">此申請已完成審核（<?= $detail_event['status'] === 'approved' ? '已核准' : '已駁回' ?>）</div>
+                                <?php endif; ?>
+                                <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
+                            </div>
                         </div>
                     <?php endif; ?>
                 </div>
             <?php else: ?>
                 <div class="panel-row">
                     <div>
-                        <h5><i class="bi bi-list-ul"></i> 待審核活動列表</h5>
+                        <h5><i class="bi bi-list-ul"></i> 申請管理列表</h5>
                         <div style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="review.php?filter=all" class="btn btn-sm <?= $filter_type === 'all' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                <i class="bi bi-funnel"></i> 全部
+                            <a href="review.php?status=all" class="btn btn-sm <?= $status_filter === 'all' ? 'btn-primary' : 'btn-outline-secondary' ?>">
+                                <i class="bi bi-grid"></i> 全部
+                                <span class="badge bg-secondary ms-1"><?= $total_count ?></span>
                             </a>
-                            <a href="review.php?filter=活動申請" class="btn btn-sm <?= $filter_type === '活動申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                <i class="bi bi-calendar-event"></i> 活動申請
+                            <a href="review.php?status=pending" class="btn btn-sm <?= $status_filter === 'pending' ? 'btn-warning text-dark' : 'btn-outline-warning' ?>">
+                                <i class="bi bi-clock"></i> 待審核
+                                <span class="badge bg-warning text-dark ms-1"><?= $status_counts['pending'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?filter=器材申請" class="btn btn-sm <?= $filter_type === '器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                <i class="bi bi-tools"></i> 器材申請
+                            <a href="review.php?status=approved" class="btn btn-sm <?= $status_filter === 'approved' ? 'btn-success' : 'btn-outline-success' ?>">
+                                <i class="bi bi-check-circle"></i> 已通過
+                                <span class="badge bg-success ms-1"><?= $status_counts['approved'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?filter=活動%2B器材申請" class="btn btn-sm <?= $filter_type === '活動+器材申請' ? 'btn-primary' : 'btn-outline-primary' ?>">
-                                <i class="bi bi-collection"></i> 活動+器材申請
+                            <a href="review.php?status=rejected" class="btn btn-sm <?= $status_filter === 'rejected' ? 'btn-danger' : 'btn-outline-danger' ?>">
+                                <i class="bi bi-x-circle"></i> 已駁回
+                                <span class="badge bg-danger ms-1"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
                         </div>
                     </div>
                     <?php if (empty($pending_events)): ?>
                         <div class="empty-state">
                             <i class="bi bi-inbox"></i>
-                            <p>目前沒有待審核的申請</p>
+                            <p>此分類目前沒有申請</p>
                         </div>
                     <?php else: ?>
                         <div style="overflow-x:auto;">
@@ -690,7 +660,9 @@ if ($event_id === 0) {
                                         <th>申請人</th>
                                         <th>社團</th>
                                         <th>活動類型</th>
-                                        <th>時間 / 場次</th>
+                                        <th>申請時間</th>
+                                        <th>活動時間 / 場次</th>
+                                        <th>審核時間</th>
                                         <th>狀態</th>
                                     </tr>
                                 </thead>
@@ -731,6 +703,12 @@ if ($event_id === 0) {
                                                 ?>
                                             </td>
                                             <td>
+                                                <?php if (!empty($ev['created_at'])): ?>
+                                                <span class="time-badge"><?= date('Y/m/d', strtotime($ev['created_at'])) ?></span>
+                                                <br><small style="color:#6b7280;"><?= date('H:i', strtotime($ev['created_at'])) ?></small>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
                                                 <?php
                                                 if ($ev['start_time']) {
                                                     echo '<span class="time-badge">' . date('Y/m/d', strtotime($ev['start_time'])) . '</span>';
@@ -742,9 +720,26 @@ if ($event_id === 0) {
                                                 ?>
                                             </td>
                                             <td>
+                                                <?php if (!empty($ev['reviewed_at'])): ?>
+                                                <span class="time-badge"><?= date('Y/m/d', strtotime($ev['reviewed_at'])) ?></span>
+                                                <br><small style="color:#6b7280;"><?= date('H:i', strtotime($ev['reviewed_at'])) ?></small>
+                                                <?php else: ?>
+                                                <small style="color:#9ca3af;">—</small>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <?php
+                                                $status_map = [
+                                                    'pending'   => ['label' => '待審核', 'icon' => 'clock'],
+                                                    'approved'  => ['label' => '已通過', 'icon' => 'check-lg'],
+                                                    'rejected'  => ['label' => '已駁回', 'icon' => 'x-lg'],
+                                                    'cancelled' => ['label' => '已取消', 'icon' => 'slash-circle'],
+                                                ];
+                                                $si = $status_map[$ev['status']] ?? ['label' => $ev['status'], 'icon' => 'question'];
+                                                ?>
                                                 <span class="status-badge status-<?= htmlspecialchars($ev['status']) ?>">
-                                                    <i class="bi bi-<?= $ev['status'] === 'pending' ? 'clock' : ($ev['status'] === 'approved' ? 'check-lg' : 'x-lg') ?>"></i>
-                                                    <?= $ev['status'] === 'pending' ? '待審核' : ($ev['status'] === 'approved' ? '已通過' : '已駁回') ?>
+                                                    <i class="bi bi-<?= $si['icon'] ?>"></i>
+                                                    <?= $si['label'] ?>
                                                 </span>
                                             </td>
                                         </tr>
@@ -777,6 +772,35 @@ if ($event_id === 0) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
+    function submitReview(action) {
+        const event_id = parseInt(document.getElementById('reviewEventId').value);
+        const note     = document.getElementById('reviewNote').value;
+        const resultDiv = document.getElementById('reviewResult');
+        const label    = action === 'approved' ? '核准' : '駁回';
+
+        if (!confirm('確定要' + label + '此申請？')) return;
+
+        resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="bi bi-hourglass-split me-1"></i>處理中...</div>';
+
+        fetch('../api/review_action.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event_id: event_id, action: action, note: note })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                resultDiv.innerHTML = '<div class="alert alert-success py-2"><i class="bi bi-check-circle me-1"></i>審核完成！頁面將自動重新整理...</div>';
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                resultDiv.innerHTML = '<div class="alert alert-danger py-2"><i class="bi bi-x-circle me-1"></i>錯誤：' + (data.message || '未知錯誤') + '</div>';
+            }
+        })
+        .catch(() => {
+            resultDiv.innerHTML = '<div class="alert alert-danger py-2">網路錯誤，請稍後再試。</div>';
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         const previewModal = document.getElementById('pdfPreviewModal');
         const previewFrame = document.getElementById('pdfPreviewFrame');

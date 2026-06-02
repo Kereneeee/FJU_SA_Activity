@@ -236,7 +236,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         ]);
                     }
                 }
-            } catch (\Exception $mailEx) {
+            } catch (\Throwable $mailEx) {
                 // 寄信失敗不影響申請流程，靜默忽略
             }
 
