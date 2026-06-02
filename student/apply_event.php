@@ -113,6 +113,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $errors[] = "場次{$n}：校內活動請選擇場地";
     }
 
+    // 後端防重複：10秒內同帳號同活動名稱同社團視為重複送出
+    if (empty($errors)) {
+        $dup_stmt = $conn->prepare(
+            "SELECT event_id FROM events
+             WHERE user_id = ? AND event_name = ? AND club_name = ?
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 10 SECOND)
+             LIMIT 1"
+        );
+        $dup_stmt->bind_param('iss', $user_id, $event_name, $club_name);
+        $dup_stmt->execute();
+        if ($dup_stmt->get_result()->num_rows > 0) {
+            $errors[] = "偵測到重複送出，請勿在短時間內重複點擊提交。";
+        }
+        $dup_stmt->close();
+    }
+
     if (empty($errors)) {
         $conn->begin_transaction();
         try {
@@ -948,6 +964,13 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
         if (tm(ebt)<9*60+30||tm(ebt)>16*60+30||tm(ert)<9*60+30||tm(ert)>16*60+30) {
             e.preventDefault(); alert('器材借還時間須在 09:30–16:30！'); return;
         }
+    }
+
+    // 驗證全部通過，鎖定按鈕防止重複送出
+    const btn = this.querySelector('button[type="submit"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i> 提交中...';
     }
 });
 
