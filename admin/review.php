@@ -11,6 +11,72 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $user_name = $_SESSION['user_name'] ?? '管理員';
 $current_page = 'review';
 
+// 場地清單（供編輯表單使用）
+$spaces = [];
+$rs = $conn->query("SELECT space_id, space_name FROM spaces ORDER BY space_name");
+if ($rs) $spaces = $rs->fetch_all(MYSQLI_ASSOC);
+
+// 處理刪除 / 編輯 POST
+$flash = '';
+$flash_type = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST['event_id'])) {
+    $mgmt_id  = intval($_POST['event_id']);
+    $mgmt_act = $_POST['mgmt_action'];
+
+    if ($mgmt_act === 'delete') {
+        $conn->begin_transaction();
+        $ok = true;
+        foreach (['equipment_borrow', 'reservations'] as $tbl) {
+            $s = $conn->prepare("DELETE FROM {$tbl} WHERE event_id = ?");
+            $s->bind_param('i', $mgmt_id); $ok = $ok && $s->execute(); $s->close();
+        }
+        $s = $conn->prepare("DELETE FROM events WHERE event_id = ?");
+        $s->bind_param('i', $mgmt_id); $ok = $ok && $s->execute(); $s->close();
+        if ($ok) { $conn->commit(); $flash = '申請已刪除。'; $flash_type = 'success'; }
+        else     { $conn->rollback(); $flash = '刪除失敗，請稍後再試。'; $flash_type = 'danger'; }
+        $redirect_status = $_POST['redirect_status'] ?? 'all';
+        header("Location: review.php?status={$redirect_status}&flash=" . urlencode($flash) . "&flash_type={$flash_type}");
+        exit;
+
+    } elseif ($mgmt_act === 'save') {
+        $ev_name  = trim($_POST['event_name']  ?? '');
+        $cl_name  = trim($_POST['club_name']   ?? '');
+        $desc     = trim($_POST['description'] ?? '');
+        $rv_note  = trim($_POST['review_note'] ?? '');
+        $space_id = intval($_POST['space_id']  ?? 0);
+        $st       = trim($_POST['start_time']  ?? '');
+        $et       = trim($_POST['end_time']    ?? '');
+        if ($ev_name === '' || $cl_name === '' || $st === '' || $et === '') {
+            $flash = '請填寫活動名稱、社團名稱與時間。'; $flash_type = 'danger';
+        } else {
+            $conn->begin_transaction(); $ok = true;
+            $s = $conn->prepare("UPDATE events SET event_name=?, club_name=?, description=?, review_note=?, start_time=?, end_time=? WHERE event_id=?");
+            $s->bind_param('ssssssi', $ev_name, $cl_name, $desc, $rv_note, $st, $et, $mgmt_id);
+            $ok = $ok && $s->execute(); $s->close();
+            if ($ok && $space_id > 0) {
+                $s = $conn->prepare("SELECT reservation_id FROM reservations WHERE event_id = ? LIMIT 1");
+                $s->bind_param('i', $mgmt_id); $s->execute(); $res = $s->get_result(); $s->close();
+                if ($row = $res->fetch_assoc()) {
+                    $rid = $row['reservation_id'];
+                    $s = $conn->prepare("UPDATE reservations SET space_id=?, start_time=?, end_time=? WHERE reservation_id=?");
+                    $s->bind_param('issi', $space_id, $st, $et, $rid); $ok = $ok && $s->execute(); $s->close();
+                } else {
+                    $s = $conn->prepare("INSERT INTO reservations (event_id, space_id, start_time, end_time) VALUES (?,?,?,?)");
+                    $s->bind_param('iiss', $mgmt_id, $space_id, $st, $et); $ok = $ok && $s->execute(); $s->close();
+                }
+            }
+            if ($ok) { $conn->commit(); $flash = '變更已儲存。'; $flash_type = 'success'; }
+            else     { $conn->rollback(); $flash = '儲存失敗，請稍後再試。'; $flash_type = 'danger'; }
+        }
+        header("Location: review.php?event_id={$mgmt_id}&flash=" . urlencode($flash) . "&flash_type={$flash_type}");
+        exit;
+    }
+}
+
+// Flash 訊息（GET 帶入）
+$flash      = $_GET['flash']      ?? '';
+$flash_type = $_GET['flash_type'] ?? 'info';
+
 // 統計資料
 $status_counts = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
 $total_count = 0;
@@ -382,8 +448,11 @@ if ($event_id === 0) {
         </header>
 
         <section class="content-wrapper">
-            <?php if ($message): ?>
-                <div class="message <?= $message_type ?>"><?= htmlspecialchars($message) ?></div>
+            <?php if (!empty($flash)): ?>
+                <div class="alert alert-<?= htmlspecialchars($flash_type) ?> alert-dismissible fade show" role="alert">
+                    <?= htmlspecialchars($flash) ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
             <?php endif; ?>
 
             <div class="summary-row">
@@ -617,6 +686,13 @@ if ($event_id === 0) {
                                 <?php else: ?>
                                 <div class="alert alert-info mb-0 py-2">此申請已完成審核（<?= $detail_event['status'] === 'approved' ? '已核准' : '已駁回' ?>）</div>
                                 <?php endif; ?>
+                                <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#editModal"><i class="bi bi-pencil"></i> 編輯</button>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('確定要刪除此申請？此操作無法復原。');">
+                                    <input type="hidden" name="mgmt_action" value="delete">
+                                    <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
+                                    <input type="hidden" name="redirect_status" value="all">
+                                    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> 刪除</button>
+                                </form>
                                 <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
                             </div>
                         </div>
@@ -664,6 +740,7 @@ if ($event_id === 0) {
                                         <th>活動時間 / 場次</th>
                                         <th>審核時間</th>
                                         <th>狀態</th>
+                                        <th>操作</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -742,6 +819,17 @@ if ($event_id === 0) {
                                                     <?= $si['label'] ?>
                                                 </span>
                                             </td>
+                                            <td>
+                                                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                                                    <a href="review.php?event_id=<?= intval($ev['event_id']) ?>" class="btn btn-sm btn-outline-primary m-0"><i class="bi bi-eye"></i> 查看</a>
+                                                    <form method="POST" onsubmit="return confirm('確定要刪除此申請？此操作無法復原。');">
+                                                        <input type="hidden" name="mgmt_action" value="delete">
+                                                        <input type="hidden" name="event_id" value="<?= intval($ev['event_id']) ?>">
+                                                        <input type="hidden" name="redirect_status" value="<?= htmlspecialchars($status_filter) ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger m-0"><i class="bi bi-trash"></i> 刪除</button>
+                                                    </form>
+                                                </div>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -752,6 +840,64 @@ if ($event_id === 0) {
             <?php endif; ?>
         </section>
     </main>
+    <?php if ($detail_event): ?>
+    <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+                <div class="modal-header" style="background:var(--primary);color:white;">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>編輯申請資料</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="mgmt_action" value="save">
+                    <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">活動名稱</label>
+                                <input type="text" name="event_name" class="form-control" value="<?= htmlspecialchars($detail_event['event_name']) ?>" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">社團名稱</label>
+                                <input type="text" name="club_name" class="form-control" value="<?= htmlspecialchars($detail_event['club_name']) ?>" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">開始時間</label>
+                                <input type="datetime-local" name="start_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['start_time']))) ?>" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">結束時間</label>
+                                <input type="datetime-local" name="end_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['end_time']))) ?>" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">場地（第一場次）</label>
+                                <select name="space_id" class="form-select">
+                                    <option value="0">不指定 / 保持不變</option>
+                                    <?php foreach ($spaces as $sp): ?>
+                                    <option value="<?= intval($sp['space_id']) ?>"><?= htmlspecialchars($sp['space_name']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">活動說明</label>
+                                <textarea name="description" class="form-control" rows="3"><?= htmlspecialchars($detail_event['description'] ?? '') ?></textarea>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">審核備註</label>
+                                <textarea name="review_note" class="form-control" rows="2"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>儲存變更</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="modal fade" id="pdfPreviewModal" tabindex="-1" aria-labelledby="pdfPreviewModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered" style="max-width: 85%;">
             <div class="modal-content" style="border-radius: 16px; overflow: hidden;">

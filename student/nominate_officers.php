@@ -156,19 +156,40 @@ $student_name = $_SESSION['student_name'] ?? '社長';
         }
         .content-wrapper { padding: 1.5rem 2rem 3rem; max-width: 820px; }
 
-        .panel { background: white; border-radius: 18px; box-shadow: 0 6px 24px rgba(15,23,42,.06); margin-bottom: 1.5rem; overflow: hidden; }
+        .panel { background: white; border-radius: 18px; box-shadow: 0 6px 24px rgba(15,23,42,.06); margin-bottom: 1.5rem; }
+        .panel-header { border-radius: 18px 18px 0 0; }
         .panel-header { padding: 1.1rem 1.5rem; border-bottom: 1px solid #e9ecef; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: .5rem; font-size: 1rem; }
         .panel-body { padding: 1.25rem 1.5rem; }
 
         /* 查詢區 */
         .search-block { display: flex; gap: .75rem; align-items: flex-end; flex-wrap: wrap; }
+        .sid-wrap { position: relative; }
+        .autocomplete-dropdown {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 999;
+            background: white; border: 1.5px solid #d1d5db; border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.1); margin-top: 2px; overflow: hidden; display: none;
+        }
+        .autocomplete-dropdown.show { display: block; }
+        .ac-item {
+            padding: .6rem .9rem; cursor: pointer; display: flex; align-items: center; gap: .75rem;
+            border-bottom: 1px solid #f3f4f6; transition: background .15s;
+        }
+        .ac-item:last-child { border-bottom: none; }
+        .ac-item:hover { background: #f0f9ff; }
+        .ac-avatar {
+            width: 32px; height: 32px; border-radius: 50%; background: var(--primary);
+            color: white; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: .85rem; flex-shrink: 0;
+        }
+        .ac-name { font-weight: 600; font-size: .9rem; }
+        .ac-sid  { font-size: .8rem; color: #6b7280; }
+        .ac-no-result { padding: .75rem 1rem; color: #9ca3af; font-size: .88rem; text-align: center; }
         .search-result {
             border: 1.5px solid #e5e7eb; border-radius: 12px; padding: .9rem 1.1rem;
             background: #f8fafc; margin-top: 1rem; display: none;
             align-items: center; gap: 1rem; flex-wrap: wrap;
         }
         .search-result.show { display: flex; }
-        .search-result.error { border-color: #fca5a5; background: #fef2f2; }
         .avatar-sm {
             width: 40px; height: 40px; border-radius: 50%; background: var(--primary);
             color: white; display: flex; align-items: center; justify-content: center;
@@ -225,19 +246,17 @@ $student_name = $_SESSION['student_name'] ?? '社長';
             <div class="panel-header"><i class="bi bi-search"></i> 查詢學生並加入提名清單</div>
             <div class="panel-body">
 
-                <!-- 學號查詢 -->
+                <!-- 學號查詢（即時自動完成） -->
                 <div class="search-block">
-                    <div>
+                    <div class="sid-wrap">
                         <label class="form-label fw-semibold mb-1">輸入學號</label>
-                        <input type="text" id="sidInput" class="form-control" style="width:200px;"
-                               placeholder="例：410123456" maxlength="20">
+                        <input type="text" id="sidInput" class="form-control" style="width:220px;"
+                               placeholder="輸入學號搜尋" maxlength="20" autocomplete="off">
+                        <div id="acDropdown" class="autocomplete-dropdown"></div>
                     </div>
-                    <button type="button" class="btn btn-primary" onclick="lookupStudent()">
-                        <i class="bi bi-search"></i> 查詢
-                    </button>
                 </div>
 
-                <!-- 查詢結果 -->
+                <!-- 選定學生後顯示 -->
                 <div id="searchResult" class="search-result">
                     <div class="avatar-sm" id="resAvatar"></div>
                     <div style="flex:1;">
@@ -302,7 +321,7 @@ $student_name = $_SESSION['student_name'] ?? '社長';
                         <div style="flex:1;min-width:0;">
                             <span style="font-weight:600;"><?= htmlspecialchars($n['nominated_name']) ?></span>
                             <span style="color:#9ca3af;font-size:.82rem;margin-left:.4rem;">學號 <?= htmlspecialchars($n['nominated_sid']) ?></span>
-                            <span class="title-tag"><?= htmlspecialchars($n['officer_title']) ?></span>
+                            <span class="title-tag"><?= htmlspecialchars($n['officer_title'] ?: '一般成員') ?></span>
                             <br>
                             <span style="color:#9ca3af;font-size:.8rem;"><?= date('Y/m/d H:i', strtotime($n['created_at'])) ?></span>
                             <?php if ($n['status'] === 'rejected' && !empty($n['review_note'])): ?>
@@ -336,76 +355,106 @@ $student_name = $_SESSION['student_name'] ?? '社長';
 <script>
 const CLUB_ID = <?= json_encode($club_id) ?>;
 
-// 目前找到的學生
 let currentStudent = null;
-// 清單陣列 [{user_id, name, student_id, officer_title}]
 let nominationList = [];
+let acTimer = null;
 
-// ── 身分切換：幹部才顯示職稱欄 ───────────────────────────────
+// ── 工具 ──────────────────────────────────────────────────────
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// ── 身分切換 ──────────────────────────────────────────────────
 function handleRoleChange() {
-    const role      = document.getElementById('roleSelect').value;
-    const titleWrap = document.getElementById('titleWrap');
-    const titleInput = document.getElementById('titleInput');
-    if (role === '幹部') {
-        titleWrap.style.display = '';
-    } else {
-        titleWrap.style.display = 'none';
-        titleInput.value = '';
-    }
+    const role = document.getElementById('roleSelect').value;
+    const wrap = document.getElementById('titleWrap');
+    if (role === '幹部') { wrap.style.display = ''; }
+    else { wrap.style.display = 'none'; document.getElementById('titleInput').value = ''; }
 }
 
-// ── 查詢學號 ──────────────────────────────────────────────────
-function lookupStudent() {
-    const sid    = document.getElementById('sidInput').value.trim();
-    const errBox = document.getElementById('errMsg');
-    const result = document.getElementById('searchResult');
+// ── Autocomplete ──────────────────────────────────────────────
+const sidInput   = document.getElementById('sidInput');
+const acDropdown = document.getElementById('acDropdown');
 
-    errBox.style.display = 'none';
-    result.classList.remove('show', 'error');
+sidInput.addEventListener('input', function () {
+    const q = this.value.trim();
+    clearTimeout(acTimer);
+    closeDropdown();
+    document.getElementById('searchResult').classList.remove('show');
     currentStudent = null;
-    document.getElementById('titleInput').value = '';
-    document.getElementById('roleSelect').value = '一般成員';
-    handleRoleChange();
+    if (q.length === 0) return;
+    acTimer = setTimeout(() => fetchCandidates(q), 250);
+});
 
-    if (!sid) { showErr('請輸入學號。'); return; }
+sidInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeDropdown();
+});
 
-    fetch(`../api/lookup_student.php?student_id=${encodeURIComponent(sid)}`)
+document.addEventListener('click', function (e) {
+    if (!sidInput.contains(e.target) && !acDropdown.contains(e.target)) closeDropdown();
+});
+
+function fetchCandidates(q) {
+    fetch(`../api/lookup_student.php?student_id=${encodeURIComponent(q)}`)
         .then(r => r.json())
         .then(data => {
-            if (!data.success) { showErr(data.message || '查詢失敗'); return; }
-            currentStudent = data.user;
-            document.getElementById('resAvatar').textContent = data.user.name.charAt(0);
-            document.getElementById('resName').textContent   = data.user.name;
-            document.getElementById('resSid').textContent    = '學號：' + data.user.student_id;
-            result.classList.add('show');
+            if (!data.success || !data.users || data.users.length === 0) {
+                showDropdown([]);
+            } else {
+                showDropdown(data.users);
+            }
         })
-        .catch(() => showErr('網路錯誤，請稍後再試。'));
+        .catch(() => showDropdown([]));
 }
 
-function showErr(msg) {
-    const e = document.getElementById('errMsg');
-    e.textContent = msg;
-    e.style.display = 'block';
+function showDropdown(users) {
+    if (users.length === 0) {
+        acDropdown.innerHTML = '<div class="ac-no-result"><i class="bi bi-search me-1"></i>查無符合結果</div>';
+    } else {
+        acDropdown.innerHTML = users.map(u => `
+            <div class="ac-item" onclick="selectStudent(${u.user_id}, ${escAttr(JSON.stringify(u.name))}, '${u.student_id}')">
+                <div class="ac-avatar">${escHtml(u.name.charAt(0))}</div>
+                <div>
+                    <div class="ac-name">${escHtml(u.name)}</div>
+                    <div class="ac-sid">學號：${escHtml(String(u.student_id))}</div>
+                </div>
+            </div>`).join('');
+    }
+    acDropdown.classList.add('show');
+}
+
+function closeDropdown() {
+    acDropdown.classList.remove('show');
+    acDropdown.innerHTML = '';
+}
+
+function selectStudent(user_id, name, student_id) {
+    currentStudent = { user_id, name, student_id };
+    sidInput.value = student_id;
+    closeDropdown();
+    document.getElementById('resAvatar').textContent = name.charAt(0);
+    document.getElementById('resName').textContent   = name;
+    document.getElementById('resSid').textContent    = '學號：' + student_id;
+    document.getElementById('roleSelect').value = '一般成員';
+    document.getElementById('titleInput').value = '';
+    handleRoleChange();
+    document.getElementById('searchResult').classList.add('show');
+    document.getElementById('errMsg').style.display = 'none';
 }
 
 // ── 加入清單 ──────────────────────────────────────────────────
 function addToList() {
     if (!currentStudent) return;
-
     const role  = document.getElementById('roleSelect').value;
     const title = document.getElementById('titleInput').value.trim();
-
     if (role === '幹部' && !title) {
         alert('請填寫幹部職稱。');
         document.getElementById('titleInput').focus();
         return;
     }
-
     if (nominationList.some(n => n.user_id === currentStudent.user_id)) {
         alert('此學生已在提名清單中。');
         return;
     }
-
     nominationList.push({
         user_id:       currentStudent.user_id,
         name:          currentStudent.name,
@@ -413,87 +462,97 @@ function addToList() {
         role:          role,
         officer_title: role === '幹部' ? title : '',
     });
-
     renderList();
-    document.getElementById('sidInput').value = '';
-    document.getElementById('titleInput').value = '';
-    document.getElementById('roleSelect').value = '一般成員';
-    handleRoleChange();
+    sidInput.value = '';
     document.getElementById('searchResult').classList.remove('show');
-    document.getElementById('errMsg').style.display = 'none';
     currentStudent = null;
 }
 
-// ── 渲染清單 ──────────────────────────────────────────────────
+// ── 渲染清單（含內嵌編輯） ───────────────────────────────────
 function renderList() {
-    const container = document.getElementById('nomList');
-    const hint      = document.getElementById('emptyHint');
-    const hidden    = document.getElementById('hiddenFields');
+    const container  = document.getElementById('nomList');
+    const hidden     = document.getElementById('hiddenFields');
     const countBadge = document.getElementById('listCount');
-    const submitBtn = document.getElementById('submitBtn');
+    const submitBtn  = document.getElementById('submitBtn');
 
     countBadge.textContent = nominationList.length;
     submitBtn.disabled = nominationList.length === 0;
 
     if (nominationList.length === 0) {
-        container.innerHTML = '<div class="empty-hint" id="emptyHint"><i class="bi bi-inbox"></i> 尚未加入任何提名，請先查詢學號。</div>';
+        container.innerHTML = '<div class="empty-hint"><i class="bi bi-inbox"></i> 尚未加入任何提名，請先查詢學號。</div>';
         hidden.innerHTML = '';
         return;
     }
 
-    let listHtml = '';
-    let hiddenHtml = '';
-
+    let listHtml = '', hiddenHtml = '';
     nominationList.forEach((n, i) => {
-        const roleTag = n.role === '幹部'
-            ? `<span class="title-tag" style="background:#d1fae5;color:#065f46;">${escHtml(n.officer_title)}</span>`
-            : `<span class="title-tag" style="background:#f3f4f6;color:#374151;">一般成員</span>`;
-
         listHtml += `
         <div class="nom-item" id="nom-item-${i}">
             <div class="info">
-                <div class="name">${escHtml(n.name)}<span class="ms-2" style="color:#9ca3af;font-size:.82rem;">學號 ${escHtml(n.student_id)}</span></div>
-                <div class="meta">身分：${roleTag}</div>
+                <div class="name">${escHtml(n.name)}
+                    <span class="ms-2" style="color:#9ca3af;font-size:.82rem;">學號 ${escHtml(String(n.student_id))}</span>
+                </div>
+                <div class="meta d-flex align-items-center gap-2 mt-1 flex-wrap">
+                    <select class="form-select form-select-sm" style="width:110px;" onchange="updateRole(${i}, this.value)">
+                        <option value="一般成員" ${n.role === '一般成員' ? 'selected' : ''}>一般成員</option>
+                        <option value="幹部"     ${n.role === '幹部'     ? 'selected' : ''}>幹部</option>
+                    </select>
+                    <input type="text" class="form-control form-control-sm" style="width:160px;${n.role !== '幹部' ? 'display:none;' : ''}"
+                           id="title-input-${i}" placeholder="幹部職稱" maxlength="50"
+                           value="${escAttr(n.officer_title)}"
+                           oninput="updateTitle(${i}, this.value)">
+                </div>
             </div>
-            <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeFromList(${i})">
+            <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0" onclick="removeFromList(${i})">
                 <i class="bi bi-trash"></i>
             </button>
         </div>`;
 
         hiddenHtml += `
         <input type="hidden" name="nominations[${i}][user_id]" value="${n.user_id}">
-        <input type="hidden" name="nominations[${i}][officer_title]" value="${escAttr(n.officer_title)}">`;
+        <input type="hidden" id="hidden-title-${i}" name="nominations[${i}][officer_title]" value="${escAttr(n.officer_title)}">`;
     });
 
     container.innerHTML = listHtml;
     hidden.innerHTML = hiddenHtml;
 }
 
-function removeFromList(index) {
-    nominationList.splice(index, 1);
+function updateRole(i, role) {
+    nominationList[i].role = role;
+    const titleInput  = document.getElementById(`title-input-${i}`);
+    const hiddenTitle = document.getElementById(`hidden-title-${i}`);
+    if (role === '幹部') {
+        titleInput.style.display = '';
+        titleInput.focus();
+    } else {
+        titleInput.style.display = 'none';
+        titleInput.value = '';
+        nominationList[i].officer_title = '';
+        if (hiddenTitle) hiddenTitle.value = '';
+    }
+}
+
+function updateTitle(i, val) {
+    nominationList[i].officer_title = val;
+    const hiddenTitle = document.getElementById(`hidden-title-${i}`);
+    if (hiddenTitle) hiddenTitle.value = val;
+}
+
+function removeFromList(i) {
+    nominationList.splice(i, 1);
     renderList();
 }
 
 function validateSubmit() {
-    if (nominationList.length === 0) {
-        alert('請先加入至少一筆提名。');
-        return false;
+    for (let i = 0; i < nominationList.length; i++) {
+        if (nominationList[i].role === '幹部' && !nominationList[i].officer_title.trim()) {
+            alert(`第 ${i+1} 筆：幹部必須填寫職稱。`);
+            document.getElementById(`title-input-${i}`)?.focus();
+            return false;
+        }
     }
     return confirm(`確定送出 ${nominationList.length} 筆提名申請？`);
 }
-
-// ── 工具 ────────────────────────────────────────────────────
-function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function escAttr(str) {
-    return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-// Enter 觸發查詢
-document.getElementById('sidInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); lookupStudent(); }
-});
 </script>
 </body>
 </html>

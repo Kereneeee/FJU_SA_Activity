@@ -8,7 +8,6 @@ $current_page = $current_page ?? '';
     <nav class="nav flex-column">
         <a class="nav-link <?= $current_page === 'dashboard' ? 'active' : '' ?>" href="dashboard.php"><i class="bi bi-speedometer2"></i> 儀表板</a>
         <a class="nav-link <?= $current_page === 'review' ? 'active' : '' ?>" href="review.php"><i class="bi bi-clipboard-check"></i> 審核管理</a>
-        <a class="nav-link <?= $current_page === 'event_mgmt' ? 'active' : '' ?>" href="event_mgmt.php"><i class="bi bi-calendar-check"></i> 申請紀錄</a>
         <a class="nav-link <?= $current_page === 'equipment_mgmt' ? 'active' : '' ?>" href="equipment_mgmt.php"><i class="bi bi-tools"></i> 器材庫存管理</a>
         <a class="nav-link <?= $current_page === 'space_mgmt' ? 'active' : '' ?>" href="space_mgmt.php"><i class="bi bi-building"></i> 空間管理</a>
         <a class="nav-link <?= $current_page === 'field_coordination_mgmt' ? 'active' : '' ?>" href="field_coordination_mgmt.php"><i class="bi bi-people-fill"></i> 場協登記管理</a>

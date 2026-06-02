@@ -25,7 +25,7 @@ $buildings = [
             ['id' => 2, 'name' => 'A焯炤館－四音'],
             ['id' => 3, 'name' => 'A焯炤館－四康'],
             ['id' => 4, 'name' => 'A焯炤館－地下演講廳'],
-            ['id' => 5, 'name' => 'A焯炤館－旋律廣場－冷氣損壞'],
+            ['id' => 5, 'name' => 'A焯炤館－旋律廣場'],
             ['id' => 6, 'name' => 'A焯炤館－夢幻電影院'],
             ['id' => 7, 'name' => 'A焯炤館－鏡鏡屋'],
         ],
@@ -106,6 +106,32 @@ $timeSlots = [
     ['id' => '15_50_16_50', 'label' => '15:50 - 16:50'],
     ['id' => '17_00_18_00', 'label' => '17:00 - 18:00'],
 ];
+
+// 2. 撈取該月份內所有狀態為 'CHARGEABLE' 的特殊日期
+$special_dates = [];
+$sql_special = "SELECT title, date_type, start_date, end_date, is_full_day, start_time, end_time, status_type 
+                FROM special_dates 
+                WHERE status_type = 'CHARGEABLE'
+                  AND (
+                    (date_type = 'SINGLE' AND start_date BETWEEN ? AND ?)
+                    OR
+                    (date_type = 'RANGE' AND NOT (start_date > ? OR end_date < ?))
+                  )";
+
+$stmt_special = $conn->prepare($sql_special);
+if ($stmt_special) {
+    $pure_start = explode(' ', $month_start)[0];
+    $pure_end = explode(' ', $month_end)[0];
+    $stmt_special->bind_param('ssss', $pure_start, $pure_end, $pure_start, $pure_end);
+    $stmt_special->execute();
+    $result_special = $stmt_special->get_result();
+    while ($row = $result_special->fetch_assoc()) {
+        $special_dates[] = $row;
+    }
+    $stmt_special->close();
+}
+
+$special_dates_json = json_encode($special_dates);
 
 $bookings = [];
 $sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, e.status
@@ -288,6 +314,11 @@ if ($stmt) {
         .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
         .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
         .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+
+        .holiday-red {
+            color: #ff4d4f !important; /* 讓數字變紅 */
+            font-weight: bold;         /* 稍微加粗讓學生更明顯辨識 */
+        }
     </style>
 </head>
 <body>
@@ -357,13 +388,62 @@ if ($stmt) {
     </main>
 
     <script>
+        // 在 script 標籤最上方接收後端 JSON
+        const specialDates = <?php echo $special_dates_json; ?>;
         const buildings = <?php echo json_encode($buildings); ?>;
         const timeSlots = <?php echo json_encode($timeSlots); ?>;
         const bookings = <?php echo json_encode($bookings); ?>;
+        const initialYear = <?php echo $selected_year; ?>;
+        const initialMonth = <?php echo $selected_month - 1; ?>;
+
+        console.log("從資料庫接到的特殊日期：", specialDates);
 
         let selectedBuildingId = <?php echo $selectedBuildingId ? $selectedBuildingId : 'null'; ?>;
         let selectedRoomId = <?php echo $selectedRoomId ? $selectedRoomId : 'null'; ?>;
         let selectedDate = null;
+
+        /**
+         * 檢查特定日期是否屬於資料庫中的收費特殊日期
+         * @param {string} dateStr - 格式為 'YYYY-MM-DD'
+         * @returns {boolean}
+         */
+        function normalizeDateValue(dateStr) {
+            return dateStr.trim().split(' ')[0];
+        }
+
+        function isChargeableDate(dateStr) {
+            const currentStr = normalizeDateValue(dateStr);
+
+            for (let config of specialDates) {
+                if (config.date_type === 'SINGLE') {
+                    if (normalizeDateValue(config.start_date) === currentStr) {
+                        return true;
+                    }
+                } else if (config.date_type === 'RANGE') {
+                    const target = new Date(`${currentStr}T00:00:00`).getTime();
+                    const start = new Date(`${normalizeDateValue(config.start_date)}T00:00:00`).getTime();
+                    const end = new Date(`${normalizeDateValue(config.end_date)}T23:59:59`).getTime();
+
+                    if (target >= start && target <= end) {
+                        if (parseInt(config.is_full_day, 10) === 0) {
+                            continue;
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function buildCalendarUrl(roomId, month) {
+            const monthValue = parseInt(month, 10);
+            const monthNumber = monthValue + 1;
+            let url = `calendar.php?year=${initialYear}&month=${monthNumber}`;
+            if (roomId !== null) {
+                url += `&space_id=${roomId}`;
+            }
+            return url;
+        }
 
         function initPage() {
             const buildingSelect = document.getElementById('buildingSelect');
@@ -371,16 +451,7 @@ if ($stmt) {
             const monthSelector = document.getElementById('monthSelector');
             const filterRow = document.querySelector('.filter-row');
             const searchButton = document.getElementById('searchButton');
-
-            if (selectedRoomId !== null) {
-                filterRow.style.display = 'none';
-                searchButton.style.display = 'none';
-                renderCalendar();
-                return;
-            }
-
-            filterRow.style.display = 'grid';
-            searchButton.style.display = 'block';
+            const hasDirectRoom = selectedRoomId !== null;
 
             buildings.forEach(building => {
                 const option = document.createElement('option');
@@ -389,10 +460,35 @@ if ($stmt) {
                 buildingSelect.appendChild(option);
             });
 
-            fillRoomOptions(buildings[0].id);
-            buildingSelect.value = buildings[0].id;
-            selectedBuildingId = buildings[0].id;
-            selectedRoomId = buildings[0].rooms[0].id;
+            const initialBuilding = buildings.find(b => b.rooms.some(r => r.id === selectedRoomId)) || buildings[0];
+            fillRoomOptions(initialBuilding.id);
+            buildingSelect.value = initialBuilding.id;
+            selectedBuildingId = initialBuilding.id;
+            if (!hasDirectRoom) {
+                selectedRoomId = initialBuilding.rooms[0].id;
+            }
+            roomSelect.value = selectedRoomId;
+
+            const today = new Date();
+            for (let i = 0; i < 12; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                const date = new Date(initialYear, i, 1);
+                option.textContent = `${date.getFullYear()}年${i + 1}月`;
+                monthSelector.appendChild(option);
+            }
+            monthSelector.value = String(initialMonth);
+            if (!monthSelector.value || monthSelector.selectedIndex === -1) {
+                monthSelector.value = String(today.getMonth());
+            }
+
+            if (hasDirectRoom) {
+                filterRow.style.display = 'none';
+                searchButton.style.display = 'none';
+            } else {
+                filterRow.style.display = 'grid';
+                searchButton.style.display = 'block';
+            }
 
             buildingSelect.addEventListener('change', () => {
                 selectedBuildingId = buildingSelect.value ? parseInt(buildingSelect.value) : null;
@@ -416,29 +512,23 @@ if ($stmt) {
 
             monthSelector.addEventListener('change', () => {
                 if (selectedRoomId !== null) {
-                    renderCalendar();
+                    window.location.href = buildCalendarUrl(selectedRoomId, monthSelector.value);
                 }
             });
-
-            const today = new Date();
-            for (let i = 0; i < 12; i++) {
-                const option = document.createElement('option');
-                option.value = i;
-                const date = new Date(today.getFullYear(), i, 1);
-                option.textContent = `${date.getFullYear()}年${i + 1}月`;
-                if (i === today.getMonth()) option.selected = true;
-                monthSelector.appendChild(option);
-            }
 
             document.getElementById('searchButton').addEventListener('click', () => {
                 selectedRoomId = roomSelect.value ? parseInt(roomSelect.value) : null;
                 selectedBuildingId = buildingSelect.value ? parseInt(buildingSelect.value) : null;
                 if (selectedRoomId !== null) {
-                    renderCalendar();
+                    window.location.href = buildCalendarUrl(selectedRoomId, monthSelector.value);
                 }
             });
 
-            hideCalendar();
+            if (selectedRoomId !== null) {
+                renderCalendar();
+            } else {
+                hideCalendar();
+            }
         }
 
         function fillRoomOptions(buildingId) {
@@ -480,8 +570,8 @@ if ($stmt) {
             document.getElementById('slotList').innerHTML = '';
             document.getElementById('bookingDetails').innerHTML = '';
 
-            const year = new Date().getFullYear();
-            const month = parseInt(monthSelector.value);
+            const year = initialYear;
+            const month = parseInt(monthSelector.value, 10);
             const firstDay = new Date(year, month, 1);
             const startDay = new Date(firstDay);
             startDay.setDate(startDay.getDate() - firstDay.getDay());
@@ -499,6 +589,14 @@ if ($stmt) {
                 dayNumber.className = 'day-number';
                 dayNumber.textContent = date.getDate();
                 cell.appendChild(dayNumber);
+
+                // 2. 在這裡加入紅字核心邏輯！
+                const dayOfWeek = date.getDay(); // 0 是週日，6 是週六
+                if (dayOfWeek === 0 || dayOfWeek === 6 || isChargeableDate(dateStr)) {
+                    dayNumber.style.color = '#ff4d4f'; // 符合條件就把數字變紅
+                }
+
+                cell.appendChild(dayNumber); // 讓變紅後的數字塞進格子
 
                 const stats = document.createElement('div');
                 stats.className = 'day-status';
