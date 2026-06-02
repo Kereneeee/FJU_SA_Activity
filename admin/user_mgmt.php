@@ -114,14 +114,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $cm_row = $cm_chk->get_result()->fetch_assoc();
             $cm_chk->close();
 
+            $is_officer    = $nom['officer_title'] !== '' ? 1 : 0;
+            $officer_title = $nom['officer_title'];
+
             if ($cm_row) {
-                $up = $conn->prepare("UPDATE club_members SET is_officer=1, officer_title=?, officer_confirmation_date=CURDATE() WHERE membership_id=?");
-                $up->bind_param("si", $nom['officer_title'], $cm_row['membership_id']);
+                $up = $conn->prepare("UPDATE club_members SET is_officer=?, officer_title=?, officer_confirmation_date=CURDATE() WHERE membership_id=?");
+                $up->bind_param("isi", $is_officer, $officer_title, $cm_row['membership_id']);
                 $up->execute();
                 $up->close();
             } else {
-                $ins = $conn->prepare("INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date, officer_confirmation_date) VALUES (?,?,1,?,CURDATE(),CURDATE())");
-                $ins->bind_param("iss", $nom['nominated_user_id'], $nom['club_id'], $nom['officer_title']);
+                $ins = $conn->prepare("INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date, officer_confirmation_date) VALUES (?,?,?,?,CURDATE(),CURDATE())");
+                $ins->bind_param("isis", $nom['nominated_user_id'], $nom['club_id'], $is_officer, $officer_title);
                 $ins->execute();
                 $ins->close();
             }
