@@ -319,8 +319,7 @@ if ($event_id === 0) {
         .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
         .top-navbar .breadcrumb-item a:hover { opacity: 1; }
         .top-navbar .breadcrumb-item.active { color: #6b7280; }
-        .top-navbar .user-card { display: flex; align-items: center; gap: 0.85rem; }
-        .user-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: white; display: grid; place-items: center; font-weight: 700; }
+        .user-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--primary); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; cursor: pointer; flex-shrink: 0; }
         .content-wrapper { padding: 1.5rem 2rem 2rem; }
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; font-weight: 700; color: var(--primary); margin-bottom: 1rem; }
@@ -438,12 +437,11 @@ if ($event_id === 0) {
                 </ol>
                 <h4 class="mt-2 mb-0">審核管理</h4>
             </div>
-            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
-                <div class="user-avatar"><?= htmlspecialchars(substr($user_name, 0, 1)) ?></div>
-                <div>
-                    <div><?= htmlspecialchars($user_name) ?></div>
-                    <small class="text-muted">管理員</small>
+            <div class="d-flex align-items-center gap-2">
+                <div class="user-avatar" onclick="location.href='profile.php'">
+                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
                 </div>
+                <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
         </header>
 
