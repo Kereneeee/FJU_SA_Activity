@@ -172,20 +172,19 @@ if ($noti_result) {
         .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
         .top-navbar .breadcrumb-item a:hover { opacity: 1; }
         .top-navbar .breadcrumb-item.active { color: #6b7280; }
-        .top-navbar .user-card {
-            display: flex;
-            align-items: center;
-            gap: 0.85rem;
-        }
         .user-avatar {
-            width: 44px;
-            height: 44px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
             background: var(--primary);
             color: white;
-            display: grid;
-            place-items: center;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            flex-shrink: 0;
         }
         .dashboard-grid {
             padding: 1.5rem 2rem 2rem;
@@ -391,12 +390,11 @@ if ($noti_result) {
                 </ol>
                 <h4 class="mt-2 mb-0">系統管理中心</h4>
             </div>
-            <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
-                <div class="user-avatar"><?php echo htmlspecialchars(substr($user_name, 0, 1)); ?></div>
-                <div>
-                    <div class="fw-bold"><?php echo htmlspecialchars($user_name); ?></div>
-                    <small class="text-muted">管理員</small>
+            <div class="d-flex align-items-center gap-2">
+                <div class="user-avatar" onclick="location.href='profile.php'">
+                    <?php echo htmlspecialchars(substr($user_name, 0, 1)); ?>
                 </div>
+                <small class="text-muted"><?php echo htmlspecialchars($user_name); ?></small>
             </div>
         </header>
 

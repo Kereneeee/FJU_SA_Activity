@@ -14,6 +14,9 @@ $current_page = 'user_mgmt';
 $message      = '';
 $message_type = '';
 
+// 民國學年度：西元年 - 1911
+$current_academic_year = intval(date('Y')) - 1911;
+
 // ── 身分對應函式 ──────────────────────────────────────────────
 function role_to_fields(string $role, string $custom_title): array {
     switch ($role) {
@@ -299,6 +302,26 @@ if ($club_id !== '') {
         "SELECT user_id, name, email, student_id FROM users WHERE role='student' $exclude ORDER BY name"
     );
     $all_users  = $res_users ? $res_users->fetch_all(MYSQLI_ASSOC) : [];
+
+    // 歷年幹部名單（依確認日期的民國年份分組）
+    $officer_history = [];
+    if ($club_info) {
+        $res_hist = $conn->prepare(
+            "SELECT u.name AS user_name, u.student_id, cm.officer_title, cm.officer_confirmation_date,
+                    (YEAR(COALESCE(cm.officer_confirmation_date, CURDATE())) - 1911) AS acad_year
+             FROM club_members cm
+             JOIN users u ON cm.user_id = u.user_id
+             WHERE cm.club_id = ? AND cm.is_officer = 1
+             ORDER BY acad_year DESC, cm.officer_title ASC"
+        );
+        $res_hist->bind_param("s", $club_id);
+        $res_hist->execute();
+        foreach ($res_hist->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+            $officer_history[$row['acad_year']][] = $row;
+        }
+        $res_hist->close();
+        krsort($officer_history);
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -487,10 +510,13 @@ if ($club_id !== '') {
                 <?= $club_info ? htmlspecialchars($club_info['club_name']) . ' 幹部管理' : '身分權限管理' ?>
             </h4>
         </div>
-        <div class="d-flex align-items-center gap-2">
-            <div class="user-avatar-sm" style="width:38px;height:38px;font-size:1rem;cursor:pointer;" onclick="location.href='profile.php'">
-                <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
+        <div class="d-flex align-items-center gap-3">
+            <div style="display:flex;align-items:center;gap:.4rem;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:999px;padding:.3rem .9rem;">
+                <i class="bi bi-calendar-event" style="color:var(--primary);font-size:.9rem;"></i>
+                <span style="font-size:.82rem;font-weight:700;color:var(--primary);">民國 <?= $current_academic_year ?> 學年度</span>
+                <span style="font-size:.75rem;color:#6b7280;"><?= (intval(date('m')) >= 8) ? '上學期' : '下學期' ?></span>
             </div>
+            <div class="user-avatar-sm" style="width:38px;height:38px;cursor:pointer;" onclick="location.href='profile.php'"></div>
             <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
         </div>
     </header>
@@ -810,6 +836,73 @@ if ($club_id !== '') {
                 </div>
             </div>
         </div>
+
+        <!-- 歷年幹部名單 -->
+        <?php if (!empty($officer_history)): ?>
+        <div class="panel">
+            <div class="panel-header">
+                <span class="left"><i class="bi bi-clock-history"></i> 歷年幹部名單</span>
+                <small style="color:#6b7280;font-weight:400;">依幹部確認日期自動依學年整理</small>
+            </div>
+            <div class="panel-body" style="padding:0;">
+                <div class="accordion accordion-flush" id="officerHistAcc">
+                <?php $first = true; foreach ($officer_history as $year => $officers): ?>
+                <div class="accordion-item" style="border:none;border-bottom:1px solid #f0f0f0;">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button <?= $first ? '' : 'collapsed' ?> fw-semibold"
+                                type="button" data-bs-toggle="collapse"
+                                data-bs-target="#hist-yr-<?= $year ?>"
+                                style="font-size:.9rem;background:<?= $first ? '#f0f7ff' : 'white' ?>;">
+                            <span>民國 <strong><?= $year ?></strong> 學年度</span>
+                            <?php if ($year == $current_academic_year): ?>
+                            <span style="background:var(--primary);color:white;border-radius:999px;padding:.1rem .6rem;font-size:.72rem;margin-left:.6rem;font-weight:700;">本學年</span>
+                            <?php endif; ?>
+                            <span style="background:#f3f4f6;color:#6b7280;border-radius:999px;padding:.1rem .55rem;font-size:.72rem;margin-left:.5rem;"><?= count($officers) ?> 位幹部</span>
+                        </button>
+                    </h2>
+                    <div id="hist-yr-<?= $year ?>" class="accordion-collapse collapse <?= $first ? 'show' : '' ?>">
+                        <table class="mem-table">
+                            <thead>
+                                <tr>
+                                    <th>姓名</th>
+                                    <th>學號</th>
+                                    <th>職稱</th>
+                                    <th>確認日期</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($officers as $o): ?>
+                            <?php
+                            $ot = $o['officer_title'] ?? '';
+                            if ($ot === '社長')      { $bc='role-president'; $ic='bi-star-fill'; }
+                            elseif ($ot === '副社長') { $bc='role-vp';        $ic='bi-star-half'; }
+                            else                     { $bc='role-officer';   $ic='bi-shield-check'; }
+                            ?>
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="user-avatar-sm"><?= htmlspecialchars(mb_substr($o['user_name'], 0, 1)) ?></div>
+                                        <?= htmlspecialchars($o['user_name']) ?>
+                                    </div>
+                                </td>
+                                <td style="color:#6b7280;"><?= htmlspecialchars($o['student_id']) ?></td>
+                                <td>
+                                    <span class="role-badge <?= $bc ?>">
+                                        <i class="bi <?= $ic ?>"></i> <?= htmlspecialchars($ot ?: '幹部') ?>
+                                    </span>
+                                </td>
+                                <td style="color:#6b7280;font-size:.85rem;"><?= htmlspecialchars($o['officer_confirmation_date'] ?? '—') ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php $first = false; endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- 新增成員 -->
         <div class="panel" style="overflow:visible;">
