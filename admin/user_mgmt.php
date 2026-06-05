@@ -448,6 +448,24 @@ if ($club_id !== '') {
             border-top: 1px solid #bfdbfe;
         }
         .edit-nom-form.show { display: block; }
+
+        /* ── 學號搜尋下拉 ── */
+        .student-dropdown {
+            display:none; position:absolute; top:calc(100% + 2px); left:0; right:0; z-index:900;
+            background:white; border:1px solid #d1d5db; border-radius:8px;
+            box-shadow:0 6px 20px rgba(0,0,0,.1); max-height:210px; overflow-y:auto;
+        }
+        .stu-drop-item {
+            padding:.45rem 1rem; cursor:pointer; font-size:.85rem;
+            border-bottom:1px solid #f0f0f0; display:flex; align-items:center; gap:.6rem;
+        }
+        .stu-drop-item:last-child { border-bottom:none; }
+        .stu-drop-item:hover { background:#f0f7ff; }
+        .student-selected-info {
+            display:none; margin-top:.4rem; font-size:.82rem; color:#374151;
+            background:#f0f7ff; border-radius:6px; padding:.3rem .75rem;
+            border:1px solid #bfdbfe;
+        }
     </style>
 </head>
 <body>
@@ -794,29 +812,29 @@ if ($club_id !== '') {
         </div>
 
         <!-- 新增成員 -->
-        <div class="panel">
-            <div class="panel-header">
+        <div class="panel" style="overflow:visible;">
+            <div class="panel-header" style="border-radius:18px 18px 0 0;">
                 <span class="left"><i class="bi bi-person-plus"></i> 新增成員</span>
             </div>
             <div class="panel-body">
                 <?php if (empty($all_users)): ?>
                     <p class="text-muted mb-0" style="font-size:.9rem;">目前所有學生已全數加入此社團。</p>
                 <?php else: ?>
-                <form method="POST">
+                <form method="POST" onsubmit="return validateAddForm()">
                     <input type="hidden" name="action" value="add_membership">
                     <input type="hidden" name="club_id_add" value="<?= htmlspecialchars($club_id) ?>">
                     <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
+                    <input type="hidden" name="target_user_id" id="add_target_uid">
                     <div class="row g-3 align-items-end">
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:.85rem;">選擇學生</label>
-                            <select name="target_user_id" class="form-select form-select-sm" required>
-                                <option value="">— 選擇學生 —</option>
-                                <?php foreach ($all_users as $u): ?>
-                                <option value="<?= $u['user_id'] ?>">
-                                    <?= htmlspecialchars($u['name']) ?>（<?= htmlspecialchars($u['student_id']) ?>）
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
+                            <label class="form-label fw-semibold" style="font-size:.85rem;">輸入學號搜尋</label>
+                            <div style="position:relative;">
+                                <input type="text" id="add_sid_input" class="form-control form-control-sm"
+                                       placeholder="輸入學號前幾碼，例：410…" autocomplete="off"
+                                       oninput="filterStudents(this.value)">
+                                <div id="add_sid_dropdown" class="student-dropdown"></div>
+                            </div>
+                            <div id="add_selected_student" class="student-selected-info"></div>
                         </div>
                         <div class="col-md-2">
                             <label class="form-label fw-semibold" style="font-size:.85rem;">身分</label>
@@ -896,6 +914,84 @@ function handleRoleChange(sel) {
         titleInput.style.color = '#6b7280';
         titleInput.value = '';
     }
+}
+
+// ── 學號搜尋（新增成員） ──────────────────────────────────────
+const ADD_USERS = <?= ($club_info && !empty($all_users))
+    ? json_encode(array_values($all_users), JSON_UNESCAPED_UNICODE)
+    : '[]' ?>;
+
+function filterStudents(q) {
+    const dropdown  = document.getElementById('add_sid_dropdown');
+    const hiddenUid = document.getElementById('add_target_uid');
+    const selDiv    = document.getElementById('add_selected_student');
+
+    hiddenUid.value      = '';
+    selDiv.style.display = 'none';
+    selDiv.innerHTML     = '';
+
+    q = String(q).trim();
+    if (!q) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
+
+    const matches = ADD_USERS.filter(u => String(u.student_id).startsWith(q));
+
+    if (!matches.length) {
+        dropdown.innerHTML = '<div style="padding:.5rem 1rem;color:#9ca3af;font-size:.85rem;">查無符合學號</div>';
+    } else {
+        dropdown.innerHTML = matches.slice(0, 30).map(u =>
+            `<div class="stu-drop-item"
+                  data-uid="${u.user_id}"
+                  data-sid="${escAttr(String(u.student_id))}"
+                  data-name="${escAttr(u.name)}"
+                  onclick="selectAddStudent(this)">
+                <span style="font-weight:700;color:var(--primary);font-size:.88rem;">${escHtml(String(u.student_id))}</span>
+                <span style="color:#374151;">${escHtml(u.name)}</span>
+            </div>`
+        ).join('');
+    }
+    dropdown.style.display = 'block';
+}
+
+function selectAddStudent(el) {
+    const uid  = el.dataset.uid;
+    const sid  = el.dataset.sid;
+    const name = el.dataset.name;
+    document.getElementById('add_target_uid').value        = uid;
+    document.getElementById('add_sid_input').value         = sid;
+    document.getElementById('add_sid_dropdown').style.display = 'none';
+    const selDiv = document.getElementById('add_selected_student');
+    selDiv.innerHTML = `<i class="bi bi-person-check" style="color:var(--primary);"></i> 已選：<strong>${escHtml(name)}</strong>（${escHtml(sid)}）<a href="#" onclick="clearAddStudent();return false;" style="margin-left:.5rem;color:#9ca3af;font-size:.8rem;">✕ 清除</a>`;
+    selDiv.style.display = 'block';
+}
+
+function clearAddStudent() {
+    document.getElementById('add_target_uid').value        = '';
+    document.getElementById('add_sid_input').value         = '';
+    document.getElementById('add_selected_student').style.display = 'none';
+    document.getElementById('add_sid_dropdown').style.display    = 'none';
+}
+
+function validateAddForm() {
+    if (!document.getElementById('add_target_uid').value) {
+        alert('請先搜尋並選取一位學生。');
+        document.getElementById('add_sid_input').focus();
+        return false;
+    }
+    return true;
+}
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('#add_sid_input') && !e.target.closest('#add_sid_dropdown')) {
+        const dd = document.getElementById('add_sid_dropdown');
+        if (dd) dd.style.display = 'none';
+    }
+});
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+    return String(s).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
 }
 
 // 編輯成員 Modal：角色切換時自動帶入職稱
