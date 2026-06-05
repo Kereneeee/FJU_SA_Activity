@@ -39,6 +39,9 @@ $appRoot = '/' . basename(dirname(__DIR__));
         <a class="nav-link <?php echo ($current_page === 'field_coord') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/student/field_coord.php', ENT_QUOTES, 'UTF-8') ?>">
             <i class="bi bi-people"></i> 場地協調
         </a>
+        <a class="nav-link <?php echo ($current_page === 'field_coord_records') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/student/field_coordination_records.php', ENT_QUOTES, 'UTF-8') ?>">
+            <i class="bi bi-clock-history"></i> 場協登記記錄
+        </a>
         <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
         <?php $baseHref = rtrim($scriptDir, '/\\'); ?>
         <a class="nav-link <?php echo ($current_page === 'field_coordination_mgmt') ? 'active' : ''; ?>" href="<?= htmlspecialchars($appRoot . '/admin/field_coordination_mgmt.php', ENT_QUOTES, 'UTF-8') ?>">

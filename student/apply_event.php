@@ -39,7 +39,7 @@ if ($user_id) {
 }
 
 // 場地清單
-$sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE status = 'available' ORDER BY space_name";
+$sql_spaces = "SELECT space_id, space_name, capacity FROM spaces WHERE space_status = 'available' ORDER BY space_id";
 $result_spaces = $conn->query($sql_spaces);
 $venues = $result_spaces ? $result_spaces->fetch_all(MYSQLI_ASSOC) : [];
 
@@ -182,24 +182,54 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
 
             if (!$user_id) throw new Exception("登入逾時，請重新登入。");
 
+            // 判斷是否在場協大會前（登記期間 + 登記結束到大會之間）
+            $before_meeting   = $fc_manager ? $fc_manager->isBeforeCoordinationMeeting() : false;
+            $fc_conflict_warn = false;
+
             // 校內活動：逐場次衝突檢查
             if ($event_type === '校內') {
                 foreach ($sessions as $i => $sess) {
                     $vid = intval($sess['venue_id']);
                     if ($vid <= 0) continue;
-                    $s = $sess['date']                        . ' ' . $sess['start_time'] . ':00';
-                    $e = ($sess['end_date']??$sess['date'])   . ' ' . $sess['end_time']   . ':00';
-                    $stmt_c = $conn->prepare(
-                        "SELECT e.club_name FROM reservations r JOIN events e ON r.event_id=e.event_id
-                         WHERE r.space_id=? AND NOT(r.end_time<=? OR r.start_time>=?) AND e.club_name!=? LIMIT 1"
-                    );
-                    $stmt_c->bind_param("isss", $vid, $s, $e, $club_name);
-                    $stmt_c->execute();
-                    if ($stmt_c->get_result()->num_rows > 0) {
-                        $n = $i + 1;
-                        throw new Exception("場次{$n}：該時段場地已被其他社團預約，請選擇其他時間或場地。");
+                    $s = $sess['date']                      . ' ' . $sess['start_time'] . ':00';
+                    $e = ($sess['end_date']??$sess['date']) . ' ' . $sess['end_time']   . ':00';
+                    $n = $i + 1;
+
+                    if ($before_meeting) {
+                        // 場協大會前：確認的預約仍需阻擋
+                        $stmt_c = $conn->prepare(
+                            "SELECT ev.club_name FROM reservations r JOIN events ev ON r.event_id=ev.event_id
+                             WHERE r.space_id=? AND NOT(r.end_time<=? OR r.start_time>=?)
+                             AND ev.club_name!=? AND r.is_field_coordination_preliminary=0 LIMIT 1"
+                        );
+                        $stmt_c->bind_param("isss", $vid, $s, $e, $club_name);
+                        $stmt_c->execute();
+                        if ($stmt_c->get_result()->num_rows > 0)
+                            throw new Exception("場次{$n}：該時段場地已被其他社團預約，請選擇其他時間或場地。");
+                        $stmt_c->close();
+
+                        // 場協暫定預約：允許但記錄警告
+                        $stmt_fc = $conn->prepare(
+                            "SELECT ev.club_name FROM reservations r JOIN events ev ON r.event_id=ev.event_id
+                             WHERE r.space_id=? AND NOT(r.end_time<=? OR r.start_time>=?)
+                             AND ev.club_name!=? AND r.is_field_coordination_preliminary=1 LIMIT 1"
+                        );
+                        $stmt_fc->bind_param("isss", $vid, $s, $e, $club_name);
+                        $stmt_fc->execute();
+                        if ($stmt_fc->get_result()->num_rows > 0) $fc_conflict_warn = true;
+                        $stmt_fc->close();
+                    } else {
+                        // 場協大會後：嚴格阻擋所有衝突
+                        $stmt_c = $conn->prepare(
+                            "SELECT ev.club_name FROM reservations r JOIN events ev ON r.event_id=ev.event_id
+                             WHERE r.space_id=? AND NOT(r.end_time<=? OR r.start_time>=?) AND ev.club_name!=? LIMIT 1"
+                        );
+                        $stmt_c->bind_param("isss", $vid, $s, $e, $club_name);
+                        $stmt_c->execute();
+                        if ($stmt_c->get_result()->num_rows > 0)
+                            throw new Exception("場次{$n}：該時段場地已被其他社團預約，請選擇其他時間或場地。");
+                        $stmt_c->close();
                     }
-                    $stmt_c->close();
                 }
             }
 
@@ -259,7 +289,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
 
             // ── PRG：立即將 302 送給瀏覽器，SMTP 在背景執行 ────────────
             $_SESSION['flash_message']      = "✅ 活動申請已提交成功！申請編號：#" . $event_id
-                . "，共 " . count($sessions) . " 個場次。我們將在3個工作天內審核。";
+                . "，共 " . count($sessions) . " 個場次。我們將在3個工作天內審核。"
+                . ($fc_conflict_warn ? " ⚠️ 注意：部分場次與場協暫定預約時間重疊，若場協大會後確認衝突，請重新選擇時間或場地。" : "");
             $_SESSION['flash_message_type'] = "success";
             $_SESSION['form_submit_token']  = bin2hex(random_bytes(16)); // 為下次申請預先生成
             session_write_close();   // 寫入 session 並釋放鎖
@@ -476,68 +507,65 @@ foreach ($venues as $v) {
                             <input type="text" name="event_name" class="form-control" id="event_name" value="<?= $fv['event_name'] ?>" required placeholder="活動名稱">
                         </div>
                     </div>
+                    <input type="hidden" name="event_type" value="校內">
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">活動負責人 <span class="text-danger">*</span></label>
                             <input type="text" name="responsible_person" class="form-control" value="<?= $fv['responsible_person'] ?>" required placeholder="例：社長 王小明">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold">活動類型 <span class="text-danger">*</span></label>
-                            <div class="type-radio-group">
-                                <label class="type-radio-label">
-                                    <input type="radio" name="event_type" value="校內" id="type_indoor" <?= $fv['event_type']==='校內'?'checked':'' ?> onchange="toggleEventType()">
-                                    <i class="bi bi-building"></i> 校內活動
+                            <label class="form-label fw-semibold">活動類型</label>
+                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                                <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                                    <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                                    一般活動
                                 </label>
-                                <label class="type-radio-label">
-                                    <input type="radio" name="event_type" value="校外" id="type_outdoor" <?= $fv['event_type']==='校外'?'checked':'' ?> onchange="toggleEventType()">
-                                    <i class="bi bi-tree"></i> 校外活動
+                                <label id="lbl_scale_large" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                                    <input type="radio" name="activity_scale" value="大型活動" id="scale_large" <?= ($fv['activity_scale']??'')=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                                    大型活動
+                                </label>
+                                <label id="lbl_alcohol" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
+                                    <input type="checkbox" name="activity_flags[]" value="含酒精活動" id="flag_alcohol" <?= in_array('含酒精活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                                    🍺 含酒精
+                                </label>
+                                <label id="lbl_fire" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
+                                    <input type="checkbox" name="activity_flags[]" value="使用火源活動" id="flag_fire" <?= in_array('使用火源活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                                    🔥 火源
                                 </label>
                             </div>
+                            <div id="deadline_reminder" class="notice-box mt-2" style="padding:0.55rem 0.85rem; font-size:0.86rem; margin-bottom:0;">
+                                <i class="bi bi-clock" style="font-size:0.95rem; flex-shrink:0;"></i>
+                                <span id="deadline_text"></span>
+                            </div>
+                            <div id="flag_warning" class="alert alert-warning mt-2" style="display:none; border-radius:8px; font-size:0.85rem; margin-bottom:0; padding:0.55rem 0.85rem;"></div>
                         </div>
-                    </div>
-                    <!-- 校外活動地點 -->
-                    <div id="location_section" class="mb-3" style="display:<?= $fv['event_type']==='校外'?'block':'none' ?>;">
-                        <label class="form-label fw-semibold">活動地點 <span class="text-danger">*</span> <small class="text-muted fw-normal">（校外活動必填）</small></label>
-                        <input type="text" name="activity_location" id="activity_location" class="form-control" value="<?= $fv['activity_location'] ?>" placeholder="例：陽明山、福隆、清境農場">
-                    </div>
-                    <div class="mb-0">
-                        <label class="form-label fw-semibold">活動說明</label>
-                        <textarea name="description" class="form-control" rows="3" placeholder="請簡述活動內容及特別需求..."><?= $fv['description'] ?></textarea>
                     </div>
                 </div>
             </div>
 
-            <!-- ② 送件須知 -->
+            <!-- ② 企畫書上傳 -->
             <div class="card">
-                <h3><i class="bi bi-flag"></i> 送件須知</h3>
-                <div class="form-section" style="padding:0.9rem 1.25rem;">
-                    <!-- 一列緊湊選擇 -->
-                    <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.65rem;">
-                        <span style="font-size:0.83rem; color:#6b7280; white-space:nowrap;">活動規模：</span>
-                        <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
-                            <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
-                            一般活動
-                        </label>
-                        <label id="lbl_scale_large" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
-                            <input type="radio" name="activity_scale" value="大型活動" id="scale_large" <?= ($fv['activity_scale']??'')=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
-                            大型活動
-                        </label>
-                        <span style="font-size:0.83rem; color:#6b7280; margin-left:0.4rem; white-space:nowrap;">特殊性質：</span>
-                        <label id="lbl_alcohol" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
-                            <input type="checkbox" name="activity_flags[]" value="含酒精活動" id="flag_alcohol" <?= in_array('含酒精活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
-                            🍺 含酒精
-                        </label>
-                        <label id="lbl_fire" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
-                            <input type="checkbox" name="activity_flags[]" value="使用火源活動" id="flag_fire" <?= in_array('使用火源活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
-                            🔥 火源
-                        </label>
+                <h3><i class="bi bi-file-earmark-arrow-up"></i> 企畫書上傳</h3>
+                <div class="form-section">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <h5 class="fw-bold mb-1"><i class="bi bi-download me-1"></i>紙本三單下載</h5>
+                            <p class="text-muted small mb-3">請下載後填寫並親自繳交至課指組（紙本流程）。</p>
+                            <div class="d-flex flex-column gap-2">
+                                <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載活動申請表（黃單）</a>
+                                <a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載場地核定登記表</a>
+                                <a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載器材借用申請表</a>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5 class="fw-bold mb-1"><i class="bi bi-upload me-1"></i>活動企劃書上傳</h5>
+                            <p class="text-muted small mb-3">可上傳活動企劃書供審核參考（選填，PDF / Word）。</p>
+                            <input type="file" name="proposal_document" class="form-control" accept=".pdf,.doc,.docx">
+                            <div class="alert alert-info mt-2" style="border-radius:8px; font-size:0.85rem; margin-bottom:0;">
+                                <i class="bi bi-info-circle me-1"></i>三單仍需紙本繳交，<strong>無須電子上傳</strong>。
+                            </div>
+                        </div>
                     </div>
-                    <!-- 動態小提示 -->
-                    <div id="deadline_reminder" class="notice-box" style="padding:0.55rem 0.85rem; font-size:0.86rem; margin-bottom:0;">
-                        <i class="bi bi-clock" style="font-size:0.95rem; flex-shrink:0;"></i>
-                        <span id="deadline_text"></span>
-                    </div>
-                    <div id="flag_warning" class="alert alert-warning mt-2" style="display:none; border-radius:8px; font-size:0.85rem; margin-bottom:0; padding:0.55rem 0.85rem;"></div>
                 </div>
             </div>
 
@@ -565,7 +593,19 @@ foreach ($venues as $v) {
                                 </div>
                                 <div class="session-field">
                                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
-                                    <input type="time" name="sessions[<?= $si ?>][start_time]" class="form-control" min="08:30" max="21:30" value="<?= htmlspecialchars($sess['start_time']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                    <?php $sv=$sess['start_time']??''; $sh=$sv?substr($sv,0,2):''; $sm=$sv?substr($sv,3,2):''; ?>
+                                    <div class="time-selects d-flex align-items-center gap-1">
+                                        <select class="form-select time-hour" style="width:auto">
+                                            <option value="">時</option>
+                                            <?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);echo "<option value=\"$hh\"".($sh===$hh?' selected':'').">$hh</option>";}?>
+                                        </select>
+                                        <span style="padding:0 4px;font-weight:600">:</span>
+                                        <select class="form-select time-minute" style="width:auto">
+                                            <option value="">分</option>
+                                            <?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);echo "<option value=\"$mm\"".($sm===$mm?' selected':'').">$mm</option>";}?>
+                                        </select>
+                                    </div>
+                                    <input type="hidden" name="sessions[<?= $si ?>][start_time]" class="time-value" value="<?= htmlspecialchars($sv,ENT_QUOTES,'UTF-8') ?>">
                                 </div>
                                 <div class="session-field">
                                     <label>結束日期 *</label>
@@ -573,7 +613,19 @@ foreach ($venues as $v) {
                                 </div>
                                 <div class="session-field">
                                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
-                                    <input type="time" name="sessions[<?= $si ?>][end_time]" class="form-control" min="08:30" max="21:30" value="<?= htmlspecialchars($sess['end_time']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                    <?php $ev=$sess['end_time']??''; $eh=$ev?substr($ev,0,2):''; $em=$ev?substr($ev,3,2):''; ?>
+                                    <div class="time-selects d-flex align-items-center gap-1">
+                                        <select class="form-select time-hour" style="width:auto">
+                                            <option value="">時</option>
+                                            <?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);echo "<option value=\"$hh\"".($eh===$hh?' selected':'').">$hh</option>";}?>
+                                        </select>
+                                        <span style="padding:0 4px;font-weight:600">:</span>
+                                        <select class="form-select time-minute" style="width:auto">
+                                            <option value="">分</option>
+                                            <?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);echo "<option value=\"$mm\"".($em===$mm?' selected':'').">$mm</option>";}?>
+                                        </select>
+                                    </div>
+                                    <input type="hidden" name="sessions[<?= $si ?>][end_time]" class="time-value" value="<?= htmlspecialchars($ev,ENT_QUOTES,'UTF-8') ?>">
                                 </div>
                                 <div class="session-field">
                                     <label>場地 <?= $fv['event_type']==='校內'?'*':'（選填）' ?></label>
@@ -658,32 +710,6 @@ foreach ($venues as $v) {
                 </div>
             </div>
 
-            <!-- ⑤ 文件上傳 -->
-            <div class="card">
-                <h3><i class="bi bi-file-earmark-arrow-up"></i> 文件</h3>
-                <div class="form-section">
-                    <div class="row g-4">
-                        <div class="col-md-6">
-                            <h5 class="fw-bold mb-1"><i class="bi bi-download me-1"></i>紙本三單下載</h5>
-                            <p class="text-muted small mb-3">請下載後填寫並親自繳交至課指組（紙本流程）。</p>
-                            <div class="d-flex flex-column gap-2">
-                                <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載活動申請表（黃單）</a>
-                                <a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載場地核定登記表</a>
-                                <a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載器材借用申請表</a>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <h5 class="fw-bold mb-1"><i class="bi bi-upload me-1"></i>活動企劃書上傳</h5>
-                            <p class="text-muted small mb-3">可上傳活動企劃書供審核參考（選填，PDF / Word）。</p>
-                            <input type="file" name="proposal_document" class="form-control" accept=".pdf,.doc,.docx">
-                            <div class="alert alert-info mt-2" style="border-radius:8px; font-size:0.85rem; margin-bottom:0;">
-                                <i class="bi bi-info-circle me-1"></i>三單仍需紙本繳交，<strong>無須電子上傳</strong>。
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <button type="submit" class="btn-submit"><i class="bi bi-send me-1"></i> 提交申請</button>
         </form>
     </section>
@@ -707,8 +733,8 @@ function loadFCData(idx) {
     const rows = document.querySelectorAll('.session-row');
     if (rows.length > 0) {
         rows[0].querySelector('[name*="[date]"]').value       = s[0] || '';
-        rows[0].querySelector('[name*="[start_time]"]').value = s[1] ? s[1].substring(0,5) : '';
-        rows[0].querySelector('[name*="[end_time]"]').value   = e[1] ? e[1].substring(0,5) : '';
+        setSessionTimeField(rows[0], 'start_time', s[1] ? s[1].substring(0,5) : '');
+        setSessionTimeField(rows[0], 'end_time',   e[1] ? e[1].substring(0,5) : '');
         if (fc.space_id) {
             const sel = rows[0].querySelector('[name*="[venue_id]"]');
             if (sel) sel.value = fc.space_id;
@@ -729,9 +755,12 @@ function toggleEventType() {
 
 // ── 送件期限提示 ─────────────────────────────────────────
 function updateDeadlineReminder() {
-    const isLarge = document.getElementById('scale_large').checked;
-    document.getElementById('deadline_text').innerHTML = isLarge
-        ? '大型活動請於活動前 <strong>30 天</strong> 完成送件。紙本三單須親自繳交至課指組。'
+    const isLarge   = document.getElementById('scale_large').checked;
+    const isAlcohol = document.getElementById('flag_alcohol').checked;
+    const isFire    = document.getElementById('flag_fire').checked;
+    const need30    = isLarge || isAlcohol || isFire;
+    document.getElementById('deadline_text').innerHTML = need30
+        ? '請於活動前 <strong>30 天</strong> 完成送件。紙本三單須親自繳交至課指組。'
         : '一般活動請於活動前 <strong>7 天</strong> 完成送件。紙本三單須親自繳交至課指組。';
     // 更新選中樣式
     document.getElementById('lbl_scale_normal').style.cssText += isLarge
@@ -762,11 +791,33 @@ function updateFlagWarning() {
             lbl.style.color        = cb.checked ? '#92400e' : '#374151';
         }
     });
+    updateDeadlineReminder();
 }
 
 // ── 場次管理 ─────────────────────────────────────────────
 const venueOptions = <?= json_encode($venues_for_js) ?>;
 let sessionCount   = <?= count($sessions_data) ?>;
+
+function buildTimeSelects(fieldName, value) {
+    const h = value ? value.substring(0, 2) : '';
+    const m = value ? value.substring(3, 5) : '';
+    let hoursOpts = '<option value="">時</option>';
+    for (let hr = 8; hr <= 21; hr++) {
+        const hh = String(hr).padStart(2, '0');
+        hoursOpts += `<option value="${hh}"${h===hh?' selected':''}>${hh}</option>`;
+    }
+    let minsOpts = '<option value="">分</option>';
+    [0,10,20,30,40,50].forEach(function(mn) {
+        const mm = String(mn).padStart(2, '0');
+        minsOpts += `<option value="${mm}"${m===mm?' selected':''}>${mm}</option>`;
+    });
+    return `<div class="time-selects d-flex align-items-center gap-1">` +
+        `<select class="form-select time-hour" style="width:auto">${hoursOpts}</select>` +
+        `<span style="padding:0 4px;font-weight:600">:</span>` +
+        `<select class="form-select time-minute" style="width:auto">${minsOpts}</select>` +
+        `</div>` +
+        `<input type="hidden" name="${fieldName}" class="time-value" value="${value||''}">`;
+}
 
 function buildVenueOptions(selectedId) {
     let html = '<option value="">-- 選擇場地 --</option>';
@@ -799,7 +850,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
                 </div>
                 <div class="session-field">
                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
-                    <input type="time" name="sessions[${idx}][start_time]" class="form-control" min="08:30" max="21:30" value="${startTime||''}" required>
+                    ${buildTimeSelects('sessions['+idx+'][start_time]', startTime||'')}
                 </div>
                 <div class="session-field">
                     <label>結束日期 *</label>
@@ -807,7 +858,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
                 </div>
                 <div class="session-field">
                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
-                    <input type="time" name="sessions[${idx}][end_time]" class="form-control" min="08:30" max="21:30" value="${endTime||''}" required>
+                    ${buildTimeSelects('sessions['+idx+'][end_time]', endTime||'')}
                 </div>
                 <div class="session-field">
                     <label>${isOutdoor ? '場地（選填）' : '場地 *'}</label>
@@ -923,40 +974,34 @@ document.getElementById('searchEquipmentApply').addEventListener('input', functi
     });
 });
 
-// ── 場次時間 clamp（08:30–21:30，即時修正+小提示）────────
-function clampSessionTime(input) {
-    if (!input.value) return;
-    const original = input.value;
-    if (input.value < '08:30') input.value = '08:30';
-    if (input.value > '21:30') input.value = '21:30';
-    if (input.value !== original) showTimeAdjustNotice(input);
+// ── 時間選單同步 hidden input ────────────────────────────
+function syncTimeValue(selectEl) {
+    const sf = selectEl.closest('.session-field');
+    if (!sf) return;
+    const h = sf.querySelector('.time-hour').value;
+    const m = sf.querySelector('.time-minute').value;
+    const hidden = sf.querySelector('.time-value');
+    if (hidden) hidden.value = (h && m) ? h + ':' + m : '';
 }
 
-function showTimeAdjustNotice(input) {
-    // 顯示在整個場次卡片底部，不影響欄位格線排列
-    const row = input.closest('.session-row');
-    if (!row) return;
-    let notice = row.querySelector('.time-adj-notice');
-    if (!notice) {
-        notice = document.createElement('div');
-        notice.className = 'time-adj-notice';
-        notice.style.cssText = 'margin-top:0.6rem; font-size:0.78rem; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:6px; padding:0.3rem 0.65rem; display:none;';
-        row.appendChild(notice);
+function setSessionTimeField(row, fieldKey, value) {
+    const hidden = row.querySelector('[name*="[' + fieldKey + ']"]');
+    if (!hidden) return;
+    hidden.value = value || '';
+    const sf = hidden.closest('.session-field');
+    if (sf && value && value.length >= 5) {
+        const hourSel = sf.querySelector('.time-hour');
+        const minSel  = sf.querySelector('.time-minute');
+        if (hourSel) hourSel.value = value.substring(0, 2);
+        if (minSel)  minSel.value  = value.substring(3, 5);
     }
-    const fieldName = input.name && input.name.includes('start_time') ? '開始時間' : '結束時間';
-    notice.textContent = '⚠ ' + fieldName + ' 已自動調整為 ' + input.value + '（限 08:30–21:30）';
-    notice.style.display = 'block';
-    clearTimeout(row._adjTimer);
-    row._adjTimer = setTimeout(function() { notice.style.display = 'none'; }, 3500);
 }
 
-// 事件委派：處理所有場次的時間輸入（含動態新增）
 document.getElementById('sessions_container').addEventListener('change', function(e) {
-    if (e.target && e.target.type === 'time') clampSessionTime(e.target);
+    if (e.target && (e.target.classList.contains('time-hour') || e.target.classList.contains('time-minute'))) {
+        syncTimeValue(e.target);
+    }
 });
-document.getElementById('sessions_container').addEventListener('blur', function(e) {
-    if (e.target && e.target.type === 'time') clampSessionTime(e.target);
-}, true);
 
 // ── 表單送出驗證 ─────────────────────────────────────────
 document.getElementById('applicationForm').addEventListener('submit', function(e) {

@@ -13,7 +13,7 @@ $current_page = 'review';
 
 // 場地清單（供編輯表單使用）
 $spaces = [];
-$rs = $conn->query("SELECT space_id, space_name FROM spaces ORDER BY space_name");
+$rs = $conn->query("SELECT space_id, space_name FROM spaces ORDER BY space_id");
 if ($rs) $spaces = $rs->fetch_all(MYSQLI_ASSOC);
 
 // 處理刪除 / 編輯 POST

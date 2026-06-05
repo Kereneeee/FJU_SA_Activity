@@ -22,61 +22,26 @@ $selected_month = intval($_GET['month'] ?? date('m'));
 $month_start = sprintf('%04d-%02d-01 00:00:00', $selected_year, $selected_month);
 $month_end = date('Y-m-t 23:59:59', strtotime($month_start));
 
-$buildings = [
-    [
-        'id' => 1,
-        'name' => 'A焯炤館',
-        'rooms' => [
-            ['id' => 1, 'name' => 'A焯炤館'],
-            ['id' => 2, 'name' => 'A焯炤館－四音'],
-            ['id' => 3, 'name' => 'A焯炤館－四康'],
-            ['id' => 4, 'name' => 'A焯炤館－地下演講廳'],
-            ['id' => 5, 'name' => 'A焯炤館－旋律廣場－冷氣損壞'],
-            ['id' => 6, 'name' => 'A焯炤館－夢幻電影院'],
-            ['id' => 7, 'name' => 'A焯炤館－鏡鏡屋'],
-        ],
-    ],
-    [
-        'id' => 2,
-        'name' => 'B進修部地下室',
-        'rooms' => [
-            ['id' => 8, 'name' => 'B進修部地下室教室（一）ES002'],
-            ['id' => 9, 'name' => 'B進修部地下室教室（二）ES003'],
-            ['id' => 10, 'name' => 'B進修部地下室教室（三）ES004'],
-            ['id' => 11, 'name' => 'B進修部地下室教室（四）ES005'],
-            ['id' => 12, 'name' => 'B進修部地下室教室（五）ES006'],
-            ['id' => 13, 'name' => 'B進修部地下室演講廳'],
-        ],
-    ],
-    [
-        'id' => 3,
-        'name' => 'C仁愛學苑',
-        'rooms' => [
-            ['id' => 14, 'name' => 'C仁愛學苑－一樓半空間'],
-            ['id' => 15, 'name' => 'C仁愛學苑－二樓半空間'],
-            ['id' => 16, 'name' => 'C仁愛學苑－三樓半空間'],
-        ],
-    ],
-    [
-        'id' => 4,
-        'name' => 'D文開區域',
-        'rooms' => [
-            ['id' => 17, 'name' => 'D文開地下舞蹈空間中間'],
-            ['id' => 18, 'name' => 'D文開地下舞蹈空間右側（軟墊）'],
-            ['id' => 19, 'name' => 'D文開地下舞蹈空間左側'],
-            ['id' => 20, 'name' => 'D真善美聖廣場'],
-        ],
-    ],
-    [
-        'id' => 5,
-        'name' => 'E / H 區域',
-        'rooms' => [
-            ['id' => 21, 'name' => 'E課指組204會議室'],
-            ['id' => 22, 'name' => 'H校門口左側（AB）'],
-            ['id' => 23, 'name' => 'H校門口左側（CD）'],
-        ],
-    ],
-];
+// 從 DB 動態建立場地分組
+$buildings = [];
+$_sp_res = $conn->query("SELECT space_id, space_name FROM spaces WHERE space_status='available' ORDER BY space_id");
+if ($_sp_res) {
+    $_bmap = [];
+    $_blabels = ['A'=>'A焯炤館','B'=>'B進修部地下室','C'=>'C仁愛學苑','D'=>'D文開區域','E'=>'E / H 區域','H'=>'E / H 區域'];
+    $_border  = ['A焯炤館','B進修部地下室','C仁愛學苑','D文開區域','E / H 區域'];
+    while ($_sp = $_sp_res->fetch_assoc()) {
+        $_pfx   = mb_substr($_sp['space_name'], 0, 1, 'UTF-8');
+        $_bname = $_blabels[$_pfx] ?? $_pfx;
+        $_bmap[$_bname][] = ['id' => (int)$_sp['space_id'], 'name' => $_sp['space_name']];
+    }
+    $_bid = 1;
+    foreach ($_border as $_bname) {
+        if (!empty($_bmap[$_bname])) $buildings[] = ['id' => $_bid++, 'name' => $_bname, 'rooms' => $_bmap[$_bname]];
+    }
+    foreach ($_bmap as $_bname => $_rooms) {
+        if (!in_array($_bname, $_border)) $buildings[] = ['id' => $_bid++, 'name' => $_bname, 'rooms' => $_rooms];
+    }
+}
 
 // 檢查是否有直接指定場地
 $direct_space_id = intval($_GET['space_id'] ?? 0);
@@ -579,10 +544,12 @@ if ($stmt) {
                 } else if (item.status === 'rejected') {
                     statusLabel = '已駁回';
                 }
+                const fcTag = item.is_field_coordination && item.status === 'pending'
+                    ? '<span style="font-size:.72rem;background:#dbeafe;color:#1e40af;padding:.1rem .4rem;border-radius:4px;margin-left:.4rem;">場協待確認</span>' : '';
                 card.innerHTML = `
                     <div class="booked-left">
                         <div class="booking-time" style="font-weight:700;">${new Date(item.start_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })} - ${new Date(item.end_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
-                        <div class="booking-title">${item.event_name}</div>
+                        <div class="booking-title">${item.event_name}${fcTag}</div>
                         <div class="booking-club">社團：${item.club_name}</div>
                         <div class="booking-organizer">申請人：${item.organizer}</div>
                         <div class="booking-email">聯絡信箱：${item.user_email ? item.user_email : '無'}</div>

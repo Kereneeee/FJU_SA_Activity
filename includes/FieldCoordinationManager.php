@@ -90,6 +90,56 @@ class FieldCoordinationManager {
     }
 
     /**
+     * 編輯場次後核准（場協大會換時間/場地用）
+     * $sessions = [['reservation_id'=>, 'space_id'=>, 'start_time'=>'YYYY-MM-DD HH:MM:SS', 'end_time'=>'YYYY-MM-DD HH:MM:SS'], ...]
+     */
+    public function editAndApproveFieldCoordinationRegistration($registration_id, $sessions, $approval_note = null) {
+        $stmt = $this->conn->prepare("SELECT event_id FROM field_coordination_registrations WHERE registration_id = ?");
+        $stmt->bind_param("i", $registration_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) return false;
+        $event_id = $row['event_id'];
+
+        foreach ($sessions as $s) {
+            $stmt = $this->conn->prepare(
+                "UPDATE reservations SET space_id=?, start_time=?, end_time=?, is_field_coordination_preliminary=0
+                 WHERE reservation_id=? AND event_id=?");
+            $stmt->bind_param("issii", $s['space_id'], $s['start_time'], $s['end_time'], $s['reservation_id'], $event_id);
+            $stmt->execute();
+            $stmt->close();
+        }
+
+        $stmt = $this->conn->prepare(
+            "UPDATE field_coordination_registrations SET is_approved=1, approval_note=?, updated_at=NOW() WHERE registration_id=?");
+        $stmt->bind_param("si", $approval_note, $registration_id);
+        $stmt->execute();
+        $stmt->close();
+
+        $stmt = $this->conn->prepare(
+            "UPDATE events SET status='approved',
+             start_time=(SELECT MIN(start_time) FROM reservations WHERE event_id=?),
+             end_time=(SELECT MAX(end_time) FROM reservations WHERE event_id=?)
+             WHERE event_id=?");
+        $stmt->bind_param("iii", $event_id, $event_id, $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        return true;
+    }
+
+    /**
+     * 是否還在場協大會前（含登記期間 + 登記結束到大會之間）
+     */
+    public function isBeforeCoordinationMeeting() {
+        $sql = "SELECT setting_id FROM field_coordination_settings
+                WHERE status = 'active' AND coordination_meeting_date > NOW() LIMIT 1";
+        $result = $this->conn->query($sql);
+        return $result && $result->num_rows > 0;
+    }
+
+    /**
      * 取得社團的所有場協登記記錄
      */
     public function getClubFieldCoordinationRecords($club_id, $setting_id = null) {
@@ -287,7 +337,7 @@ class FieldCoordinationManager {
                 VALUES (?, ?, ?, ?, ?)";
         
         $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("iiiss", $setting_id, $event_id, $student_id, $club_id, $club_name);
+        $stmt->bind_param("iiiss", $setting_id, $event_id, $student_id, $club_id, $club_name); // club_id is VARCHAR
         $result = $stmt->execute();
         
         $registration_id = $stmt->insert_id;
@@ -309,32 +359,72 @@ class FieldCoordinationManager {
      * 批准場協登記（協調大會後）
      */
     public function approveFieldCoordinationRegistration($registration_id, $approval_note = null) {
-        $sql = "UPDATE field_coordination_registrations 
-                SET is_approved = 1, approval_note = ?, updated_at = NOW()
-                WHERE registration_id = ?";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("si", $approval_note, $registration_id);
-        $result = $stmt->execute();
+        // 取得對應 event_id
+        $stmt = $this->conn->prepare("SELECT event_id FROM field_coordination_registrations WHERE registration_id = ?");
+        $stmt->bind_param("i", $registration_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        
-        return $result;
+        if (!$row) return false;
+        $event_id = $row['event_id'];
+
+        // 更新登記狀態
+        $stmt = $this->conn->prepare(
+            "UPDATE field_coordination_registrations SET is_approved = 1, approval_note = ?, updated_at = NOW() WHERE registration_id = ?");
+        $stmt->bind_param("si", $approval_note, $registration_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // 場協預約轉為正式預約（is_field_coordination_preliminary 0 = 正式）
+        $stmt = $this->conn->prepare(
+            "UPDATE reservations SET is_field_coordination_preliminary = 0 WHERE event_id = ? AND is_field_coordination_preliminary = 1");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // 活動狀態更新為已核准
+        $stmt = $this->conn->prepare("UPDATE events SET status = 'approved' WHERE event_id = ?");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        return true;
     }
 
     /**
      * 拒絕場協登記（協調大會後）
      */
     public function rejectFieldCoordinationRegistration($registration_id, $rejection_note) {
-        $sql = "UPDATE field_coordination_registrations 
-                SET is_approved = 0, approval_note = ?, updated_at = NOW()
-                WHERE registration_id = ?";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("si", $rejection_note, $registration_id);
-        $result = $stmt->execute();
+        // 取得對應 event_id
+        $stmt = $this->conn->prepare("SELECT event_id FROM field_coordination_registrations WHERE registration_id = ?");
+        $stmt->bind_param("i", $registration_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        
-        return $result;
+        if (!$row) return false;
+        $event_id = $row['event_id'];
+
+        // 更新登記狀態
+        $stmt = $this->conn->prepare(
+            "UPDATE field_coordination_registrations SET is_approved = 0, approval_note = ?, updated_at = NOW() WHERE registration_id = ?");
+        $stmt->bind_param("si", $rejection_note, $registration_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // 刪除暫定預約（場協未通過，釋放時段）
+        $stmt = $this->conn->prepare(
+            "DELETE FROM reservations WHERE event_id = ? AND is_field_coordination_preliminary = 1");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // 活動狀態更新為已拒絕
+        $stmt = $this->conn->prepare("UPDATE events SET status = 'rejected' WHERE event_id = ?");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        return true;
     }
 
     /**

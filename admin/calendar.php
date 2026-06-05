@@ -16,61 +16,26 @@ $selected_month = intval($_GET['month'] ?? date('m'));
 $month_start = sprintf('%04d-%02d-01 00:00:00', $selected_year, $selected_month);
 $month_end = date('Y-m-t 23:59:59', strtotime($month_start));
 
-$buildings = [
-    [
-        'id' => 1,
-        'name' => 'A焯炤館',
-        'rooms' => [
-            ['id' => 1, 'name' => 'A焯炤館'],
-            ['id' => 2, 'name' => 'A焯炤館－四音'],
-            ['id' => 3, 'name' => 'A焯炤館－四康'],
-            ['id' => 4, 'name' => 'A焯炤館－地下演講廳'],
-            ['id' => 5, 'name' => 'A焯炤館－旋律廣場'],
-            ['id' => 6, 'name' => 'A焯炤館－夢幻電影院'],
-            ['id' => 7, 'name' => 'A焯炤館－鏡鏡屋'],
-        ],
-    ],
-    [
-        'id' => 2,
-        'name' => 'B進修部地下室',
-        'rooms' => [
-            ['id' => 8, 'name' => 'B進修部地下室教室（一）ES002'],
-            ['id' => 9, 'name' => 'B進修部地下室教室（二）ES003'],
-            ['id' => 10, 'name' => 'B進修部地下室教室（三）ES004'],
-            ['id' => 11, 'name' => 'B進修部地下室教室（四）ES005'],
-            ['id' => 12, 'name' => 'B進修部地下室教室（五）ES006'],
-            ['id' => 13, 'name' => 'B進修部地下室演講廳'],
-        ],
-    ],
-    [
-        'id' => 3,
-        'name' => 'C仁愛學苑',
-        'rooms' => [
-            ['id' => 14, 'name' => 'C仁愛學苑－一樓半空間'],
-            ['id' => 15, 'name' => 'C仁愛學苑－二樓半空間'],
-            ['id' => 16, 'name' => 'C仁愛學苑－三樓半空間'],
-        ],
-    ],
-    [
-        'id' => 4,
-        'name' => 'D文開區域',
-        'rooms' => [
-            ['id' => 17, 'name' => 'D文開地下舞蹈空間中間'],
-            ['id' => 18, 'name' => 'D文開地下舞蹈空間右側（軟墊）'],
-            ['id' => 19, 'name' => 'D文開地下舞蹈空間左側'],
-            ['id' => 20, 'name' => 'D真善美聖廣場'],
-        ],
-    ],
-    [
-        'id' => 5,
-        'name' => 'E / H 區域',
-        'rooms' => [
-            ['id' => 21, 'name' => 'E課指組204會議室'],
-            ['id' => 22, 'name' => 'H校門口左側（AB）'],
-            ['id' => 23, 'name' => 'H校門口左側（CD）'],
-        ],
-    ],
-];
+// 從 DB 動態建立場地分組
+$buildings = [];
+$_sp_res = $conn->query("SELECT space_id, space_name FROM spaces WHERE space_status='available' ORDER BY space_id");
+if ($_sp_res) {
+    $_bmap = [];
+    $_blabels = ['A'=>'A焯炤館','B'=>'B進修部地下室','C'=>'C仁愛學苑','D'=>'D文開區域','E'=>'E / H 區域','H'=>'E / H 區域'];
+    $_border  = ['A焯炤館','B進修部地下室','C仁愛學苑','D文開區域','E / H 區域'];
+    while ($_sp = $_sp_res->fetch_assoc()) {
+        $_pfx   = mb_substr($_sp['space_name'], 0, 1, 'UTF-8');
+        $_bname = $_blabels[$_pfx] ?? $_pfx;
+        $_bmap[$_bname][] = ['id' => (int)$_sp['space_id'], 'name' => $_sp['space_name']];
+    }
+    $_bid = 1;
+    foreach ($_border as $_bname) {
+        if (!empty($_bmap[$_bname])) $buildings[] = ['id' => $_bid++, 'name' => $_bname, 'rooms' => $_bmap[$_bname]];
+    }
+    foreach ($_bmap as $_bname => $_rooms) {
+        if (!in_array($_bname, $_border)) $buildings[] = ['id' => $_bid++, 'name' => $_bname, 'rooms' => $_rooms];
+    }
+}
 
 $direct_space_id = intval($_GET['space_id'] ?? 0);
 $selectedBuildingId = null;
@@ -134,9 +99,13 @@ if ($stmt_special) {
 $special_dates_json = json_encode($special_dates);
 
 $bookings = [];
-$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, e.status
+$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name,
+        u.name AS user_name, u.email AS user_email, e.status,
+        e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
+    LEFT JOIN field_coordination_registrations fcr ON e.event_id = fcr.event_id
+    LEFT JOIN field_coordination_settings fcs ON fcr.setting_id = fcs.setting_id
     LEFT JOIN users u ON e.user_id = u.user_id
     WHERE (r.start_time BETWEEN ? AND ?) OR (r.end_time BETWEEN ? AND ?)
     ORDER BY r.start_time ASC";
@@ -147,17 +116,29 @@ if ($stmt) {
     $result_bookings = $stmt->get_result();
     while ($row = $result_bookings->fetch_assoc()) {
         $date = date('Y-m-d', strtotime($row['start_time']));
-        $key = $row['space_id'] . '_' . $date;
-        if (!isset($bookings[$key])) {
-            $bookings[$key] = [];
+        $key  = $row['space_id'] . '_' . $date;
+        if (!isset($bookings[$key])) $bookings[$key] = [];
+
+        $status = $row['status'];
+        if (intval($row['is_field_coordination']) === 1) {
+            if ($row['is_approved'] === '1' || $row['is_approved'] === 1) {
+                $status = 'approved';
+            } elseif ($row['is_approved'] === '0' || $row['is_approved'] === 0) {
+                $status = 'rejected';
+            } else {
+                $status = 'pending';
+            }
         }
+
         $bookings[$key][] = [
-            'start_time' => $row['start_time'],
-            'end_time' => $row['end_time'],
-            'event_name' => $row['event_name'],
-            'club_name' => $row['club_name'],
-            'organizer' => $row['user_name'],
-            'status' => $row['status'],
+            'start_time'  => $row['start_time'],
+            'end_time'    => $row['end_time'],
+            'event_name'  => $row['event_name'],
+            'club_name'   => $row['club_name'],
+            'organizer'   => $row['user_name'],
+            'user_email'  => $row['user_email'],
+            'status'      => $status,
+            'is_fc'       => intval($row['is_field_coordination']) === 1,
         ];
     }
     $stmt->close();
@@ -285,8 +266,9 @@ if ($stmt) {
         .slot-label { font-weight: 600; color: #1f2937; }
         .slot-meta { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
         .badge-status { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
-        .badge-status.confirmed { background: #d1e7dd; color: #0f5132; }
-        .badge-status.pending { background: #fff3cd; color: #664d03; }
+        .badge-status.confirmed, .badge-status.approved { background: #d1e7dd; color: #0f5132; }
+        .badge-status.pending   { background: #fff3cd; color: #664d03; }
+        .badge-status.rejected  { background: #f8d7da; color: #842029; }
         .btn-action { padding: 0.55rem 1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: 700; transition: all 0.25s ease; }
         .btn-action.primary { background: var(--primary); color: white; }
         .btn-action.primary:hover { background: #14394f; }
@@ -482,13 +464,8 @@ if ($stmt) {
                 monthSelector.value = String(today.getMonth());
             }
 
-            if (hasDirectRoom) {
-                filterRow.style.display = 'none';
-                searchButton.style.display = 'none';
-            } else {
-                filterRow.style.display = 'grid';
-                searchButton.style.display = 'block';
-            }
+            filterRow.style.display = 'grid';
+            searchButton.style.display = 'block';
 
             buildingSelect.addEventListener('change', () => {
                 selectedBuildingId = buildingSelect.value ? parseInt(buildingSelect.value) : null;
@@ -659,43 +636,43 @@ if ($stmt) {
             slotList.innerHTML = '';
             bookingDetails.innerHTML = '';
 
+            // 只顯示有預約的時段，空的不列出
             timeSlots.forEach(slot => {
+                const matching = roomBookings.filter(b => b.start_time.includes(slot.label.split(' - ')[0]));
+                if (matching.length === 0) return;
                 const row = document.createElement('div');
-                row.className = 'slot-row' + (roomBookings.some(b => b.start_time.includes(slot.label.split(' - ')[0])) ? ' booked' : '');
+                row.className = 'slot-row booked';
                 const label = document.createElement('div');
                 label.className = 'slot-label';
                 label.textContent = slot.label;
                 row.appendChild(label);
-
                 const status = document.createElement('div');
                 status.className = 'slot-meta';
-                const matching = roomBookings.filter(b => b.start_time.includes(slot.label.split(' - ')[0]));
-                if (matching.length > 0) {
-                    status.innerHTML = `<span class="badge-status confirmed">${matching.length} 筆預約</span>`;
-                } else {
-                    status.innerHTML = '<span class="badge-status pending">可預約</span>';
-                }
+                status.innerHTML = `<span class="badge-status confirmed">${matching.length} 筆預約</span>`;
                 row.appendChild(status);
                 slotList.appendChild(row);
             });
 
             if (roomBookings.length === 0) {
-                bookingDetails.innerHTML = '<div class="booked-card"><div class="booked-left"><div class="booked-label">今日尚無預約</div></div></div>';
+                slotList.innerHTML = '<p class="text-muted" style="padding:.5rem 0;">該日期尚無登記。</p>';
                 return;
             }
 
             roomBookings.forEach(booking => {
+                const statusMap = { approved:'已核准', pending:'待審核', rejected:'已駁回' };
+                const statusLabel = statusMap[booking.status] || booking.status;
+                const fcTag = booking.is_fc ? '<span style="font-size:.72rem;color:#6b7280;margin-left:.3rem;">場協</span>' : '';
                 const card = document.createElement('div');
                 card.className = 'booked-card';
                 card.innerHTML = `
                     <div class="booked-left">
-                        <div class="booked-label">${booking.event_name}</div>
+                        <div class="booking-time" style="font-weight:700;">${booking.start_time.slice(11,16)} - ${booking.end_time.slice(11,16)}</div>
+                        <div class="booked-label">${booking.event_name}${fcTag}</div>
                         <div>${booking.club_name}</div>
-                        <div>${booking.organizer}</div>
+                        <div style="font-size:.82rem;color:#6b7280;">${booking.organizer}${booking.user_email ? ' · ' + booking.user_email : ''}</div>
                     </div>
                     <div style="text-align:right;">
-                        <div>${booking.start_time.slice(11,16)} - ${booking.end_time.slice(11,16)}</div>
-                        <div class="badge-status confirmed">${booking.status}</div>
+                        <span class="badge-status ${booking.status}">${statusLabel}</span>
                     </div>
                 `;
                 bookingDetails.appendChild(card);
