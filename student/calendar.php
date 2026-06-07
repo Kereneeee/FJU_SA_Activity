@@ -80,6 +80,32 @@ $timeSlots = [
     ['id' => '17_00_18_00', 'label' => '17:00 - 18:00'],
 ];
 
+// 2. 撈取該月份內所有狀態為 'CHARGEABLE' 的特殊日期
+$special_dates = [];
+$sql_special = "SELECT title, date_type, start_date, end_date, is_full_day, start_time, end_time, status_type 
+                FROM special_dates 
+                WHERE status_type = 'CHARGEABLE'
+                  AND (
+                    (date_type = 'SINGLE' AND start_date BETWEEN ? AND ?)
+                    OR
+                    (date_type = 'RANGE' AND NOT (start_date > ? OR end_date < ?))
+                  )";
+
+$stmt_special = $conn->prepare($sql_special);
+if ($stmt_special) {
+    $pure_start = explode(' ', $month_start)[0];
+    $pure_end = explode(' ', $month_end)[0];
+    $stmt_special->bind_param('ssss', $pure_start, $pure_end, $pure_start, $pure_end);
+    $stmt_special->execute();
+    $result_special = $stmt_special->get_result();
+    while ($row = $result_special->fetch_assoc()) {
+        $special_dates[] = $row;
+    }
+    $stmt_special->close();
+}
+
+$special_dates_json = json_encode($special_dates);
+
 $bookings = [];
 $sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status, e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date
     FROM reservations r
@@ -246,6 +272,11 @@ if ($stmt) {
             .slot-row { grid-template-columns: 1fr; }
         }
     
+        .holiday-red {
+            color: #ff4d4f !important; /* 讓數字變紅 */
+            font-weight: bold;         /* 稍微加粗讓學生更明顯辨識 */
+        }
+        
         /* 提示訊息配色 */
         .alert-success { background: #c8dfe0; border-color: #70a3a7; color: #1a3f42; }
         .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
@@ -302,9 +333,10 @@ if ($stmt) {
                 <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">教室月行事曆</span></h3>
                 <div class="calendar-grid" id="calendarGrid"></div>
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; color:#6b7280; font-size:0.9rem; margin-top:0.5rem;">
-                    <span>綠色=空閒</span>
+                    <p><span>綠色=空閒</span>
                     <span>黃色=部分預約</span>
-                    <span>紅色=滿額</span>
+                    <span>紅色=滿額</span></p><br>
+                    <p>><span class="holiday-red">紅字日期</span> = 週末或收費特殊日期</p>
                 </div>
             </div>
 
@@ -317,15 +349,64 @@ if ($stmt) {
     </main>
 
     <script>
+       // 在 script 標籤最上方接收後端 JSON
+        const specialDates = <?php echo $special_dates_json; ?>;
         const buildings = <?php echo json_encode($buildings); ?>;
         const timeSlots = <?php echo json_encode($timeSlots); ?>;
         const bookings = <?php echo json_encode($bookings); ?>;
+        const initialYear = <?php echo $selected_year; ?>;
+        const initialMonth = <?php echo $selected_month - 1; ?>;
 
+        console.log("從資料庫接到的特殊日期：", specialDates);
+        
         let selectedBuildingId = <?php echo $selectedBuildingId ? $selectedBuildingId : 'null'; ?>;
         let selectedRoomId = <?php echo $selectedRoomId ? $selectedRoomId : 'null'; ?>;
         let selectedDate = null;
         let selectedSlot = null;
+        
+        /**
+         * 檢查特定日期是否屬於資料庫中的收費特殊日期
+         * @param {string} dateStr - 格式為 'YYYY-MM-DD'
+         * @returns {boolean}
+         */
+        function normalizeDateValue(dateStr) {
+            return dateStr.trim().split(' ')[0];
+        }
 
+        function isChargeableDate(dateStr) {
+            const currentStr = normalizeDateValue(dateStr);
+
+            for (let config of specialDates) {
+                if (config.date_type === 'SINGLE') {
+                    if (normalizeDateValue(config.start_date) === currentStr) {
+                        return true;
+                    }
+                } else if (config.date_type === 'RANGE') {
+                    const target = new Date(`${currentStr}T00:00:00`).getTime();
+                    const start = new Date(`${normalizeDateValue(config.start_date)}T00:00:00`).getTime();
+                    const end = new Date(`${normalizeDateValue(config.end_date)}T23:59:59`).getTime();
+
+                    if (target >= start && target <= end) {
+                        if (parseInt(config.is_full_day, 10) === 0) {
+                            continue;
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function buildCalendarUrl(roomId, month) {
+            const monthValue = parseInt(month, 10);
+            const monthNumber = monthValue + 1;
+            let url = `calendar.php?year=${initialYear}&month=${monthNumber}`;
+            if (roomId !== null) {
+                url += `&space_id=${roomId}`;
+            }
+            return url;
+        }
+        
         function initPage() {
             const buildingSelect = document.getElementById('buildingSelect');
             const roomSelect = document.getElementById('roomSelect');
@@ -387,9 +468,13 @@ if ($stmt) {
             for (let i = 0; i < 12; i++) {
                 const option = document.createElement('option');
                 option.value = i;
-                const date = new Date(today.getFullYear(), i, 1);
+                // 這裡年份改用後端帶過來的 initialYear 比較精準
+                const date = new Date(initialYear, i, 1); 
                 option.textContent = `${date.getFullYear()}年${i + 1}月`;
-                if (i === today.getMonth()) option.selected = true;
+                
+                // 👉 【修正這行】改用 initialMonth 判斷，這樣切換月份才不會跳走
+                if (i === initialMonth) option.selected = true; 
+                
                 monthSelector.appendChild(option);
             }
 
@@ -461,6 +546,11 @@ if ($stmt) {
                 const dayNumber = document.createElement('div');
                 dayNumber.className = 'day-number';
                 dayNumber.textContent = date.getDate();
+                const dayOfWeek = date.getDay(); // 0 是週日，6 是週六
+                if (dayOfWeek === 0 || dayOfWeek === 6 || isChargeableDate(dateStr)) {
+                    dayNumber.style.color = '#ff4d4f'; // 讓數字變紅色
+                    dayNumber.style.fontWeight = 'bold';
+                }
                 cell.appendChild(dayNumber);
 
                 const stats = document.createElement('div');

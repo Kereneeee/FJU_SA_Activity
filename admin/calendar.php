@@ -353,9 +353,10 @@ if ($stmt) {
                 <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">教室月行事曆</span></h3>
                 <div class="calendar-grid" id="calendarGrid"></div>
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; color:#6b7280; font-size:0.9rem; margin-top:0.5rem;">
-                    <span>綠色=空閒</span>
+                    <p><span>綠色=空閒</span>
                     <span>黃色=部分預約</span>
-                    <span>紅色=滿額</span>
+                    <span>紅色=滿額</span></p><br>
+                    <p>><span class="holiday-red">紅字日期</span> = 週末或收費特殊日期</p>
                 </div>
             </div>
 
