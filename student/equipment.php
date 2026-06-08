@@ -322,9 +322,9 @@ $current_page = 'equipment';
                             <span class="meta-tag">
                                 <i class="bi bi-clipboard-check"></i>
                                 <?php if ($item['borrowing_limit'] > 0): ?>
-                                    每次上限：<?= (int)$item['borrowing_limit'] ?>
+                                    每次建議上限：<?= (int)$item['borrowing_limit'] ?>
                                 <?php else: ?>
-                                    上限：不限
+                                    每次建議上限：不限
                                 <?php endif; ?>
                             </span>
                         </div>

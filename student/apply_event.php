@@ -682,10 +682,10 @@ foreach ($venues as $v) {
                     </div>
                     <div class="equipment-grid">
                         <?php foreach ($equipment as $item):
-                            $initMax = $item['borrowing_limit']>0 ? min($item['available'],$item['borrowing_limit']) : $item['available'];
+                            $initMax = $item['available'];
                             $sc = $item['available']>0 ? ($item['available']<3?'low':'available') : 'empty';
                         ?>
-                        <div class="equipment-card" data-equip-id="<?= $item['id'] ?>" data-name="<?= htmlspecialchars($item['name']) ?>" data-code="<?= htmlspecialchars($item['code']) ?>" data-total="<?= $item['total'] ?>" data-limit="<?= $item['borrowing_limit'] ?>">
+                        <div class="equipment-card" data-equip-id="<?= $item['id'] ?>" data-name="<?= htmlspecialchars($item['name']) ?>" data-code="<?= htmlspecialchars($item['code']) ?>" data-total="<?= $item['total'] ?>">
                             <div class="equipment-header" style="display:flex; align-items:center; gap:0.9rem; margin-bottom:0.85rem;">
                                 <div style="width:46px; height:46px; border-radius:12px; background:#1e4d6b; color:white; display:flex; align-items:center; justify-content:center; font-size:0.9rem; font-weight:700; flex-shrink:0;"><?= htmlspecialchars($item['code']) ?></div>
                                 <div style="display:flex; flex-direction:column; justify-content:center; flex:1; min-width:0;">
@@ -696,12 +696,9 @@ foreach ($venues as $v) {
                             <div style="text-align:right; font-size:0.88rem; margin-top:0.5rem;">
                                 <div class="avail-text stock-<?= $sc ?>">剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?></div>
                             </div>
-                            <?php if ($item['borrowing_limit']>0): ?>
-                            <div style="font-size:0.76rem; color:#9ca3af; margin:0.4rem 0;"><i class="bi bi-info-circle me-1"></i>每次借用上限：<?= $item['borrowing_limit'] ?> 件</div>
-                            <?php endif; ?>
                             <div class="counter mt-1">
                                 <button type="button" class="btn-minus" onclick="changeQuantity(<?= $item['id'] ?>,-1)" <?= $item['available']==0?'disabled':'' ?>>-</button>
-                                <input type="number" id="qty_<?= $item['id'] ?>" name="equipment[<?= $item['id'] ?>]" value="0" min="0" max="<?= $initMax ?>" data-borrowing-limit="<?= $item['borrowing_limit'] ?>" oninput="clampQtyInput(this)" onchange="syncQtyButtons(this)">
+                                <input type="number" id="qty_<?= $item['id'] ?>" name="equipment[<?= $item['id'] ?>]" value="0" min="0" max="<?= $initMax ?>" oninput="clampQtyInput(this)" onchange="syncQtyButtons(this)">
                                 <button type="button" class="btn-plus" onclick="changeQuantity(<?= $item['id'] ?>,1)" <?= $item['available']==0?'disabled':'' ?>>+</button>
                             </div>
                         </div>
@@ -895,9 +892,7 @@ function renumberSessions() {
 
 // ── 器材數量控制 ─────────────────────────────────────────
 function getEffectiveMax(input) {
-    const avail = parseInt(input.getAttribute('max'))||0;
-    const limit = parseInt(input.getAttribute('data-borrowing-limit'))||0;
-    return limit>0 ? Math.min(avail,limit) : avail;
+    return parseInt(input.getAttribute('max'))||0;
 }
 function clampQtyInput(input) {
     const max = getEffectiveMax(input);
@@ -936,14 +931,13 @@ async function queryEquipmentAvailability() {
         const res=await fetch(`get_equipment_availability.php?borrow_time=${encodeURIComponent(bt)}&return_time=${encodeURIComponent(rt)}`);
         const data=await res.json();
         document.querySelectorAll('.equipment-card[data-equip-id]').forEach(card=>{
-            const id=card.dataset.equipId, total=parseInt(card.dataset.total)||0, limit=parseInt(card.dataset.limit)||0;
+            const id=card.dataset.equipId, total=parseInt(card.dataset.total)||0;
             const avail=(data[id]!==undefined)?parseInt(data[id]):total;
-            const emax=limit>0?Math.min(avail,limit):avail;
             const qs=card.querySelector('.avail-qty'), td=card.querySelector('.avail-text');
             const inp=document.getElementById('qty_'+id), bm=card.querySelector('.btn-minus'), bp=card.querySelector('.btn-plus');
             if (qs) qs.textContent=avail;
             if (td) td.className='avail-text stock-'+(avail<=0?'empty':avail<=2?'low':'available');
-            if (inp) { inp.setAttribute('max',avail); if (parseInt(inp.value)>emax) inp.value=emax; }
+            if (inp) { inp.setAttribute('max',avail); if (parseInt(inp.value)>avail) inp.value=avail; }
             if (bm) bm.disabled=!inp||parseInt(inp?.value)<=0;
             if (bp) bp.disabled=avail<=0;
         });
