@@ -610,14 +610,54 @@ $current_page = 'my_applications';
                                     <i class="bi bi-clock me-1"></i>選擇器材借用時段
                                     <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
                                 </div>
-                                <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:0.75rem; align-items:flex-end;">
+                                <?php $borrow_dt = strtotime($event_info['start_time']); $borrow_h = date('H', $borrow_dt); $borrow_m = date('i', $borrow_dt); ?>
+                                <?php $return_dt = strtotime($event_info['end_time']); $return_h = date('H', $return_dt); $return_m = date('i', $return_dt); ?>
+                                <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr 1.4fr auto; gap:0.75rem; align-items:flex-end;">
+                                    <div>
+                                        <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用日期</label>
+                                        <input type="date" id="borrow_date" class="form-control" value="<?= date('Y-m-d', $borrow_dt) ?>" min="<?= date('Y-m-d', $borrow_dt) ?>" max="<?= date('Y-m-d', $return_dt) ?>" required>
+                                    </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                                        <input type="datetime-local" id="equip_borrow_time" name="equip_borrow_time" class="form-control">
+                                        <div class="time-selects d-flex align-items-center gap-1">
+                                            <select id="borrow_hour" class="form-select time-hour" style="width:auto" required>
+                                                <option value="">時</option>
+                                                <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
+                                                    <option value="<?= $hh ?>" <?= $borrow_h === $hh ? 'selected' : '' ?>><?= $hh ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                            <span style="padding:0 4px;font-weight:600">:</span>
+                                            <select id="borrow_minute" class="form-select time-minute" style="width:auto" required>
+                                                <option value="">分</option>
+                                                <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
+                                                    <option value="<?= $mm ?>" <?= $borrow_m === $mm ? 'selected' : '' ?>><?= $mm ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <input type="hidden" id="equip_borrow_time" name="equip_borrow_time" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $borrow_dt)) ?>">
+                                    </div>
+                                    <div>
+                                        <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還日期</label>
+                                        <input type="date" id="return_date" class="form-control" value="<?= date('Y-m-d', $return_dt) ?>" min="<?= date('Y-m-d', $borrow_dt) ?>" max="<?= date('Y-m-d', $return_dt) ?>" required>
                                     </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                                        <input type="datetime-local" id="equip_return_time" name="equip_return_time" class="form-control">
+                                        <div class="time-selects d-flex align-items-center gap-1">
+                                            <select id="return_hour" class="form-select time-hour" style="width:auto" required>
+                                                <option value="">時</option>
+                                                <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
+                                                    <option value="<?= $hh ?>" <?= $return_h === $hh ? 'selected' : '' ?>><?= $hh ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                            <span style="padding:0 4px;font-weight:600">:</span>
+                                            <select id="return_minute" class="form-select time-minute" style="width:auto" required>
+                                                <option value="">分</option>
+                                                <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
+                                                    <option value="<?= $mm ?>" <?= $return_m === $mm ? 'selected' : '' ?>><?= $mm ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <input type="hidden" id="equip_return_time" name="equip_return_time" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $return_dt)) ?>">
                                     </div>
                                     <button type="button" onclick="queryEquipmentAvailability()"
                                         style="background:#1e4d6b; color:white; border:none; border-radius:8px; padding:0.65rem 1.1rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:background 0.2s;"
@@ -744,19 +784,27 @@ $current_page = 'my_applications';
             } catch(e) { alert('查詢失敗，請稍後再試。'); }
         }
 
-        // 器材時間 clamp 09:30–16:30
-        function clampEquipTime(id) {
-            const inp=document.getElementById(id); if (!inp) return;
-            function clamp() {
-                if (!inp.value) return;
-                const dt=new Date(inp.value), m=dt.getHours()*60+dt.getMinutes();
-                if (m<9*60+30) dt.setHours(9,30,0,0); else if (m>16*60+30) dt.setHours(16,30,0,0); else return;
-                const p=n=>String(n).padStart(2,'0');
-                inp.value=`${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+        function syncEquipTime(prefix) {
+            const hour = document.getElementById(prefix + '_hour').value;
+            const minute = document.getElementById(prefix + '_minute').value;
+            const hidden = document.getElementById('equip_' + prefix + '_time');
+            const date = document.getElementById(prefix + '_date').value;
+            if (hour && minute && date) {
+                hidden.value = `${date}T${hour}:${minute}`;
+            } else {
+                hidden.value = '';
             }
-            inp.addEventListener('change',clamp); inp.addEventListener('blur',clamp);
         }
-        clampEquipTime('equip_borrow_time'); clampEquipTime('equip_return_time');
+
+        document.getElementById('borrow_hour').addEventListener('change', () => syncEquipTime('borrow'));
+        document.getElementById('borrow_minute').addEventListener('change', () => syncEquipTime('borrow'));
+        document.getElementById('return_hour').addEventListener('change', () => syncEquipTime('return'));
+        document.getElementById('return_minute').addEventListener('change', () => syncEquipTime('return'));
+        document.getElementById('borrow_date').addEventListener('change', () => syncEquipTime('borrow'));
+        document.getElementById('return_date').addEventListener('change', () => syncEquipTime('return'));
+
+        syncEquipTime('borrow');
+        syncEquipTime('return');
 
         // ── 搜尋器材名稱或編號 ──────────────────────────────────────
         document.getElementById('searchEquipmentAdd').addEventListener('input', function() {
