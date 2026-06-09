@@ -338,6 +338,8 @@ foreach ($registrations as $r) {
         .top-navbar .breadcrumb-item a { color:#1e4d6b; text-decoration:none; opacity:.75; }
         .top-navbar .breadcrumb-item a:hover { opacity:1; }
         .top-navbar .breadcrumb-item.active { color:#6b7280; }
+        .user-avatar { width:38px; height:38px; border-radius:50%; background:var(--primary); color:white; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0; }
+        .top-navbar .breadcrumb-item.active { color:#6b7280; }
         .content-wrapper { padding:1.5rem 2rem 120px; }
 
         /* card */
@@ -419,16 +421,15 @@ foreach ($registrations as $r) {
 <?php include(__DIR__ . "/../includes/admin_sidebar.php"); ?>
 
 <main class="main-content">
-    <header class="top-navbar">
-        <div>
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                <li class="breadcrumb-item"><a href="field_coordination_mgmt.php">場協管理</a></li>
-                <li class="breadcrumb-item active">結果匯入</li>
-            </ol>
-            <h4 class="mt-2 mb-0">場協結果匯入</h4>
-        </div>
-    </header>
+    <?php
+    $nav_breadcrumbs = [
+        ['label' => '首頁', 'url' => 'dashboard.php'],
+        ['label' => '場協管理', 'url' => 'field_coordination_mgmt.php'],
+        ['label' => '結果匯入'],
+    ];
+    $nav_title = '場協結果匯入';
+    include __DIR__ . '/../includes/admin_navbar.php';
+    ?>
 
     <section class="content-wrapper">
 

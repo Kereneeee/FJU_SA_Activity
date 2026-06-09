@@ -170,7 +170,7 @@ foreach ($user_clubs as $club) {
         }
 
         .navbar-custom {
-            background: #ffffff;
+            background: #d5e3ea;
             border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
@@ -410,7 +410,7 @@ foreach ($user_clubs as $club) {
         <div class="profile-card">
             <div class="profile-header">
                 <div class="avatar-large">
-                    <?php echo htmlspecialchars(substr($student_name, 0, 1)); ?>
+                    <?php echo htmlspecialchars(mb_substr($student_name, 0, 1)); ?>
                 </div>
                 <div class="profile-info">
                     <h2><?php echo htmlspecialchars($student_name); ?></h2>

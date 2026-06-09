@@ -222,15 +222,11 @@ $student_name = $_SESSION['student_name'] ?? '社長';
 <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
 <main class="main-content">
-    <header class="top-navbar">
-        <div>
-            <ol class="breadcrumb mb-0" style="font-size:.85rem;">
-                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                <li class="breadcrumb-item active">幹部提名</li>
-            </ol>
-            <h4 class="mt-1 mb-0">幹部提名 — <?= htmlspecialchars($club_name) ?></h4>
-        </div>
-    </header>
+    <?php
+    $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'幹部提名']];
+    $nav_title = '幹部提名 — ' . htmlspecialchars($club_name);
+    include __DIR__ . '/../includes/student_navbar.php';
+    ?>
 
     <section class="content-wrapper">
 

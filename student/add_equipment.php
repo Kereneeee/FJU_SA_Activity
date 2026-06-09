@@ -579,16 +579,11 @@ $current_page = 'my_applications';
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item"><a href="my_applications.php">我的申請</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">追加申請器材</li>
-                </ol>
-                <h4 class="mt-2 mb-0">追加申請器材</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'我的申請','url'=>'my_applications.php'],['label'=>'追加申請器材']];
+        $nav_title = '追加申請器材';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <?php if ($error): ?>

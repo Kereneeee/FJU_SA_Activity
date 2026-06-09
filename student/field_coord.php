@@ -490,15 +490,11 @@ foreach ($buildings as $building) {
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">場地協調</li>
-                </ol>
-                <h4 class="mt-2 mb-0">場地協調</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'場地協調']];
+        $nav_title = '場地協調';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <!-- 狀態 + 日曆按鈕 合併為一列 -->

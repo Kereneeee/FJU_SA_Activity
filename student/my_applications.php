@@ -540,15 +540,11 @@ function getEquipmentStatusText($equipment_list) {
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">我的申請</li>
-                </ol>
-                <h4 class="mt-2 mb-0">我的申請</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'我的申請']];
+        $nav_title = '我的申請';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <div class="card">

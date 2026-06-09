@@ -324,12 +324,16 @@ if ($event_id === 0) {
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; font-weight: 700; color: var(--primary); margin-bottom: 1rem; }
         .summary-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
-        .card-panel { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; min-height: 150px; display: flex; flex-direction: column; justify-content: space-between; }
-        .card-panel .icon-box { width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; color: white; font-size: 1.25rem; }
-        .card-panel.total .icon-box { background: #6f42c1; }
-        .card-panel.pending .icon-box { background: #fd7e14; }
-        .card-panel.approved .icon-box { background: var(--success); }
-        .card-panel.rejected .icon-box { background: var(--danger); }
+        .card-panel { background: var(--card); border-radius: 14px; box-shadow: 0 2px 12px rgba(15,23,42,0.07); padding: 1.5rem; min-height: 130px; display: flex; flex-direction: column; justify-content: space-between; border-left: 4px solid transparent; }
+        .card-panel .icon-box { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 1.2rem; }
+        .card-panel.total    { border-left-color: #6f42c1; }
+        .card-panel.total    .icon-box { background: rgba(111,66,193,0.12); color: #6f42c1; }
+        .card-panel.pending  { border-left-color: #fd7e14; }
+        .card-panel.pending  .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
+        .card-panel.approved { border-left-color: #198754; }
+        .card-panel.approved .icon-box { background: rgba(25,135,84,0.12); color: #198754; }
+        .card-panel.rejected { border-left-color: #dc3545; }
+        .card-panel.rejected .icon-box { background: rgba(220,53,69,0.12); color: #dc3545; }
         .card-panel .value { font-size: 2rem; font-weight: 700; margin-top: 1rem; }
         .card-panel .label { color: #6b7280; }
         .panel-row { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; }
@@ -338,7 +342,7 @@ if ($event_id === 0) {
         th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
         th { background: #f3f4f6; color: #374151; font-weight: 600; }
         tbody tr:hover { background: #f9fafb; }
-        .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+        .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
         .status-pending   { background: #f0e8c0; color: #6b5a20; }
         .status-approved  { background: #70a3a7; color: #1a3f42; }
         .status-rejected  { background: #c9979a; color: #5c1f22; }
@@ -366,6 +370,37 @@ if ($event_id === 0) {
             transition: all 0.25s ease;
             margin-right: 0.35rem;
         }
+        .filter-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.4rem 1rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1.5px solid transparent;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .filter-tab .ftab-count {
+            background: rgba(0,0,0,0.1);
+            border-radius: 999px;
+            padding: 0.05rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        .filter-tab.tab-all     { color: #1e4d6b; border-color: #1e4d6b; }
+        .filter-tab.tab-all.active { background: #1e4d6b; color: white; }
+        .filter-tab.tab-all.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-pending  { color: #fd7e14; border-color: #fd7e14; }
+        .filter-tab.tab-pending.active { background: #fd7e14; color: white; }
+        .filter-tab.tab-pending.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-approved { color: #198754; border-color: #198754; }
+        .filter-tab.tab-approved.active { background: #198754; color: white; }
+        .filter-tab.tab-approved.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-rejected { color: #dc3545; border-color: #dc3545; }
+        .filter-tab.tab-rejected.active { background: #dc3545; color: white; }
+        .filter-tab.tab-rejected.active .ftab-count { background: rgba(255,255,255,0.25); }
         .btn-approve {
             background: #198754;
             color: white;
@@ -439,7 +474,7 @@ if ($event_id === 0) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
@@ -700,22 +735,22 @@ if ($event_id === 0) {
                 <div class="panel-row">
                     <div>
                         <h5><i class="bi bi-list-ul"></i> 申請管理列表</h5>
-                        <div style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="review.php?status=all" class="btn btn-sm <?= $status_filter === 'all' ? 'btn-primary' : 'btn-outline-secondary' ?>">
+                        <div style="margin-bottom: 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                            <a href="review.php?status=all" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
                                 <i class="bi bi-grid"></i> 全部
-                                <span class="badge bg-secondary ms-1"><?= $total_count ?></span>
+                                <span class="ftab-count"><?= $total_count ?></span>
                             </a>
-                            <a href="review.php?status=pending" class="btn btn-sm <?= $status_filter === 'pending' ? 'btn-warning text-dark' : 'btn-outline-warning' ?>">
+                            <a href="review.php?status=pending" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
                                 <i class="bi bi-clock"></i> 待審核
-                                <span class="badge bg-warning text-dark ms-1"><?= $status_counts['pending'] ?? 0 ?></span>
+                                <span class="ftab-count"><?= $status_counts['pending'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=approved" class="btn btn-sm <?= $status_filter === 'approved' ? 'btn-success' : 'btn-outline-success' ?>">
+                            <a href="review.php?status=approved" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
                                 <i class="bi bi-check-circle"></i> 已通過
-                                <span class="badge bg-success ms-1"><?= $status_counts['approved'] ?? 0 ?></span>
+                                <span class="ftab-count"><?= $status_counts['approved'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=rejected" class="btn btn-sm <?= $status_filter === 'rejected' ? 'btn-danger' : 'btn-outline-danger' ?>">
+                            <a href="review.php?status=rejected" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
                                 <i class="bi bi-x-circle"></i> 已駁回
-                                <span class="badge bg-danger ms-1"><?= $status_counts['rejected'] ?? 0 ?></span>
+                                <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
                         </div>
                     </div>

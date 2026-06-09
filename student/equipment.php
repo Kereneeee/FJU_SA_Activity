@@ -236,15 +236,11 @@ $current_page = 'equipment';
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">器材查詢</li>
-                </ol>
-                <h4 class="mt-2 mb-0">器材庫存查詢</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'器材查詢']];
+        $nav_title = '器材庫存查詢';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
 

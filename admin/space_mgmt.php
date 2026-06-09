@@ -254,27 +254,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         .card-panel {
             background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(15,23,42,0.07);
             padding: 1.5rem;
-            min-height: 150px;
+            min-height: 130px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            border-left: 4px solid transparent;
         }
         .card-panel .icon-box {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
             display: grid;
             place-items: center;
-            color: white;
-            font-size: 1.25rem;
+            font-size: 1.2rem;
         }
-        .card-panel.total .icon-box { background: #6f42c1; }
-        .card-panel.available .icon-box { background: #198754; }
-        .card-panel.unavailable .icon-box { background: #dc3545; }
-        .card-panel.capacity .icon-box { background: #0d6efd; }
+        .card-panel.total       { border-left-color: #6f42c1; }
+        .card-panel.total       .icon-box { background: rgba(111,66,193,0.12); color: #6f42c1; }
+        .card-panel.available   { border-left-color: #198754; }
+        .card-panel.available   .icon-box { background: rgba(25,135,84,0.12); color: #198754; }
+        .card-panel.unavailable { border-left-color: #dc3545; }
+        .card-panel.unavailable .icon-box { background: rgba(220,53,69,0.12); color: #dc3545; }
+        .card-panel.capacity    { border-left-color: #0d6efd; }
+        .card-panel.capacity    .icon-box { background: rgba(13,110,253,0.12); color: #0d6efd; }
         .card-panel .value {
             font-size: 2rem;
             font-weight: 700;
@@ -429,7 +433,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>

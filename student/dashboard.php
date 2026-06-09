@@ -382,7 +382,7 @@ if ($noti_result) {
                 <h4 class="mt-2 mb-0">學生管理中心</h4>
             </div>
             <div class="user-card" style="cursor: pointer;" onclick="location.href='profile.php'" title="點擊查看個人檔案">
-                <div class="user-avatar"><?php echo htmlspecialchars(substr($student_name, 0, 1)); ?></div>
+                <div class="user-avatar"><?php echo htmlspecialchars(mb_substr($student_name, 0, 1)); ?></div>
                 <div>
                     <div class="fw-bold"><?php echo htmlspecialchars($student_name); ?></div>
                     <small class="text-muted">學號：<?php echo htmlspecialchars($_SESSION['student_no'] ?? $student_id); ?></small>

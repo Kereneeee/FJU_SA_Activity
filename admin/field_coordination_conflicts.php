@@ -126,17 +126,13 @@ $conflicts = $fc_manager->getConflictsBySettingId($setting_id);
             margin-left: 260px;
             min-height: 100vh;
         }
-        .top-navbar {
-            background: #d5e3ea;
-            border-bottom: 1px solid #bdd0d9;
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 1100;
-        }
+        .top-navbar { background: #d5e3ea; border-bottom: 1px solid #bdd0d9; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
+        .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
+        .user-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--primary); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; flex-shrink: 0; }
         .content-wrapper {
             padding: 1.5rem 2rem 2rem;
         }
@@ -188,16 +184,15 @@ $conflicts = $fc_manager->getConflictsBySettingId($setting_id);
     <?php include(__DIR__ . "/../includes/admin_sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item"><a href="field_coordination_mgmt.php">場協登記管理</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">衝突管理</li>
-                </ol>
-                <h4 class="mt-2 mb-0">衝突管理</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [
+            ['label' => '首頁', 'url' => 'dashboard.php'],
+            ['label' => '場協登記管理', 'url' => 'field_coordination_mgmt.php'],
+            ['label' => '衝突管理'],
+        ];
+        $nav_title = '衝突管理';
+        include __DIR__ . '/../includes/admin_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <div class="card">

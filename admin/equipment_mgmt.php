@@ -317,27 +317,33 @@ foreach ($borrowing_details as $borrow) {
         }
         .card-panel {
             background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(15,23,42,0.07);
             padding: 1.5rem;
-            min-height: 150px;
+            min-height: 130px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            border-left: 4px solid transparent;
         }
         .card-panel .icon-box {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
             display: grid;
             place-items: center;
-            color: white;
-            font-size: 1.25rem;
+            font-size: 1.2rem;
         }
-        .card-panel.items .icon-box { background: #0d6efd; }
-        .card-panel.total .icon-box { background: #6f42c1; }
-        .card-panel.available .icon-box { background: #198754; }
-        .card-panel.borrowed .icon-box { background: #fd7e14; }
+        .card-panel.items    { border-left-color: #0d6efd; }
+        .card-panel.items    .icon-box { background: rgba(13,110,253,0.12); color: #0d6efd; }
+        .card-panel.total    { border-left-color: #6f42c1; }
+        .card-panel.total    .icon-box { background: rgba(111,66,193,0.12); color: #6f42c1; }
+        .card-panel.available { border-left-color: #198754; }
+        .card-panel.available .icon-box { background: rgba(25,135,84,0.12); color: #198754; }
+        .card-panel.borrowed { border-left-color: #fd7e14; }
+        .card-panel.borrowed .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
+        .card-panel.pending  { border-left-color: #fd7e14; }
+        .card-panel.pending  .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
         .card-panel .value {
             font-size: 2rem;
             font-weight: 700;
@@ -349,6 +355,7 @@ foreach ($borrowing_details as $borrow) {
             border-radius: 18px;
             box-shadow: 0 10px 30px rgba(15,23,42,0.06);
             padding: 1.5rem;
+            margin-bottom: 1.5rem;
         }
         .panel-row h5 {
             margin-bottom: 1rem;
@@ -536,7 +543,7 @@ foreach ($borrowing_details as $borrow) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
@@ -601,22 +608,22 @@ foreach ($borrowing_details as $borrow) {
                         <div class="icon-box"><i class="bi bi-arrow-left-right"></i></div>
                     </div>
                 </div>
-                <div class="card-panel pending" style="--primary: #fd7e14;">
+                <div class="card-panel pending">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="label">待審核申請</div>
                             <div class="value"><?php echo $pending_borrows; ?></div>
                         </div>
-                        <div class="icon-box" style="background: #fd7e14;"><i class="bi bi-hourglass-split"></i></div>
+                        <div class="icon-box"><i class="bi bi-hourglass-split"></i></div>
                     </div>
                 </div>
-                <div class="card-panel available" style="--primary: #198754;">
+                <div class="card-panel available">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="label">已核准申請</div>
                             <div class="value"><?php echo $approved_borrows; ?></div>
                         </div>
-                        <div class="icon-box" style="background: #198754;"><i class="bi bi-check-circle"></i></div>
+                        <div class="icon-box"><i class="bi bi-check-circle"></i></div>
                     </div>
                 </div>
             </div>
@@ -665,6 +672,83 @@ foreach ($borrowing_details as $borrow) {
                 </div>
             </div>
             <?php endif; ?>
+
+            <!-- 器材列表 -->
+            <div class="panel-row">
+                <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
+                <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>器材代碼</th>
+                            <th>器材名稱</th>
+                            <th>總數量</th>
+                            <th>可借數量</th>
+                            <th>借出數量</th>
+                            <th>借用限制</th>
+                            <th>狀態</th>
+                            <th>庫存</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($equipment_list as $eq): ?>
+                        <?php 
+                            $total_q = intval($eq['total_quantity'] ?? 0);
+                            $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
+                            $avail_q = max(0, $total_q - $borrowed);
+                            $usage_percent = $total_q > 0 ? ($borrowed / $total_q) * 100 : 0;
+                            $equip_status = $eq['equipment_status'] ?? 'available';
+                        ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
+                            <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
+                            <td><?php echo $total_q; ?></td>
+                            <td><?php echo $avail_q; ?></td>
+                            <td><?php echo $borrowed; ?></td>
+                            <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
+                            <td>
+                                <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
+                                    <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
+                                    <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
+                                </span>
+                            </td>
+                            <td>
+                                <div class="quantity-bar">
+                                    <div class="bar-bg">
+                                            <div class="bar-fill" style="width: <?php echo 100 - $usage_percent; ?>%"></div>
+                                    </div>
+                                    <span class="bar-text"><?php echo round(100 - $usage_percent); ?>%</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="action-cell">
+                                    <form method="POST" style="display: inline;">
+                                        <input type="hidden" name="action" value="edit">
+                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
+                                        <button type="submit" class="btn btn-edit btn-sm"><i class="bi bi-pencil"></i> 編輯</button>
+                                    </form>
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('確定要刪除此器材？');">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
+                                        <button type="submit" class="btn btn-delete btn-sm"><i class="bi bi-trash"></i> 刪除</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        
+                        <?php if (empty($equipment_list)): ?>
+                        <tr>
+                            <td colspan="8" style="text-align: center; color: #999; padding: 30px;">
+                                <i class="bi bi-inbox"></i> 目前沒有器材記錄
+                            </td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
 
             <?php if (!empty($edit_equipment)): ?>
             <div class="panel-row">
@@ -754,83 +838,6 @@ foreach ($borrowing_details as $borrow) {
                 </form>
             </div>
             <?php endif; ?>
-
-            <!-- 器材列表 -->
-            <div class="panel-row">
-                <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
-                <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>器材代碼</th>
-                            <th>器材名稱</th>
-                            <th>總數量</th>
-                            <th>可借數量</th>
-                            <th>借出數量</th>
-                            <th>借用限制</th>
-                            <th>狀態</th>
-                            <th>庫存</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($equipment_list as $eq): ?>
-                        <?php 
-                            $total_q = intval($eq['total_quantity'] ?? 0);
-                            $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
-                            $avail_q = max(0, $total_q - $borrowed);
-                            $usage_percent = $total_q > 0 ? ($borrowed / $total_q) * 100 : 0;
-                            $equip_status = $eq['equipment_status'] ?? 'available';
-                        ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
-                            <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
-                            <td><?php echo $total_q; ?></td>
-                            <td><?php echo $avail_q; ?></td>
-                            <td><?php echo $borrowed; ?></td>
-                            <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
-                            <td>
-                                <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
-                                    <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
-                                    <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
-                                </span>
-                            </td>
-                            <td>
-                                <div class="quantity-bar">
-                                    <div class="bar-bg">
-                                            <div class="bar-fill" style="width: <?php echo 100 - $usage_percent; ?>%"></div>
-                                    </div>
-                                    <span class="bar-text"><?php echo round(100 - $usage_percent); ?>%</span>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="action-cell">
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="action" value="edit">
-                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
-                                        <button type="submit" class="btn btn-edit btn-sm"><i class="bi bi-pencil"></i> 編輯</button>
-                                    </form>
-                                    <form method="POST" style="display: inline;" onsubmit="return confirm('確定要刪除此器材？');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
-                                        <button type="submit" class="btn btn-delete btn-sm"><i class="bi bi-trash"></i> 刪除</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                        
-                        <?php if (empty($equipment_list)): ?>
-                        <tr>
-                            <td colspan="8" style="text-align: center; color: #999; padding: 30px;">
-                                <i class="bi bi-inbox"></i> 目前沒有器材記錄
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-                </div>
-            </div>
         </section>
     </main>
 

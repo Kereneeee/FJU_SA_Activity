@@ -124,7 +124,7 @@ $stmt->close();
         .sidebar .sidebar-section { padding: 1rem 0.5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.12); }
         .main-content { margin-left: 260px; min-height: 100vh; }
         .top-navbar {
-            background: white; border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea; border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem; display: flex;
             justify-content: space-between; align-items: center;
             position: sticky; top: 0; z-index: 1100;
@@ -309,7 +309,7 @@ $stmt->close();
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?php echo htmlspecialchars(substr($user_name, 0, 1)); ?>
+                    <?php echo htmlspecialchars(mb_substr($user_name, 0, 1)); ?>
                 </div>
                 <small class="text-muted"><?php echo htmlspecialchars($user_name); ?></small>
             </div>
@@ -332,7 +332,7 @@ $stmt->close();
         <div class="profile-card">
             <div class="profile-header">
                 <div class="avatar-large">
-                    <?php echo htmlspecialchars(substr($user_name, 0, 1)); ?>
+                    <?php echo htmlspecialchars(mb_substr($user_name, 0, 1)); ?>
                 </div>
                 <div class="profile-info">
                     <h2><?php echo htmlspecialchars($user_name); ?></h2>
