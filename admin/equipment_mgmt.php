@@ -118,7 +118,7 @@ $borrowed_by_equipment = [];
 $borrow_sql = "SELECT eb.equipment_id, COALESCE(SUM(eb.quantity), 0) AS borrowed_quantity
                FROM equipment_borrow eb
                LEFT JOIN events ev ON eb.event_id = ev.event_id
-               WHERE ev.status = 'approved'
+               WHERE ev.status = 'approved' OR ev.event_id IS NULL
                GROUP BY eb.equipment_id";
 $result_borrowed = $conn->query($borrow_sql);
 if ($result_borrowed) {
@@ -141,13 +141,14 @@ foreach ($equipment_list as $eq) {
 
 // 取得借用中的器材詳情（連結學生端）
 $borrowing_details = [];
-$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity, e.status AS event_status, eq.name as equipment_name,
+$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity,
+                      COALESCE(e.status, 'pending') AS event_status, eq.name as equipment_name,
                       e.event_name, e.club_name, e.start_time, e.end_time, u.name as student_name, u.email
                FROM equipment_borrow eb
                LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                LEFT JOIN events e ON eb.event_id = e.event_id
                LEFT JOIN users u ON e.user_id = u.user_id
-               WHERE e.status IN ('pending', 'approved')
+               WHERE e.event_id IS NULL OR e.status IN ('pending', 'approved')
                ORDER BY e.start_time DESC";
 $result_borrow = $conn->query($sql_borrow);
 if ($result_borrow) {
@@ -363,9 +364,32 @@ foreach ($borrowing_details as $borrow) {
             color: var(--primary);
         }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-        th { background: #f3f4f6; color: #374151; font-weight: 600; }
+        th, td { padding: 0.75rem 0.8rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f3f4f6; color: #374151; font-weight: 600; white-space: nowrap; }
         tbody tr:hover { background: #f9fafb; }
+        .inventory-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .inventory-table th,
+        .inventory-table td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .inventory-table .col-code { width: 9%; }
+        .inventory-table .col-name { width: 20%; }
+        .inventory-table .col-total { width: 8%; }
+        .inventory-table .col-available { width: 8%; }
+        .inventory-table .col-borrowed { width: 8%; }
+        .inventory-table .col-limit { width: 8%; }
+        .inventory-table .col-status { width: 12%; }
+        .inventory-table .col-stock { width: 12%; }
+        .inventory-table .col-action { width: 15%; }
+        .stock-text {
+            font-weight: 600;
+            color: var(--primary);
+        }
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -676,28 +700,29 @@ foreach ($borrowing_details as $borrow) {
             <!-- 器材列表 -->
             <div class="panel-row">
                 <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
-                <div style="overflow-x: auto;">
-                <table>
+                <div style="width: 100%; overflow: hidden;">
+                <table class="inventory-table">
                     <thead>
                         <tr>
-                            <th>器材代碼</th>
-                            <th>器材名稱</th>
-                            <th>總數量</th>
-                            <th>可借數量</th>
-                            <th>借出數量</th>
-                            <th>借用限制</th>
-                            <th>狀態</th>
-                            <th>庫存</th>
-                            <th>操作</th>
+                            <th class="col-code">器材代碼</th>
+                            <th class="col-name">器材名稱</th>
+                            <th class="col-total">總數量</th>
+                            <th class="col-available">可借數量</th>
+                            <th class="col-borrowed">借出數量</th>
+                            <th class="col-limit">借用限制</th>
+                            <th class="col-status">狀態</th>
+                            <th class="col-stock">庫存</th>
+                            <th class="col-action">操作</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($equipment_list as $eq): ?>
                         <?php 
+                            $equipment_id = intval($eq['equipment_id']);
                             $total_q = intval($eq['total_quantity'] ?? 0);
-                            $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
+                            $borrowed = intval($borrowed_by_equipment[$equipment_id] ?? 0);
                             $avail_q = max(0, $total_q - $borrowed);
-                            $usage_percent = $total_q > 0 ? ($borrowed / $total_q) * 100 : 0;
+                            $stock_percent = $total_q > 0 ? round(($avail_q / $total_q) * 100) : 0;
                             $equip_status = $eq['equipment_status'] ?? 'available';
                         ?>
                         <tr>
@@ -714,12 +739,7 @@ foreach ($borrowing_details as $borrow) {
                                 </span>
                             </td>
                             <td>
-                                <div class="quantity-bar">
-                                    <div class="bar-bg">
-                                            <div class="bar-fill" style="width: <?php echo 100 - $usage_percent; ?>%"></div>
-                                    </div>
-                                    <span class="bar-text"><?php echo round(100 - $usage_percent); ?>%</span>
-                                </div>
+                                <span class="stock-text"><?php echo $stock_percent; ?>%</span>
                             </td>
                             <td>
                                 <div class="action-cell">
@@ -751,50 +771,60 @@ foreach ($borrowing_details as $borrow) {
             </div>
 
             <?php if (!empty($edit_equipment)): ?>
-            <div class="panel-row">
-                <h5><i class="bi bi-pencil-square"></i> 編輯器材</h5>
-                <?php if ($edit_error): ?>
-                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
-                <?php endif; ?>
-                <form method="POST" class="mb-4">
-                    <input type="hidden" name="action" value="save">
-                    <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
-                    <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">器材代碼</label>
-                            <input type="text" name="code" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['code'] ?? ''); ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">器材名稱</label>
-                            <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['name']); ?>" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">狀態</label>
-                            <select name="equipment_status" class="form-select" required>
-                                <option value="available" <?php echo $edit_equipment['equipment_status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
-                                <option value="maintenance" <?php echo $edit_equipment['equipment_status'] === 'maintenance' ? 'selected' : ''; ?>>維修中</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">總數量</label>
-                            <input type="number" name="total_quantity" class="form-control" value="<?php echo intval($edit_equipment['total_quantity'] ?? 0); ?>" min="0" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">借用限制數量</label>
-                            <input type="number" name="borrowing_limit" class="form-control" value="<?php echo intval($edit_equipment['borrowing_limit'] ?? 0); ?>" min="0" required>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">描述</label>
-                            <textarea name="description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_equipment['description'] ?? ''); ?></textarea>
-                        </div>
+            <div class="modal fade show" tabindex="-1" role="dialog" style="display: block; background: rgba(0, 0, 0, 0.5);">
+                <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                        <form method="POST" class="mb-0">
+                            <input type="hidden" name="action" value="save">
+                            <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
+                            <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="bi bi-pencil-square"></i> 編輯器材</h5>
+                                <a href="equipment_mgmt.php" class="btn-close" aria-label="關閉"></a>
+                            </div>
+                            <div class="modal-body">
+                                <?php if ($edit_error): ?>
+                                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
+                                <?php endif; ?>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">器材代碼</label>
+                                        <input type="text" name="code" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['code'] ?? ''); ?>">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">器材名稱</label>
+                                        <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['name']); ?>" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">狀態</label>
+                                        <select name="equipment_status" class="form-select" required>
+                                            <option value="available" <?php echo $edit_equipment['equipment_status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
+                                            <option value="maintenance" <?php echo $edit_equipment['equipment_status'] === 'maintenance' ? 'selected' : ''; ?>>維修中</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">總數量</label>
+                                        <input type="number" name="total_quantity" class="form-control" value="<?php echo intval($edit_equipment['total_quantity'] ?? 0); ?>" min="0" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">借用限制數量</label>
+                                        <input type="number" name="borrowing_limit" class="form-control" value="<?php echo intval($edit_equipment['borrowing_limit'] ?? 0); ?>" min="0" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">描述</label>
+                                        <textarea name="description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_equipment['description'] ?? ''); ?></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <a href="equipment_mgmt.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
+                                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
+                            </div>
+                        </form>
                     </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
-                        <a href="equipment_mgmt.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
-                    </div>
-                </form>
+                </div>
             </div>
+            <div class="modal-backdrop fade show"></div>
             <?php else: ?>
             <div class="panel-row">
                 <h5><i class="bi bi-plus-circle"></i> 新增器材</h5>
