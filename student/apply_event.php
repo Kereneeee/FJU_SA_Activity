@@ -448,11 +448,15 @@ foreach ($venues as $v) {
 <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
 <main class="main-content">
-    <?php
-    $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'活動申請']];
-    $nav_title = '新增活動申請';
-    include __DIR__ . '/../includes/student_navbar.php';
-    ?>
+    <header class="top-navbar">
+        <div>
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
+                <li class="breadcrumb-item active">活動申請</li>
+            </ol>
+            <h4 class="mt-2 mb-0">新增活動申請</h4>
+        </div>
+    </header>
 
     <section class="content-wrapper">
 
@@ -692,6 +696,7 @@ foreach ($venues as $v) {
                             <div style="text-align:right; font-size:0.88rem; margin-top:0.5rem;">
                                 <div class="avail-text stock-<?= $sc ?>">剩餘：<span class="avail-qty"><?= $item['available'] ?></span>/<?= $item['total'] ?></div>
                             </div>
+                            <div style="font-size:0.85rem; color:#6b7280; margin-top:0.35rem; text-align:left;">每次建議上限：<?= htmlspecialchars($item['borrowing_limit']) ?></div>
                             <div class="counter mt-1">
                                 <button type="button" class="btn-minus" onclick="changeQuantity(<?= $item['id'] ?>,-1)" <?= $item['available']==0?'disabled':'' ?>>-</button>
                                 <input type="number" id="qty_<?= $item['id'] ?>" name="equipment[<?= $item['id'] ?>]" value="0" min="0" max="<?= $initMax ?>" oninput="clampQtyInput(this)" onchange="syncQtyButtons(this)">
