@@ -610,8 +610,21 @@ $current_page = 'my_applications';
                                     <i class="bi bi-clock me-1"></i>選擇器材借用時段
                                     <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
                                 </div>
-                                <?php $borrow_dt = strtotime($event_info['start_time']); $borrow_h = date('H', $borrow_dt); $borrow_m = date('i', $borrow_dt); ?>
-                                <?php $return_dt = strtotime($event_info['end_time']); $return_h = date('H', $return_dt); $return_m = date('i', $return_dt); ?>
+                                <?php
+                                $borrow_dt = strtotime($event_info['start_time']);
+                                if (date('H:i', $borrow_dt) < '09:30') {
+                                    $borrow_dt = strtotime(date('Y-m-d', $borrow_dt) . ' 09:30');
+                                }
+                                $borrow_h = date('H', $borrow_dt);
+                                $borrow_m = date('i', $borrow_dt);
+
+                                $return_dt = strtotime($event_info['end_time']);
+                                if (date('H:i', $return_dt) > '16:30') {
+                                    $return_dt = strtotime(date('Y-m-d', $return_dt) . ' 16:30');
+                                }
+                                $return_h = date('H', $return_dt);
+                                $return_m = date('i', $return_dt);
+                                ?>
                                 <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr 1.4fr auto; gap:0.75rem; align-items:flex-end;">
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用日期</label>
