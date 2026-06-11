@@ -343,7 +343,7 @@ if ($stmt) {
             </div>
 
             <div id="calendarSection" class="card" style="display: none;">
-                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">教室月行事曆</span></h3>
+                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">請選擇教室與月份</span></h3>
                 <div class="calendar-grid" id="calendarGrid"></div>
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; color:#6b7280; font-size:0.9rem; margin-top:0.5rem;">
                     <p><span>綠色=空閒</span>
@@ -513,7 +513,7 @@ if ($stmt) {
         function getRoomName(roomId) {
             for (const building of buildings) {
                 const room = building.rooms.find(r => r.id === parseInt(roomId));
-                if (room) return `${building.name} ${room.name}`;
+                if (room) return room.name;
             }
             return '未知教室';
         }
@@ -528,8 +528,10 @@ if ($stmt) {
             const calendarTitle = document.getElementById('calendarTitle');
             const monthSelector = document.getElementById('monthSelector');
             const selectedRoomName = getRoomName(selectedRoomId);
+            const monthValue = parseInt(monthSelector.value, 10);
+            const monthLabel = `${initialYear}年${monthValue + 1}月`;
 
-            calendarTitle.textContent = `${selectedRoomName} 月行事曆`;
+            calendarTitle.textContent = `${selectedRoomName} ${monthLabel}行事曆`;
             calendarSection.style.display = 'block';
             document.getElementById('scheduleSection').classList.add('active');
             selectedDate = null;
@@ -537,7 +539,7 @@ if ($stmt) {
             document.getElementById('slotList').innerHTML = '';
             document.getElementById('bookingDetails').innerHTML = '';
 
-            const year = new Date().getFullYear();
+            const year = initialYear;
             const month = parseInt(monthSelector.value);
             const firstDay = new Date(year, month, 1);
             const startDay = new Date(firstDay);
