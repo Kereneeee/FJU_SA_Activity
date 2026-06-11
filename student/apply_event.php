@@ -65,6 +65,7 @@ if ($result_equipment) {
 
 // 表單送出時的場次資料（用於還原）
 $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
+$today_date = date('Y-m-d');
 
 // ── Flash 訊息（PRG 後顯示）────────────────────────────────
 if (!empty($_SESSION['flash_message'])) {
@@ -123,6 +124,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
         if (empty($sess['start_time'])) $errors[] = "場次{$n}：請填寫開始時間";
         if (empty($sess['end_date']))   $errors[] = "場次{$n}：請選擇結束日期";
         if (empty($sess['end_time']))   $errors[] = "場次{$n}：請填寫結束時間";
+        if (!empty($sess['date']) && $sess['date'] < $today_date)
+            $errors[] = "場次{$n}：開始日期不能為過往日期，請選擇今日或之後的日期";
+        if (!empty($sess['end_date']) && $sess['end_date'] < $today_date)
+            $errors[] = "場次{$n}：結束日期不能為過往日期，請選擇今日或之後的日期";
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['end_date'] < $sess['date'])
             $errors[] = "場次{$n}：結束日期不能早於開始日期";
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['date'] === $sess['end_date'] &&
@@ -589,7 +594,7 @@ foreach ($venues as $v) {
                             <div class="session-fields">
                                 <div class="session-field">
                                     <label>開始日期 *</label>
-                                    <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                    <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" required>
                                 </div>
                                 <div class="session-field">
                                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -609,7 +614,7 @@ foreach ($venues as $v) {
                                 </div>
                                 <div class="session-field">
                                     <label>結束日期 *</label>
-                                    <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date']??$sess['date']??'',ENT_QUOTES,'UTF-8') ?>" required>
+                                    <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date']??$sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" required>
                                 </div>
                                 <div class="session-field">
                                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -832,7 +837,24 @@ function updateFlagWarning() {
 
 // ── 場次管理 ─────────────────────────────────────────────
 const venueOptions = <?= json_encode($venues_for_js) ?>;
+const todayDateString = <?= json_encode($today_date) ?>;
 let sessionCount   = <?= count($sessions_data) ?>;
+
+function applySessionDateLimits() {
+    document.querySelectorAll('.session-row input[type="date"]').forEach(input => {
+        input.min = todayDateString;
+    });
+}
+
+function validateSessionDateInput(input) {
+    if (!input || !input.value) return true;
+    if (input.value < todayDateString) {
+        alert('不能申請過往日期，請選擇今日或之後的日期。');
+        input.value = '';
+        return false;
+    }
+    return true;
+}
 
 function buildTimeSelects(fieldName, value) {
     const h = value ? value.substring(0, 2) : '';
@@ -882,7 +904,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
             <div class="session-fields">
                 <div class="session-field">
                     <label>開始日期 *</label>
-                    <input type="date" name="sessions[${idx}][date]" class="form-control" value="${date||''}" required>
+                    <input type="date" name="sessions[${idx}][date]" class="form-control" value="${date||''}" min="${todayDateString}" required>
                 </div>
                 <div class="session-field">
                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -890,7 +912,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
                 </div>
                 <div class="session-field">
                     <label>結束日期 *</label>
-                    <input type="date" name="sessions[${idx}][end_date]" class="form-control" value="${endDate||date||''}" required>
+                    <input type="date" name="sessions[${idx}][end_date]" class="form-control" value="${endDate||date||''}" min="${todayDateString}" required>
                 </div>
                 <div class="session-field">
                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -1038,6 +1060,9 @@ document.getElementById('sessions_container').addEventListener('change', functio
     if (e.target && (e.target.classList.contains('time-hour') || e.target.classList.contains('time-minute'))) {
         syncTimeValue(e.target);
     }
+    if (e.target && e.target.matches('.session-row input[type="date"]')) {
+        validateSessionDateInput(e.target);
+    }
 });
 
 // ── 表單送出驗證 ─────────────────────────────────────────
@@ -1061,8 +1086,10 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
         const vsl = rows[i].querySelector('[name*="[venue_id]"]');
 
         if (!di.value)  { e.preventDefault(); alert(`場次${n}：請選擇開始日期！`);   di.focus();  return; }
+        if (!validateSessionDateInput(di)) { e.preventDefault(); di.focus(); return; }
         if (!sti.value) { e.preventDefault(); alert(`場次${n}：請填寫開始時間！`);   sti.focus(); return; }
         if (!edi.value) { e.preventDefault(); alert(`場次${n}：請選擇結束日期！`);   edi.focus(); return; }
+        if (!validateSessionDateInput(edi)) { e.preventDefault(); edi.focus(); return; }
         if (!eti.value) { e.preventDefault(); alert(`場次${n}：請填寫結束時間！`);   eti.focus(); return; }
         if (edi.value < di.value) { e.preventDefault(); alert(`場次${n}：結束日期不能早於開始日期！`); return; }
         if (edi.value===di.value && sti.value>=eti.value) { e.preventDefault(); alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
@@ -1095,6 +1122,7 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
 
 // 初始化
 (function(){
+    applySessionDateLimits();
     updateDeadlineReminder();
     updateFlagWarning();
     toggleEventType();
