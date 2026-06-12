@@ -379,15 +379,15 @@ $active_setting = $fc_manager->getActiveSettings();
                                 <td><?= date('Y-m-d H:i', strtotime($setting['coordination_meeting_date'])) ?></td>
                                 <td>
                                     <span class="status-badge <?= $setting['status'] === 'active' ? 'status-active' : 'status-inactive' ?>">
-                                        <?= $setting['status'] === 'active' ? '啟用' : '禁用' ?>
+                                        <?= $setting['status'] === 'active' ? '啟用' : '關閉' ?>
                                     </span>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary btn-sm-custom" data-bs-toggle="modal" data-bs-target="#editModal<?= $setting['setting_id'] ?>">
                                         <i class="bi bi-pencil"></i> 編輯
                                     </button>
-                                    <a href="field_coordination_conflicts.php?setting_id=<?= $setting['setting_id'] ?>" class="btn btn-sm btn-outline-info btn-sm-custom">
-                                        <i class="bi bi-exclamation-triangle"></i> 衝突管理
+                                    <a href="field_coordination_import.php?setting_id=<?= $setting['setting_id'] ?>&tab=conflict" class="btn btn-sm btn-outline-info btn-sm-custom">
+                                        <i class="bi bi-exclamation-triangle"></i> 衝突協調
                                     </a>
                                 </td>
                             </tr>
@@ -458,7 +458,7 @@ $active_setting = $fc_manager->getActiveSettings();
                                                     <label class="form-label">狀態 *</label>
                                                     <select name="status" class="form-control" required>
                                                         <option value="active" <?= $setting['status'] === 'active' ? 'selected' : '' ?>>啟用</option>
-                                                        <option value="inactive" <?= $setting['status'] === 'inactive' ? 'selected' : '' ?>>禁用</option>
+                                                        <option value="inactive" <?= $setting['status'] === 'inactive' ? 'selected' : '' ?>>關閉</option>
                                                     </select>
                                                 </div>
 

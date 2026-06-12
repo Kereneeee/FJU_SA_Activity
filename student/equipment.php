@@ -66,7 +66,7 @@ $current_page = 'equipment';
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }

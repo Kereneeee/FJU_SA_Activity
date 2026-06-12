@@ -126,8 +126,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
         $error = "請至少選擇一項器材";
     } else {
         try {
-            $equipment_doc_filename = null;
-
             // ===== 第二步：庫存與上限驗證 =====
             $borrow_time = $event_info['start_time'];
             $return_time = $event_info['end_time'];
@@ -189,21 +187,20 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             $new_status = 'pending';
             
             // 插入新的追加申請 event 紀錄
-            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, equipment_doc_path, start_time, end_time, status, original_event_id) 
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, original_event_id)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             $insert_event_stmt = $conn->prepare($insert_event_sql);
             if (!$insert_event_stmt) {
                 throw new Exception('建立追加申請紀錄失敗：' . $conn->error);
             }
-            
+
             $description = '追加器材申請';
             $insert_event_stmt->bind_param(
-                "isssssssi",
+                "isssssi",
                 $user_id,
                 $new_event_name,
                 $new_club_name,
                 $description,
-                $equipment_doc_filename,
                 $new_start_time,
                 $new_end_time,
                 $new_status,
@@ -295,7 +292,7 @@ $current_page = 'my_applications';
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }

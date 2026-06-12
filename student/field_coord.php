@@ -18,6 +18,9 @@ $fc_manager = new FieldCoordinationManager($conn);
 $active_setting = $fc_manager->getActiveSettings();
 $is_in_registration_period = $fc_manager->isInRegistrationPeriod();
 $has_meeting_passed = $fc_manager->hasCoordinationMeetingPassed();
+$latest_setting = $fc_manager->getLatestSetting();
+$is_closed = !$active_setting && $latest_setting && $latest_setting['status'] === 'inactive'
+             && strtotime($latest_setting['coordination_meeting_date']) > time();
 
 $message = '';
 $message_type = '';
@@ -46,7 +49,6 @@ if ($_sp_res) {
     }
 }
 
-$selected_club_name = $_SESSION['active_club_name'] ?? '';
 // $_SESSION['user_id'] 可能是 email，統一轉成整數 user_id
 $_raw = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
 if ($_raw !== null && is_numeric($_raw)) {
@@ -65,15 +67,42 @@ if ($user_id) {
     if (!$student_id_value) $student_id_value = $user_id;
 }
 
-if (empty($selected_club_name) && $user_id) {
-    $club_stmt2 = $conn->prepare("SELECT c.club_name FROM club_members cm JOIN clubs c ON cm.club_id = c.club_id WHERE cm.user_id = ? LIMIT 1");
+// 取得使用者隸屬的所有社團（可能同時擁有多重身分）
+$my_clubs = [];
+if ($user_id) {
+    $club_stmt2 = $conn->prepare("SELECT cm.club_id, c.club_name FROM club_members cm JOIN clubs c ON cm.club_id = c.club_id WHERE cm.user_id = ?");
     if ($club_stmt2) {
         $club_stmt2->bind_param("i", $user_id);
         $club_stmt2->execute();
         $club_result2 = $club_stmt2->get_result();
-        if ($club_row2 = $club_result2->fetch_assoc()) $selected_club_name = $club_row2['club_name'];
+        while ($club_row2 = $club_result2->fetch_assoc()) $my_clubs[] = $club_row2;
         $club_stmt2->close();
     }
+}
+
+// 決定本次登記的主辦社團（多重身分時依表單選擇，並驗證屬於自己）
+$selected_club_id = '';
+$selected_club_name = '';
+$requested_club_id = $_POST['club_id'] ?? ($_GET['club_id'] ?? '');
+foreach ($my_clubs as $c) {
+    if ($requested_club_id !== '' && $c['club_id'] === $requested_club_id) {
+        $selected_club_id   = $c['club_id'];
+        $selected_club_name = $c['club_name'];
+        break;
+    }
+}
+if ($selected_club_id === '' && !empty($_SESSION['current_club_id'])) {
+    foreach ($my_clubs as $c) {
+        if ($c['club_id'] === $_SESSION['current_club_id']) {
+            $selected_club_id   = $c['club_id'];
+            $selected_club_name = $c['club_name'];
+            break;
+        }
+    }
+}
+if ($selected_club_id === '' && !empty($my_clubs)) {
+    $selected_club_id   = $my_clubs[0]['club_id'];
+    $selected_club_name = $my_clubs[0]['club_name'];
 }
 
 // 場次資料（用於表單還原）
@@ -88,7 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
         $message = '❌ 目前不在場協登記期間。請等待下一個場協登記期間。';
     } else {
         $event_name           = trim($_POST['event_name'] ?? '');
-        $club_name            = trim($_POST['club_name'] ?? $selected_club_name);
+        $club_id              = $selected_club_id;   // 依使用者實際所屬社團（多重身分時依表單選擇）決定，避免登記到他人社團
+        $club_name            = $selected_club_name;
         $responsible_person   = trim($_POST['responsible_person'] ?? '');
         $activity_purpose     = trim($_POST['activity_purpose'] ?? '');
         $description          = trim($_POST['description'] ?? '');
@@ -100,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
 
         $errors = [];
         if (empty($event_name))         $errors[] = '請填寫活動名稱';
-        if (empty($club_name))          $errors[] = '請填寫社團名稱';
+        if (empty($club_name))          $errors[] = '找不到您所屬的社團資料，請聯絡系統管理員';
         if (empty($responsible_person)) $errors[] = '請填寫活動負責人';
         if (empty($sessions))           $errors[] = '請至少新增一個場次';
 
@@ -217,14 +247,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 }
                 $stmt_reserve->close();
 
-                // 取得社團 ID
-                $cid_stmt = $conn->prepare("SELECT club_id FROM clubs WHERE club_name = ? LIMIT 1");
-                $cid_stmt->bind_param("s", $club_name);
-                $cid_stmt->execute();
-                $cid_result = $cid_stmt->get_result();
-                $club_id = ($cid_row = $cid_result->fetch_assoc()) ? $cid_row['club_id'] : 0;
-                $cid_stmt->close();
-
                 $fc_manager->createFieldCoordinationRegistration(
                     $active_setting['setting_id'], $event_id, $student_id_value, $club_id, $club_name
                 );
@@ -301,7 +323,7 @@ foreach ($buildings as $building) {
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }
@@ -377,6 +399,37 @@ foreach ($buildings as $building) {
             margin-bottom: 1rem;
             font-weight: 700;
             color: var(--primary);
+        }
+        .conflict-track {
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding: 0.25rem 0 1rem;
+            margin-bottom: 1rem;
+            scroll-snap-type: x proximity;
+        }
+        .conflict-track-item {
+            flex: 0 0 260px;
+            scroll-snap-align: start;
+            background: white;
+            border: 1px solid #fde68a;
+            border-radius: 10px;
+            padding: 0.85rem 1rem;
+            box-shadow: 0 2px 8px rgba(15,23,42,0.05);
+        }
+        .conflict-track-club {
+            font-weight: 700;
+            color: #92400e;
+            margin-bottom: 0.35rem;
+        }
+        .conflict-track-event {
+            margin-bottom: 0.5rem;
+            color: #1f2937;
+        }
+        .conflict-track-meta {
+            font-size: 0.85rem;
+            color: #6b7280;
+            margin-bottom: 0.15rem;
         }
         .service-grid {
             display: grid;
@@ -527,16 +580,14 @@ foreach ($buildings as $building) {
             <?php if (isset($_SESSION['pending_conflicts']) && !empty($_SESSION['pending_conflicts'])): ?>
             <div class="card" style="border: 2px solid #f59e0b; background: #fffbf0;">
                 <h3><i class="bi bi-exclamation-triangle"></i> 請確認衝突</h3>
-                <p class="text-muted">您的場地申請與以下活動存在時間衝突。請確認是否繼續提交：</p>
-                <div style="background: white; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <p class="text-muted">您的場地申請與以下活動存在時間衝突，請左右滑動查看所有衝突項目，並確認是否繼續提交：</p>
+                <div class="conflict-track">
                     <?php foreach ($_SESSION['pending_conflicts'] as $conflict): ?>
-                    <div style="padding: 0.5rem 0; border-bottom: 1px solid #e5e7eb;">
-                        <p class="mb-1">
-                            <strong><?= htmlspecialchars($conflict['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></strong> - 
-                            <?= htmlspecialchars($conflict['conflicting_event'], ENT_QUOTES, 'UTF-8') ?><br>
-                            <small class="text-muted">場地：<?= htmlspecialchars($spaces[$conflict['space_id']]['space_name'] ?? '未知', ENT_QUOTES, 'UTF-8') ?></small><br>
-                            <small class="text-muted">時間：<?= htmlspecialchars($conflict['conflicting_time'], ENT_QUOTES, 'UTF-8') ?></small>
-                        </p>
+                    <div class="conflict-track-item">
+                        <div class="conflict-track-club"><i class="bi bi-people-fill"></i> <?= htmlspecialchars($conflict['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="conflict-track-event"><?= htmlspecialchars($conflict['conflicting_event'], ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="conflict-track-meta"><i class="bi bi-geo-alt"></i> <?= htmlspecialchars($spaces[$conflict['space_id']]['space_name'] ?? '未知', ENT_QUOTES, 'UTF-8') ?></div>
+                        <div class="conflict-track-meta"><i class="bi bi-clock"></i> <?= htmlspecialchars($conflict['conflicting_time'], ENT_QUOTES, 'UTF-8') ?></div>
                     </div>
                     <?php endforeach; ?>
                 </div>
@@ -572,8 +623,10 @@ foreach ($buildings as $building) {
                 <p class="text-muted">一次選擇多個教室，並支援固定週次的例行練習或活動登記。</p>
                 <?php if (!$active_setting || $has_meeting_passed): ?>
                 <div class="alert alert-warning">
-                    <i class="bi bi-info-circle"></i> 
-                    <?php if (!$active_setting): ?>
+                    <i class="bi bi-info-circle"></i>
+                    <?php if ($is_closed): ?>
+                    場協結果整理中，請等待 <?= date('n月j日', strtotime($latest_setting['coordination_meeting_date'])) ?> 的場協大會。如有問題可聯絡課指組老師。
+                    <?php elseif (!$active_setting): ?>
                     目前不在場協登記期間，表單已禁用。
                     <?php else: ?>
                     場地協調大會已結束，場地申請已恢復至先到先得制。
@@ -582,10 +635,20 @@ foreach ($buildings as $building) {
                 <?php endif; ?>
                 <form id="reg_form" method="post" <?php if (!$active_setting || $has_meeting_passed) echo 'style="opacity: 0.5; pointer-events: none;"'; ?>>
                     <input type="hidden" name="register_spaces" value="1">
+                    <input type="hidden" name="club_id" value="<?= htmlspecialchars($selected_club_id, ENT_QUOTES, 'UTF-8') ?>">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label" for="club_name">主辦社團 *</label>
-                            <input id="club_name" name="club_name" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['club_name'] ?? $_POST['club_name'] ?? $selected_club_name, ENT_QUOTES, 'UTF-8') ?>" required>
+                            <?php if (count($my_clubs) > 1): ?>
+                            <select class="form-control" id="club_id_select" onchange="location.href='field_coord.php?club_id='+encodeURIComponent(this.value)">
+                                <?php foreach ($my_clubs as $c): ?>
+                                <option value="<?= htmlspecialchars($c['club_id'], ENT_QUOTES, 'UTF-8') ?>" <?= $c['club_id']===$selected_club_id?'selected':'' ?>><?= htmlspecialchars($c['club_name'], ENT_QUOTES, 'UTF-8') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted">您隸屬多個社團，請選擇本次登記的主辦社團</small>
+                            <?php else: ?>
+                            <input id="club_name" class="form-control" value="<?= htmlspecialchars($selected_club_name, ENT_QUOTES, 'UTF-8') ?>" readonly>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="event_name">活動名稱 *</label>

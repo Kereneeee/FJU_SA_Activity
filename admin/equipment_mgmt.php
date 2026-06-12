@@ -370,12 +370,23 @@ foreach ($borrowing_details as $borrow) {
         .inventory-table {
             table-layout: fixed;
             width: 100%;
+            min-width: 900px;
         }
         .inventory-table th,
         .inventory-table td {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .inventory-table .status-badge,
+        .inventory-table .action-cell {
+            white-space: nowrap;
+            flex-wrap: nowrap;
+        }
+        .inventory-table .action-cell form,
+        .inventory-table .action-cell .btn {
+            flex-shrink: 0;
+            white-space: nowrap;
         }
         .inventory-table .col-code { width: 9%; }
         .inventory-table .col-name { width: 20%; }
@@ -700,7 +711,7 @@ foreach ($borrowing_details as $borrow) {
             <!-- 器材列表 -->
             <div class="panel-row">
                 <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
-                <div style="width: 100%; overflow: hidden;">
+                <div style="width: 100%; overflow-x: auto;">
                 <table class="inventory-table">
                     <thead>
                         <tr>

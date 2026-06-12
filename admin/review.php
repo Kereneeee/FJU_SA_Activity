@@ -393,9 +393,26 @@ if ($event_id === 0) {
         .panel-row { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; }
         .panel-row h5 { margin-bottom: 1rem; font-weight: 700; color: var(--primary); }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
         th { background: #f3f4f6; color: #374151; font-weight: 600; }
         tbody tr:hover { background: #f9fafb; }
+        #reviewTable { table-layout: fixed; width: 100%; }
+        #reviewTable th, #reviewTable td { white-space: normal; word-break: break-word; vertical-align: top; }
+        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1)  { width: 9%; }
+        #reviewTable th:nth-child(2),  #reviewTable td:nth-child(2)  { width: 17%; }
+        #reviewTable th:nth-child(3),  #reviewTable td:nth-child(3)  { width: 11%; }
+        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4)  { width: 9%; }
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5)  { width: 8%; }
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6)  { width: 9%; }
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7)  { width: 9%; }
+        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8)  { width: 9%; }
+        #reviewTable th:nth-child(9),  #reviewTable td:nth-child(9)  { width: 8%; }
+        #reviewTable th:nth-child(10), #reviewTable td:nth-child(10) { width: 11%; }
+        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1),
+        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4),
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5),
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6),
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7) { white-space: nowrap; }
         .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
         .status-pending   { background: #f0e8c0; color: #6b5a20; }
         .status-approved  { background: #70a3a7; color: #1a3f42; }
@@ -685,9 +702,6 @@ if ($event_id === 0) {
                         // 定義所有可能的檔案欄位與對應顯示的名稱
                         $files_to_display = [
                             ['path' => $detail_event['proposal_doc_path'] ?? null, 'label' => '活動企劃書'],
-                            ['path' => $detail_event['document_path'] ?? null, 'label' => '活動申請單 (黃單)'],
-                            ['path' => $detail_event['venue_doc_path'] ?? null, 'label' => '場地申請單'],
-                            ['path' => $detail_event['equipment_doc_path'] ?? null, 'label' => '器材借用單']
                         ];
                         // 篩選出真正有路徑、有上傳的檔案
                         $active_files = array_filter($files_to_display, function($f) {
@@ -787,14 +801,13 @@ if ($event_id === 0) {
                                 <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
                         </div>
-                    </div>
                     <?php if (empty($pending_events)): ?>
                         <div class="empty-state">
                             <i class="bi bi-inbox"></i>
                             <p>此分類目前沒有申請</p>
                         </div>
                     <?php else: ?>
-                        <div style="overflow-x:auto;">
+                        <div>
                             <table id="reviewTable">
                                 <thead>
                                     <tr>

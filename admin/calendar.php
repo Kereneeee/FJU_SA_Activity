@@ -102,16 +102,21 @@ $bookings = [];
 $sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_id, e.event_name, e.club_name,
         u.name AS user_name, u.email AS user_email, e.status,
         e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date,
-        CASE WHEN cc_check.registration_id IS NOT NULL THEN 1 ELSE 0 END AS has_conflict
+        CASE WHEN fcr.is_approved IS NULL AND EXISTS (
+            SELECT 1 FROM field_coordination_registrations fcr2
+            JOIN events e2 ON fcr2.event_id = e2.event_id
+            JOIN reservations r2 ON e2.event_id = r2.event_id
+            WHERE fcr2.setting_id = fcr.setting_id
+              AND fcr2.registration_id != fcr.registration_id
+              AND fcr2.is_approved IS NULL
+              AND r2.space_id = r.space_id
+              AND r2.start_time < r.end_time
+              AND r.start_time < r2.end_time
+        ) THEN 1 ELSE 0 END AS has_conflict
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
     LEFT JOIN field_coordination_registrations fcr ON e.event_id = fcr.event_id
     LEFT JOIN field_coordination_settings fcs ON fcr.setting_id = fcs.setting_id
-    LEFT JOIN (
-        SELECT DISTINCT registration_id_1 AS registration_id FROM coordination_conflicts
-        UNION
-        SELECT DISTINCT registration_id_2 FROM coordination_conflicts
-    ) cc_check ON fcr.registration_id = cc_check.registration_id
     LEFT JOIN users u ON e.user_id = u.user_id
     WHERE (r.start_time BETWEEN ? AND ?) OR (r.end_time BETWEEN ? AND ?)
     ORDER BY r.start_time ASC";

@@ -37,6 +37,24 @@ if ($user_id) {
 }
 $my_club_ids = array_column($clubs, 'club_id');
 
+// 依個人檔案目前身分，決定本頁僅顯示哪個社團的登記紀錄
+$active_club_id = '';
+$active_club_name = '';
+if (!empty($_SESSION['current_club_id'])) {
+    foreach ($clubs as $c) {
+        if ($c['club_id'] === $_SESSION['current_club_id']) {
+            $active_club_id   = $c['club_id'];
+            $active_club_name = $c['club_name'];
+            break;
+        }
+    }
+}
+if ($active_club_id === '' && !empty($clubs)) {
+    $active_club_id   = $clubs[0]['club_id'];
+    $active_club_name = $clubs[0]['club_name'];
+}
+$display_club_ids = $active_club_id !== '' ? [$active_club_id] : [];
+
 // ── AJAX：刪除登記 ─────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_POST['ajax_action'] === 'delete') {
     header('Content-Type: application/json');
@@ -124,8 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
 
 // ── 取得登記清單 ────────────────────────────────────────────
 $records = [];
-if (!empty($my_club_ids)) {
-    $ph  = implode(',', array_fill(0, count($my_club_ids), '?'));
+if (!empty($display_club_ids)) {
+    $ph  = implode(',', array_fill(0, count($display_club_ids), '?'));
     $rs  = $conn->prepare(
         "SELECT fcr.registration_id, fcr.event_id, fcr.club_id, fcr.club_name, fcr.setting_id,
                 fcr.is_approved, fcr.approval_note,
@@ -137,8 +155,8 @@ if (!empty($my_club_ids)) {
          WHERE fcr.club_id IN ($ph)
          ORDER BY fcs.academic_year DESC, fcs.semester DESC, fcr.registration_id DESC"
     );
-    $ba = array(str_repeat('s', count($my_club_ids)));
-    foreach ($my_club_ids as &$cid) $ba[] = &$cid;
+    $ba = array(str_repeat('s', count($display_club_ids)));
+    foreach ($display_club_ids as &$cid) $ba[] = &$cid;
     call_user_func_array(array($rs, 'bind_param'), $ba);
     $rs->execute();
     $rr = $rs->get_result();
@@ -168,32 +186,22 @@ $all_spaces = [];
 $sp_res = $conn->query("SELECT space_id, space_name FROM spaces WHERE space_status='available' ORDER BY space_id");
 if ($sp_res) { while ($sp = $sp_res->fetch_assoc()) $all_spaces[] = $sp; }
 
-// ── 同社團內衝突偵測（場次層級）──────────────────────────────
-// conflicted_sessions[event_id][session_index] = true（精確到哪一筆場次）
+// ── 場地衝突偵測（含跨社團）──────────────────────────────────
+// conflicted_sessions[event_id][session_index] = 衝突詳細資訊陣列（與哪個社團/活動/時間衝突）
 // conflicted_rids[registration_id] = true（只要有任一場次衝突就標記整筆）
 $conflicted_sessions = [];
 $conflicted_rids     = [];
-$by_setting = [];
-foreach ($records as $rec) { $by_setting[$rec['setting_id']][] = $rec; }
-foreach ($by_setting as $grp) {
-    $n = count($grp);
-    for ($i = 0; $i < $n; $i++) {
-        for ($j = $i + 1; $j < $n; $j++) {
-            $ra = $grp[$i]; $rb = $grp[$j];
-            $sa_list = $sessions_map[$ra['event_id']] ?? [];
-            $sb_list = $sessions_map[$rb['event_id']] ?? [];
-            foreach ($sa_list as $ai => $sa) {
-                foreach ($sb_list as $bi => $sb) {
-                    if (!empty($sa['space_id']) && $sa['space_id'] == $sb['space_id'] &&
-                        $sa['start_time'] < $sb['end_time'] &&
-                        $sb['start_time'] < $sa['end_time']) {
-                        $conflicted_sessions[$ra['event_id']][$ai] = true;
-                        $conflicted_sessions[$rb['event_id']][$bi] = true;
-                        $conflicted_rids[$ra['registration_id']] = true;
-                        $conflicted_rids[$rb['registration_id']] = true;
-                    }
-                }
-            }
+foreach ($records as $rec) {
+    $eid = $rec['event_id'];
+    $rid = $rec['registration_id'];
+    foreach ($sessions_map[$eid] ?? [] as $si => $sess) {
+        if (empty($sess['space_id'])) continue;
+        $confs = $fc_manager->detectFieldCoordinationConflicts(
+            $rec['setting_id'], [$sess['space_id']], $sess['start_time'], $sess['end_time'], $rid
+        );
+        if (!empty($confs)) {
+            $conflicted_sessions[$eid][$si] = $confs;
+            $conflicted_rids[$rid] = true;
         }
     }
 }
@@ -220,7 +228,7 @@ foreach ($records as $rec) {
         :root { --primary:#1e4d6b; }
         * { box-sizing:border-box; }
         body { margin:0; min-height:100vh; font-family:'Segoe UI',sans-serif; background:#f7f5ef; color:#1f2937; }
-        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:auto; box-shadow:3px 0 15px rgba(0,0,0,.12); z-index:1200; }
+        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:hidden; box-shadow:3px 0 15px rgba(0,0,0,.12); z-index:1200; }
         .sidebar .brand { text-align:center; margin-bottom:1.5rem; }
         .sidebar .brand h4 { margin:0; font-size:1.1rem; line-height:1.4; font-weight:700; }
         .sidebar .nav-link { display:flex; align-items:center; gap:0.75rem; color:rgba(255,255,255,0.9); padding:0.85rem 1rem; margin:0.2rem 0; border-radius:16px; transition:background 0.25s,transform 0.15s; text-decoration:none; }
@@ -283,14 +291,17 @@ foreach ($records as $rec) {
             <div class="card" style="padding:.8rem 1.25rem; margin-bottom:1rem;">
                 <p class="mb-0" style="font-size:.85rem; color:#6b7280;">
                     <i class="bi bi-info-circle me-1"></i>
-                    顯示本社所有已提交的場協登記。可直接在此編輯場次時間 / 場地，或刪除登記。修改將即時同步至管理端。
+                    顯示<strong><?= htmlspecialchars($active_club_name, ENT_QUOTES, 'UTF-8') ?></strong>所有已提交的場協登記。可直接在此編輯場次時間 / 場地，或刪除登記。修改將即時同步至管理端。
+                    <?php if (count($clubs) > 1): ?>
+                    若要查看其他社團的登記紀錄，請至「<a href="profile.php">個人檔案</a>」切換目前身分。
+                    <?php endif; ?>
                 </p>
             </div>
 
             <?php if (!empty($conflicted_rids)): ?>
             <div class="conflict-alert">
                 <i class="bi bi-exclamation-triangle-fill"></i>
-                <span>本社有 <strong><?= count($conflicted_rids) ?></strong> 筆登記包含場次衝突，請編輯修改或刪除重複申請。</span>
+                <span>本社有 <strong><?= count($conflicted_rids) ?></strong> 筆登記與其他社團場地衝突，請編輯修改或刪除重複申請。</span>
             </div>
             <?php endif; ?>
 
@@ -298,7 +309,7 @@ foreach ($records as $rec) {
             <div class="card">
                 <div class="text-center py-5">
                     <i class="bi bi-inbox" style="font-size:3rem; color:#ccc;"></i>
-                    <p class="mt-3 text-muted">本社尚無場協登記記錄</p>
+                    <p class="mt-3 text-muted"><?= htmlspecialchars($active_club_name, ENT_QUOTES, 'UTF-8') ?> 尚無場協登記記錄</p>
                     <a href="field_coord.php" class="btn btn-primary btn-sm mt-1">前往登記</a>
                 </div>
             </div>
@@ -333,9 +344,19 @@ foreach ($records as $rec) {
                     ?>
                     <div class="record-card <?= $statusKey ?><?= $is_conflict ? ' conflict' : '' ?>" id="rec_<?= $rid ?>">
                         <?php if ($is_conflict): ?>
-                        <div class="conflict-alert mb-2" style="margin-bottom:.5rem!important;">
-                            <i class="bi bi-exclamation-triangle-fill"></i>
-                            此登記與本社其他申請有場次衝突，請編輯修改時間或刪除。
+                        <div class="conflict-alert mb-2" style="margin-bottom:.5rem!important; flex-direction:column; align-items:stretch;">
+                            <div><i class="bi bi-exclamation-triangle-fill"></i> 此登記與其他社團的場地申請有衝突，請編輯修改時間或刪除：</div>
+                            <ul class="mb-0 mt-1" style="padding-left:1.4rem;">
+                                <?php foreach ($conflicted_sessions[$eid] ?? [] as $si => $confs): ?>
+                                    <?php foreach ($confs as $c): ?>
+                                    <li>
+                                        場次<?= $si + 1 ?>：與
+                                        <strong><?= htmlspecialchars($c['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></strong> 的「<?= htmlspecialchars($c['conflicting_event'], ENT_QUOTES, 'UTF-8') ?>」
+                                        (<?= htmlspecialchars($c['conflicting_time'], ENT_QUOTES, 'UTF-8') ?>) 有場地衝突
+                                    </li>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </ul>
                         </div>
                         <?php endif; ?>
 

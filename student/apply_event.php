@@ -19,22 +19,46 @@ $user_id = $_SESSION['user_id'] ?? null;
 $field_coordination_results = [];
 $fc_manager = null;
 
+$my_clubs = [];
+$current_user_club = "";
+$selected_club_id = "";
 if ($user_id) {
     $fc_manager = new FieldCoordinationManager($conn);
-    $club_sql = "SELECT cm.club_id, c.club_name FROM club_members cm JOIN clubs c ON cm.club_id = c.club_id WHERE cm.user_id = ? LIMIT 1";
+    $club_sql = "SELECT cm.club_id, c.club_name FROM club_members cm JOIN clubs c ON cm.club_id = c.club_id WHERE cm.user_id = ?";
     $club_stmt = $conn->prepare($club_sql);
     if ($club_stmt) {
         $club_stmt->bind_param("i", $user_id);
         $club_stmt->execute();
         $club_result = $club_stmt->get_result();
-        
-        $current_user_club = ""; 
-        if ($club_row = $club_result->fetch_assoc()) {
-            $current_user_club = $club_row['club_name']; // 儲存正確的社團名稱
-            $field_coordination_results = $fc_manager->getAllApprovedFieldCoordinationForClub($club_row['club_id']);
-            if (empty($field_coordination_results)) $field_coordination_results = [];
-        }
+        while ($club_row = $club_result->fetch_assoc()) $my_clubs[] = $club_row;
         $club_stmt->close();
+    }
+
+    // 決定目前使用的社團（使用者可能同時隸屬多個社團，需明確指定本次申請的主辦社團）
+    $requested_club_id = $_POST['club_id'] ?? ($_GET['club_id'] ?? '');
+    foreach ($my_clubs as $c) {
+        if ($requested_club_id !== '' && $c['club_id'] === $requested_club_id) {
+            $selected_club_id  = $c['club_id'];
+            $current_user_club = $c['club_name'];
+            break;
+        }
+    }
+    if ($selected_club_id === '' && !empty($_SESSION['current_club_id'])) {
+        foreach ($my_clubs as $c) {
+            if ($c['club_id'] === $_SESSION['current_club_id']) {
+                $selected_club_id  = $c['club_id'];
+                $current_user_club = $c['club_name'];
+                break;
+            }
+        }
+    }
+    if ($selected_club_id === '' && !empty($my_clubs)) {
+        $selected_club_id  = $my_clubs[0]['club_id'];
+        $current_user_club = $my_clubs[0]['club_name'];
+    }
+    if ($selected_club_id !== '') {
+        $field_coordination_results = $fc_manager->getAllApprovedFieldCoordinationForClub($selected_club_id);
+        if (empty($field_coordination_results)) $field_coordination_results = [];
     }
 }
 
@@ -92,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // ── 處理表單提交 ──────────────────────────────────────────
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
-    $club_name          = trim($_POST['club_name'] ?? '');
+    $club_name          = $current_user_club; // 依使用者實際所屬社團（多重身分時依表單選擇）決定，避免送出他人社團資料
     $event_name         = trim($_POST['event_name'] ?? '');
     $responsible_person = trim($_POST['responsible_person'] ?? '');
     $event_type         = trim($_POST['event_type'] ?? '校內');
@@ -101,6 +125,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
     $activity_flags     = isset($_POST['activity_flags']) && is_array($_POST['activity_flags']) ? $_POST['activity_flags'] : [];
     $description        = trim($_POST['description'] ?? '');
     $sessions           = isset($_POST['sessions']) && is_array($_POST['sessions']) ? $_POST['sessions'] : [];
+
+    // 忽略未填寫開始日期的場次（使用者多按了新增場次但未填寫）
+    $sessions = array_values(array_filter($sessions, function($sess) {
+        return !empty($sess['date']);
+    }));
 
     // 還原場次以便顯示
     $sessions_data = !empty($sessions) ? $sessions : [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
@@ -113,7 +142,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
 
     $errors = [];
     if (empty($event_name))         $errors[] = "請填寫活動名稱";
-    if (empty($club_name))          $errors[] = "請填寫社團名稱";
+    if (empty($club_name))          $errors[] = "找不到您所屬的社團資料，請聯絡系統管理員";
     if (empty($responsible_person)) $errors[] = "請填寫活動負責人";
     if ($event_type === '校外' && empty($activity_location)) $errors[] = "校外活動請填寫活動地點";
     if (empty($sessions))           $errors[] = "請至少新增一個場次";
@@ -346,7 +375,7 @@ function getEquipmentIcon($id) {
 
 // 表單還原值
 $fv = [
-    'club_name'          => htmlspecialchars($_POST['club_name'] ?? $current_user_club ?? '', ENT_QUOTES, 'UTF-8'),
+    'club_name'          => htmlspecialchars($current_user_club ?? '', ENT_QUOTES, 'UTF-8'),
     'event_name'         => htmlspecialchars($_POST['event_name'] ?? '', ENT_QUOTES, 'UTF-8'),
     'responsible_person' => htmlspecialchars($_POST['responsible_person'] ?? '', ENT_QUOTES, 'UTF-8'),
     'event_type'         => $_POST['event_type'] ?? '校內',
@@ -374,7 +403,7 @@ foreach ($venues as $v) {
         :root { --primary:#1e4d6b; --sidebar:#14394f; --bg:#f7f5ef; --card:#ffffff; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }
         * { box-sizing:border-box; }
         body { margin:0; min-height:100vh; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:var(--bg); color:#1f2937; }
-        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:auto; box-shadow:3px 0 15px rgba(0,0,0,0.12); z-index:1200; }
+        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:hidden; box-shadow:3px 0 15px rgba(0,0,0,0.12); z-index:1200; }
         .sidebar .brand { text-align:center; margin-bottom:1.5rem; }
         .sidebar .brand h4 { margin:0; font-size:1.1rem; line-height:1.4; font-weight:700; }
         .sidebar .nav-link { display:flex; align-items:center; gap:0.75rem; color:rgba(255,255,255,0.9); padding:0.85rem 1rem; margin:0.2rem 0; border-radius:16px; transition:background 0.25s,transform 0.15s; }
@@ -505,7 +534,17 @@ foreach ($venues as $v) {
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">社團名稱 <span class="text-danger">*</span></label>
-                            <input type="text" name="club_name" class="form-control" value="<?= $fv['club_name'] ?>" required placeholder="主辦社團名稱"readonly>
+                            <?php if (count($my_clubs) > 1): ?>
+                            <select class="form-control" id="club_id_select" onchange="location.href='apply_event.php?club_id='+encodeURIComponent(this.value)">
+                                <?php foreach ($my_clubs as $c): ?>
+                                <option value="<?= htmlspecialchars($c['club_id'], ENT_QUOTES, 'UTF-8') ?>" <?= $c['club_id']===$selected_club_id?'selected':'' ?>><?= htmlspecialchars($c['club_name'], ENT_QUOTES, 'UTF-8') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted">您隸屬多個社團，請選擇本次申請的主辦社團</small>
+                            <?php else: ?>
+                            <input type="text" class="form-control" value="<?= $fv['club_name'] ?>" readonly>
+                            <?php endif; ?>
+                            <input type="hidden" name="club_id" value="<?= htmlspecialchars($selected_club_id, ENT_QUOTES, 'UTF-8') ?>">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">活動名稱 <span class="text-danger">*</span></label>
@@ -518,25 +557,32 @@ foreach ($venues as $v) {
                             <label class="form-label fw-semibold">活動負責人 <span class="text-danger">*</span></label>
                             <input type="text" name="responsible_person" class="form-control" value="<?= $fv['responsible_person'] ?>" required placeholder="例：社長 王小明">
                         </div>
-                        <div class="col-md-6">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
                             <label class="form-label fw-semibold">活動類型</label>
-                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
-                                <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
-                                    <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
-                                    一般活動
-                                </label>
-                                <label id="lbl_scale_large" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
-                                    <input type="radio" name="activity_scale" value="大型活動" id="scale_large" <?= ($fv['activity_scale']??'')=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
-                                    大型活動
-                                </label>
-                                <label id="lbl_alcohol" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
-                                    <input type="checkbox" name="activity_flags[]" value="含酒精活動" id="flag_alcohol" <?= in_array('含酒精活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
-                                    🍺 含酒精
-                                </label>
-                                <label id="lbl_fire" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.28rem 0.7rem; cursor:pointer; font-size:0.83rem; background:white; transition:all 0.15s; user-select:none;">
-                                    <input type="checkbox" name="activity_flags[]" value="使用火源活動" id="flag_fire" <?= in_array('使用火源活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
-                                    🔥 火源
-                                </label>
+                            <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:center;">
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                    <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.35rem 0.85rem; cursor:pointer; font-size:0.85rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                                        <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                                        一般活動
+                                    </label>
+                                    <label id="lbl_scale_large" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.35rem 0.85rem; cursor:pointer; font-size:0.85rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
+                                        <input type="radio" name="activity_scale" value="大型活動" id="scale_large" <?= ($fv['activity_scale']??'')=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
+                                        大型活動
+                                    </label>
+                                </div>
+                                <div style="width:1px; height:1.6rem; background:#e5e7eb;"></div>
+                                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                    <label id="lbl_alcohol" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.35rem 0.85rem; cursor:pointer; font-size:0.85rem; background:white; transition:all 0.15s; user-select:none;">
+                                        <input type="checkbox" name="activity_flags[]" value="含酒精活動" id="flag_alcohol" <?= in_array('含酒精活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                                        🍺 含酒精
+                                    </label>
+                                    <label id="lbl_fire" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.35rem 0.85rem; cursor:pointer; font-size:0.85rem; background:white; transition:all 0.15s; user-select:none;">
+                                        <input type="checkbox" name="activity_flags[]" value="使用火源活動" id="flag_fire" <?= in_array('使用火源活動',$fv['activity_flags'])?'checked':'' ?> onchange="updateFlagWarning()" style="display:none;">
+                                        🔥 火源
+                                    </label>
+                                </div>
                             </div>
                             <div id="deadline_reminder" class="notice-box mt-2" style="padding:0.55rem 0.85rem; font-size:0.86rem; margin-bottom:0;">
                                 <i class="bi bi-clock" style="font-size:0.95rem; flex-shrink:0;"></i>
@@ -751,7 +797,7 @@ foreach ($venues as $v) {
                 </div>
             </div>
 
-            <button type="submit" class="btn-submit"><i class="bi bi-send me-1"></i> 提交申請</button>
+            <button type="button" id="submitBtn" class="btn-submit"><i class="bi bi-send me-1"></i> 提交申請</button>
         </form>
     </section>
 </main>
@@ -781,16 +827,12 @@ function loadFCData(idx) {
             if (sel) sel.value = fc.space_id;
         }
     }
-    document.getElementById('type_indoor').checked = true;
-    toggleEventType();
 }
 
-// ── 活動類型切換 ─────────────────────────────────────────
+// ── 活動類型切換（目前固定為校內，場地一律必填） ───────────
 function toggleEventType() {
-    const isOutdoor = document.getElementById('type_outdoor').checked;
-    document.getElementById('location_section').style.display = isOutdoor ? 'block' : 'none';
     document.querySelectorAll('.session-field:last-child label').forEach(lbl => {
-        lbl.textContent = isOutdoor ? '場地（選填）' : '場地 *';
+        lbl.textContent = '場地 *';
     });
 }
 
@@ -892,7 +934,6 @@ function escHtml(str) {
 function addSession(date, startTime, endDate, endTime, venueId) {
     const idx  = sessionCount;
     sessionCount++;
-    const isOutdoor = document.getElementById('type_outdoor').checked;
     const html = `
         <div class="session-row" data-idx="${idx}">
             <div class="session-header">
@@ -919,7 +960,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
                     ${buildTimeSelects('sessions['+idx+'][end_time]', endTime||'')}
                 </div>
                 <div class="session-field">
-                    <label>${isOutdoor ? '場地（選填）' : '場地 *'}</label>
+                    <label>場地 *</label>
                     <select name="sessions[${idx}][venue_id]" class="form-control">
                         ${buildVenueOptions(venueId)}
                     </select>
@@ -1066,16 +1107,23 @@ document.getElementById('sessions_container').addEventListener('change', functio
 });
 
 // ── 表單送出驗證 ─────────────────────────────────────────
-document.getElementById('applicationForm').addEventListener('submit', function(e) {
-    const isOutdoor = document.getElementById('type_outdoor').checked;
+// 改用 button click（非 type=submit），避免瀏覽器原生 required 驗證
+// 在我們移除空白場次之前就先擋下表單送出。
+document.getElementById('submitBtn').addEventListener('click', function() {
+    const form = document.getElementById('applicationForm');
 
-    if (isOutdoor) {
-        const loc = document.getElementById('activity_location').value.trim();
-        if (!loc) { e.preventDefault(); alert('校外活動請填寫活動地點！'); return; }
-    }
+    // 移除未填寫開始日期的場次（多按了新增場次但未填寫）
+    document.querySelectorAll('.session-row').forEach(row => {
+        const di = row.querySelector('[name*="[date]"]');
+        if (!di.value) row.remove();
+    });
+    renumberSessions();
+
+    // 觸發瀏覽器原生必填驗證（活動名稱、負責人、剩餘場次的必填欄位等）
+    if (!form.reportValidity()) return;
 
     const rows = document.querySelectorAll('.session-row');
-    if (rows.length === 0) { e.preventDefault(); alert('請至少新增一個場次！'); return; }
+    if (rows.length === 0) { alert('請至少新增一個場次！'); return; }
 
     for (let i=0; i<rows.length; i++) {
         const n   = i+1;
@@ -1085,18 +1133,18 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
         const eti = rows[i].querySelector('[name*="[end_time]"]');
         const vsl = rows[i].querySelector('[name*="[venue_id]"]');
 
-        if (!di.value)  { e.preventDefault(); alert(`場次${n}：請選擇開始日期！`);   di.focus();  return; }
-        if (!validateSessionDateInput(di)) { e.preventDefault(); di.focus(); return; }
-        if (!sti.value) { e.preventDefault(); alert(`場次${n}：請填寫開始時間！`);   sti.focus(); return; }
-        if (!edi.value) { e.preventDefault(); alert(`場次${n}：請選擇結束日期！`);   edi.focus(); return; }
-        if (!validateSessionDateInput(edi)) { e.preventDefault(); edi.focus(); return; }
-        if (!eti.value) { e.preventDefault(); alert(`場次${n}：請填寫結束時間！`);   eti.focus(); return; }
-        if (edi.value < di.value) { e.preventDefault(); alert(`場次${n}：結束日期不能早於開始日期！`); return; }
-        if (edi.value===di.value && sti.value>=eti.value) { e.preventDefault(); alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
+        if (!di.value)  { alert(`場次${n}：請選擇開始日期！`);   di.focus();  return; }
+        if (!validateSessionDateInput(di)) { di.focus(); return; }
+        if (!sti.value) { alert(`場次${n}：請填寫開始時間！`);   sti.focus(); return; }
+        if (!edi.value) { alert(`場次${n}：請選擇結束日期！`);   edi.focus(); return; }
+        if (!validateSessionDateInput(edi)) { edi.focus(); return; }
+        if (!eti.value) { alert(`場次${n}：請填寫結束時間！`);   eti.focus(); return; }
+        if (edi.value < di.value) { alert(`場次${n}：結束日期不能早於開始日期！`); return; }
+        if (edi.value===di.value && sti.value>=eti.value) { alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
         if (sti.value<'08:30'||sti.value>'21:30'||eti.value<'08:30'||eti.value>'21:30') {
-            e.preventDefault(); alert(`場次${n}：時間須在 08:30–21:30！`); return;
+            alert(`場次${n}：時間須在 08:30–21:30！`); return;
         }
-        if (!isOutdoor && vsl && !vsl.value) { e.preventDefault(); alert(`場次${n}：校內活動請選擇場地！`); vsl.focus(); return; }
+        if (vsl && !vsl.value) { alert(`場次${n}：請選擇場地！`); vsl.focus(); return; }
     }
 
     // 器材借用時間驗證
@@ -1104,20 +1152,18 @@ document.getElementById('applicationForm').addEventListener('submit', function(e
     if (anyEquip) {
         const ebt=document.getElementById('equip_borrow_time').value;
         const ert=document.getElementById('equip_return_time').value;
-        if (!ebt||!ert) { e.preventDefault(); alert('有選擇器材時，請填寫器材借用與歸還時間！'); return; }
-        if (ebt>=ert)   { e.preventDefault(); alert('器材歸還時間必須晚於借用時間！'); return; }
+        if (!ebt||!ert) { alert('有選擇器材時，請填寫器材借用與歸還時間！'); return; }
+        if (ebt>=ert)   { alert('器材歸還時間必須晚於借用時間！'); return; }
         const tm=s=>{const d=new Date(s);return d.getHours()*60+d.getMinutes();};
         if (tm(ebt)<9*60+30||tm(ebt)>16*60+30||tm(ert)<9*60+30||tm(ert)>16*60+30) {
-            e.preventDefault(); alert('器材借還時間須在 09:30–16:30！'); return;
+            alert('器材借還時間須在 09:30–16:30！'); return;
         }
     }
 
-    // ── 驗證全部通過 → 立即禁用送出按鈕，防止重複點擊 ──────────────
-    const submitBtn = document.querySelector('.btn-submit');
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="submit-spinner"></span>送出中，請稍候…';
-    }
+    // ── 驗證全部通過 → 禁用送出按鈕並送出表單 ──────────────────
+    this.disabled = true;
+    this.innerHTML = '<span class="submit-spinner"></span>送出中，請稍候…';
+    form.submit();
 });
 
 // 初始化

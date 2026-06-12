@@ -130,6 +130,18 @@ class FieldCoordinationManager {
     }
 
     /**
+     * 取得最新一筆場協設定（不限狀態），用於登記未開放時顯示大會日期等資訊
+     */
+    public function getLatestSetting() {
+        $sql = "SELECT * FROM field_coordination_settings ORDER BY created_at DESC LIMIT 1";
+        $result = $this->conn->query($sql);
+        if ($result && $result->num_rows > 0) {
+            return $result->fetch_assoc();
+        }
+        return null;
+    }
+
+    /**
      * 是否還在場協大會前（含登記期間 + 登記結束到大會之間）
      */
     public function isBeforeCoordinationMeeting() {
@@ -263,69 +275,6 @@ class FieldCoordinationManager {
         }
         
         return $conflicts;
-    }
-
-    /**
-     * 記錄衝突到資料庫
-     */
-    public function logConflict($setting_id, $reg_id_1, $reg_id_2, $space_id, $conflict_start, $conflict_end) {
-        $sql = "INSERT INTO coordination_conflicts 
-                (setting_id, registration_id_1, registration_id_2, space_id, conflict_start_time, conflict_end_time)
-                VALUES (?, ?, ?, ?, ?, ?)";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("iiisss", $setting_id, $reg_id_1, $reg_id_2, $space_id, $conflict_start, $conflict_end);
-        $result = $stmt->execute();
-        $stmt->close();
-        
-        return $result;
-    }
-
-    /**
-     * 取得某設定下的所有衝突
-     */
-    public function getConflictsBySettingId($setting_id) {
-        $sql = "SELECT cc.*, 
-                   fcr1.club_name as club_name_1, e1.event_name as event_name_1,
-                   fcr2.club_name as club_name_2, e2.event_name as event_name_2,
-                   s.space_name
-                FROM coordination_conflicts cc
-                JOIN field_coordination_registrations fcr1 ON cc.registration_id_1 = fcr1.registration_id
-                JOIN events e1 ON fcr1.event_id = e1.event_id
-                JOIN field_coordination_registrations fcr2 ON cc.registration_id_2 = fcr2.registration_id
-                JOIN events e2 ON fcr2.event_id = e2.event_id
-                JOIN spaces s ON cc.space_id = s.space_id
-                WHERE cc.setting_id = ?
-                ORDER BY cc.conflict_start_time DESC";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("i", $setting_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        $conflicts = [];
-        while ($row = $result->fetch_assoc()) {
-            $conflicts[] = $row;
-        }
-        $stmt->close();
-        
-        return $conflicts;
-    }
-
-    /**
-     * 標記衝突為已解決
-     */
-    public function markConflictResolved($conflict_id, $resolution_note = null) {
-        $sql = "UPDATE coordination_conflicts 
-                SET status = 'resolved', resolution_note = ?
-                WHERE conflict_id = ?";
-        
-        $stmt = $this->conn->prepare($sql);
-        $stmt->bind_param("si", $resolution_note, $conflict_id);
-        $result = $stmt->execute();
-        $stmt->close();
-        
-        return $result;
     }
 
     /**

@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
+require_once(__DIR__ . "/../includes/field_coordination_import_helpers.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
@@ -14,16 +15,6 @@ $current_page = 'field_coordination_import';
 $fc_manager   = new FieldCoordinationManager($conn);
 $message      = '';
 $message_type = '';
-
-function csv_q($s) {
-    return '"' . str_replace('"', '""', $s !== null ? $s : '') . '"';
-}
-
-function fc_bind_array($stmt, $types, $values) {
-    $args = array($types);
-    foreach ($values as &$v) { $args[] = &$v; }
-    call_user_func_array(array($stmt, 'bind_param'), $args);
-}
 
 // ── AJAX：單筆編輯儲存 ────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_single_edit') {
@@ -51,51 +42,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// ── 儲存結果 ──────────────────────────────────────────────────
-// 解析 edit_session POST 資料 → [['reservation_id'=>, 'space_id'=>, 'start_time'=>, 'end_time'=>], ...]
-function parseEditSessions($raw) {
-    $out = [];
-    foreach ($raw as $s) {
-        if (empty($s['start_time']) || empty($s['end_time']) || empty($s['date'])) continue;
-        $end_date = !empty($s['end_date']) ? $s['end_date'] : $s['date'];
-        $out[] = [
-            'reservation_id' => intval($s['reservation_id']),
-            'space_id'       => intval($s['space_id']),
-            'start_time'     => $s['date']    . ' ' . $s['start_time'] . ':00',
-            'end_time'       => $end_date . ' ' . $s['end_time']   . ':00',
-        ];
-    }
-    return $out;
-}
-
+// ── 儲存結果（無衝突登記：approve / edited / pending）─────────────
+//    以及（衝突協調：選定得標社團，落敗者編輯或拒絕）─────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_results'])) {
     $setting_id = intval($_POST['setting_id'] ?? 0);
-    $cnt = ['approved' => 0, 'edited' => 0, 'skip' => 0];
+    $cnt = ['approved' => 0, 'edited' => 0, 'rejected' => 0, 'skip' => 0];
     $edit_sessions_post = $_POST['edit_session'] ?? [];
 
-    // 1. 衝突組：贏家核准，落敗者改為編輯（有填才套用，否則跳過）
-    $conflict_groups  = $_POST['conflict_group']  ?? [];
-    $conflict_winners = $_POST['conflict_winner'] ?? [];
-    foreach ($conflict_groups as $gi => $members) {
-        $winner = $conflict_winners[$gi] ?? 'none';
-        foreach ($members as $reg_id) {
-            $reg_id = intval($reg_id);
-            if ($winner !== 'none' && $winner == $reg_id) {
-                $fc_manager->approveFieldCoordinationRegistration($reg_id, '場協大會核准');
-                $cnt['approved']++;
-            } else {
-                $parsed = parseEditSessions($edit_sessions_post[$reg_id] ?? []);
-                if (!empty($parsed)) {
-                    $fc_manager->editAndApproveFieldCoordinationRegistration($reg_id, $parsed, '場協大會調整時間地點');
-                    $cnt['edited']++;
-                } else {
-                    $cnt['skip']++;
-                }
-            }
-        }
-    }
-
-    // 2. 無衝突登記：approve / edited / skip
+    // 無衝突登記
     $decisions = $_POST['decision'] ?? [];
     $notes     = $_POST['note']     ?? [];
     foreach ($decisions as $reg_id => $decision) {
@@ -117,8 +71,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_results'])) {
         }
     }
 
-    $message = "✅ 套用完成：核准 {$cnt['approved']} 筆、調整核准 {$cnt['edited']} 筆" .
-               ($cnt['skip'] ? "、跳過 {$cnt['skip']} 筆" : "");
+    // 衝突組：贏家核准，落敗者改為編輯（有填才套用）或拒絕
+    $conflict_groups_post = $_POST['conflict_group']  ?? [];
+    $conflict_winners     = $_POST['conflict_winner'] ?? [];
+    foreach ($conflict_groups_post as $gi => $members) {
+        $winner = $conflict_winners[$gi] ?? 'none';
+        foreach ($members as $reg_id) {
+            $reg_id = intval($reg_id);
+            if ($winner !== 'none' && $winner == $reg_id) {
+                $fc_manager->approveFieldCoordinationRegistration($reg_id, '場協大會核准');
+                $cnt['approved']++;
+            } else {
+                $parsed = parseEditSessions($edit_sessions_post[$reg_id] ?? []);
+                if (!empty($parsed)) {
+                    $fc_manager->editAndApproveFieldCoordinationRegistration($reg_id, $parsed, '場協大會調整時間地點');
+                    $cnt['edited']++;
+                } else {
+                    $fc_manager->rejectFieldCoordinationRegistration($reg_id, '場協大會：該時段由其他社團取得');
+                    $cnt['rejected']++;
+                }
+            }
+        }
+    }
+
+    $msg_parts = [];
+    if ($cnt['approved']) $msg_parts[] = "核准 {$cnt['approved']} 筆";
+    if ($cnt['edited'])   $msg_parts[] = "調整核准 {$cnt['edited']} 筆";
+    if ($cnt['rejected']) $msg_parts[] = "拒絕 {$cnt['rejected']} 筆";
+    if ($cnt['skip'])     $msg_parts[] = "跳過 {$cnt['skip']} 筆";
+    $message = "✅ 套用完成：" . ($msg_parts ? implode('、', $msg_parts) : '無變更');
     $message_type = 'success';
     $_GET['setting_id'] = $setting_id;
 }
@@ -197,116 +178,118 @@ foreach ($all_settings as $s) {
     if ((int)$s['setting_id'] === $selected_setting_id) { $selected_setting = $s; break; }
 }
 
-// ── 取得登記清單 ──────────────────────────────────────────────
-$registrations = [];
-if ($selected_setting_id) {
-    $sql = "SELECT
-                fcr.registration_id, fcr.club_name, fcr.is_approved, fcr.approval_note,
-                e.event_id, e.event_name, e.start_time, e.end_time,
-                e.responsible_person, e.description
-            FROM field_coordination_registrations fcr
-            JOIN events e ON fcr.event_id = e.event_id
-            WHERE fcr.setting_id = ?
-            ORDER BY e.start_time ASC, fcr.club_name ASC";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $selected_setting_id);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) { $registrations[] = $row; }
-    $stmt->close();
-}
+// ── 取得登記清單／場次明細／可用場地／衝突分組 ──────────────────
+$import_data     = fc_import_load_data($conn, $selected_setting_id);
+$registrations   = $import_data['registrations'];
+$reg_sessions    = $import_data['reg_sessions'];
+$all_spaces      = $import_data['all_spaces'];
+$conflict_groups = $import_data['conflict_groups'];
+$all_conflicting = $import_data['all_conflicting'];
+$clean_regs      = $import_data['clean_regs'];
+$reg_map         = $import_data['reg_map'];
+$stat            = $import_data['stat'];
 
-// ── 取得每個登記的場次明細（用於衝突偵測與顯示）──────────────────
-$reg_sessions = []; // [registration_id => [['space_id'=>, 'space_name'=>, 'start_time'=>, 'end_time'=>], ...]]
-if ($selected_setting_id && !empty($registrations)) {
-    $sql_sess = "SELECT res.reservation_id, res.space_id, res.start_time, res.end_time,
-                        s.space_name, fcr.registration_id
-                 FROM field_coordination_registrations fcr
-                 JOIN events e ON fcr.event_id = e.event_id
-                 JOIN reservations res ON e.event_id = res.event_id
-                 LEFT JOIN spaces s ON res.space_id = s.space_id
-                 WHERE fcr.setting_id = ?
-                 ORDER BY fcr.registration_id, res.start_time";
-    $stmt_s = $conn->prepare($sql_sess);
-    $stmt_s->bind_param("i", $selected_setting_id);
-    $stmt_s->execute();
-    $res_s = $stmt_s->get_result();
-    while ($row_s = $res_s->fetch_assoc()) {
-        $reg_sessions[$row_s['registration_id']][] = $row_s;
-    }
-    $stmt_s->close();
-}
-
-// ── 取得所有可用場地（編輯場次用）────────────────────────────────
-$all_spaces = [];
-$sp_res = $conn->query("SELECT space_id, space_name FROM spaces WHERE space_status='available' ORDER BY space_id");
-if ($sp_res) { while ($sp = $sp_res->fetch_assoc()) $all_spaces[] = $sp; }
-
-// ── 偵測衝突（BFS 分組，以場次為單位精確比對）────────────────────
-$adj = [];
-foreach ($registrations as $r) { $adj[$r['registration_id']] = []; }
-$reg_ids = array_column($registrations, 'registration_id');
-
-for ($i = 0; $i < count($reg_ids); $i++) {
-    for ($j = $i + 1; $j < count($reg_ids); $j++) {
-        $a_rid = $reg_ids[$i];
-        $b_rid = $reg_ids[$j];
-        $a_sessions = $reg_sessions[$a_rid] ?? [];
-        $b_sessions = $reg_sessions[$b_rid] ?? [];
-        $found = false;
-        foreach ($a_sessions as $sa) {
-            foreach ($b_sessions as $sb) {
-                if ($sa['space_id'] == $sb['space_id'] &&
-                    $sa['start_time'] < $sb['end_time'] &&
-                    $sb['start_time'] < $sa['end_time']) {
-                    $found = true;
-                    break 2;
-                }
-            }
-        }
-        if ($found) {
-            $adj[$a_rid][] = $b_rid;
-            $adj[$b_rid][] = $a_rid;
-        }
-    }
-}
-
-// BFS 找連通分量（衝突組）
-$visited        = [];
-$conflict_groups = [];   // [ [reg_id, ...], ... ]
-$reg_map        = [];
-foreach ($registrations as $r) { $reg_map[$r['registration_id']] = $r; }
-
-foreach ($registrations as $r) {
-    $rid = $r['registration_id'];
-    if (isset($visited[$rid]) || empty($adj[$rid])) continue;
-    $group = [];
-    $queue = [$rid];
-    $visited[$rid] = true;
-    while (!empty($queue)) {
-        $cur = array_shift($queue);
-        $group[] = $cur;
-        foreach ($adj[$cur] as $nb) {
-            if (!isset($visited[$nb])) { $visited[$nb] = true; $queue[] = $nb; }
-        }
-    }
-    if (count($group) > 1) { $conflict_groups[] = $group; }
-}
-
-$all_conflicting = [];
-foreach ($conflict_groups as $g) { foreach ($g as $id) { $all_conflicting[] = $id; } }
-
-$clean_regs = array_values(array_filter($registrations, function($r) use ($all_conflicting) {
-    return !in_array($r['registration_id'], $all_conflicting);
+// ── 分類：無衝突（待處理）／有衝突（未解決）／已審核完成 ──────────
+$pending_clean = array_values(array_filter($clean_regs, function($r) {
+    return $r['is_approved'] === null;
 }));
 
-// 統計
-$stat = ['pending' => 0, 'approved' => 0, 'rejected' => 0, 'conflict' => count($all_conflicting)];
-foreach ($registrations as $r) {
-    if ($r['is_approved'] === null)         $stat['pending']++;
-    elseif ((int)$r['is_approved'] === 1)   $stat['approved']++;
-    else                                    $stat['rejected']++;
+$unresolved_groups = [];
+foreach ($conflict_groups as $gi => $group_ids) {
+    $has_pending = false;
+    foreach ($group_ids as $gid) {
+        if ($reg_map[$gid]['is_approved'] === null) { $has_pending = true; break; }
+    }
+    if ($has_pending) $unresolved_groups[$gi] = $group_ids;
 }
+$unresolved_conflicting_ids = [];
+foreach ($unresolved_groups as $g) { foreach ($g as $gid) { $unresolved_conflicting_ids[] = $gid; } }
+
+$done_regs = array_values(array_filter($registrations, function($r) {
+    return $r['is_approved'] !== null;
+}));
+
+// ── CSV 匯出（場協大會用：全部登記合併，含衝突標記，可依時間/場地/社團排序）──
+if (isset($_GET['action']) && $_GET['action'] === 'export_meeting' && $selected_setting_id) {
+    $sort_mode = $_GET['sort'] ?? 'time';
+    if (!in_array($sort_mode, ['time', 'venue', 'club'], true)) $sort_mode = 'time';
+
+    // 標記每筆登記屬於第幾個衝突組
+    $conflict_group_no = [];
+    foreach ($conflict_groups as $gi => $group_ids) {
+        foreach ($group_ids as $gid) { $conflict_group_no[$gid] = $gi + 1; }
+    }
+
+    // 展開成「每場次一行」
+    $rows = [];
+    foreach ($registrations as $reg) {
+        $rid = $reg['registration_id'];
+        $status = $reg['is_approved'] === null ? '待定' : ((int)$reg['is_approved'] ? '核准' : '拒絕');
+        $conflict_label = isset($conflict_group_no[$rid]) ? ('衝突組 ' . $conflict_group_no[$rid]) : '';
+        $purpose = '';
+        foreach (explode("\n", $reg['description'] ?? '') as $dl) {
+            if (strpos(trim($dl), '用途：') === 0) {
+                $purpose = mb_substr(trim($dl), 3, null, 'UTF-8');
+                break;
+            }
+        }
+        $sessions = $reg_sessions[$rid] ?? [];
+        if (empty($sessions)) {
+            $rows[] = [
+                'club_name' => $reg['club_name'], 'event_name' => $reg['event_name'],
+                'responsible_person' => $reg['responsible_person'], 'purpose' => $purpose,
+                'session_no' => 1, 'start_time' => null, 'end_time' => null,
+                'space_name' => '', 'status' => $status, 'conflict' => $conflict_label,
+            ];
+        } else {
+            foreach ($sessions as $si => $ss) {
+                $rows[] = [
+                    'club_name' => $reg['club_name'], 'event_name' => $reg['event_name'],
+                    'responsible_person' => $reg['responsible_person'], 'purpose' => $purpose,
+                    'session_no' => $si + 1, 'start_time' => $ss['start_time'], 'end_time' => $ss['end_time'],
+                    'space_name' => $ss['space_name'] ?? '', 'status' => $status, 'conflict' => $conflict_label,
+                ];
+            }
+        }
+    }
+
+    usort($rows, function($a, $b) use ($sort_mode) {
+        switch ($sort_mode) {
+            case 'venue': $c = strcmp($a['space_name'], $b['space_name']); break;
+            case 'club':  $c = strcmp($a['club_name'], $b['club_name']);   break;
+            default:      $c = strcmp((string)$a['start_time'], (string)$b['start_time']); break;
+        }
+        if ($c !== 0) return $c;
+        return strcmp((string)$a['start_time'], (string)$b['start_time']);
+    });
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="場協大會總表_' . $selected_setting_id . '.csv"');
+    echo "\xEF\xBB\xBF";
+    echo "衝突組別,社團,活動名稱,負責人,場地用途,場次,開始日期,開始時間,結束時間,場地,目前狀態\n";
+    foreach ($rows as $r) {
+        echo implode(',', [
+            csv_q($r['conflict']),
+            csv_q($r['club_name']), csv_q($r['event_name']),
+            csv_q($r['responsible_person']), csv_q($r['purpose']),
+            $r['session_no'],
+            csv_q($r['start_time'] ? date('Y-m-d', strtotime($r['start_time'])) : ''),
+            csv_q($r['start_time'] ? date('H:i', strtotime($r['start_time'])) : ''),
+            csv_q($r['end_time']   ? date('H:i', strtotime($r['end_time']))   : ''),
+            csv_q($r['space_name']),
+            csv_q($r['status']),
+        ]) . "\n";
+    }
+    exit;
+}
+
+// ── 分頁籤 ────────────────────────────────────────────────────
+$tab = $_GET['tab'] ?? 'all';
+if (!in_array($tab, ['all', 'clean', 'conflict', 'done'], true)) $tab = 'all';
+
+$show_clean    = in_array($tab, ['all', 'clean'], true);
+$show_conflict = in_array($tab, ['all', 'conflict'], true);
+$show_done     = in_array($tab, ['all', 'done'], true);
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -322,7 +305,7 @@ foreach ($registrations as $r) {
         body { margin:0; min-height:100vh; font-family:'Segoe UI',sans-serif; background:var(--bg); color:#1f2937; }
 
         /* sidebar */
-        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:auto; box-shadow:3px 0 15px rgba(0,0,0,.12); z-index:1200; }
+        .sidebar { position:fixed; top:0; left:0; width:260px; height:100vh; background:var(--primary); color:white; padding:1.5rem 0.8rem; overflow-y:hidden; box-shadow:3px 0 15px rgba(0,0,0,.12); z-index:1200; }
         .sidebar .brand { text-align:center; margin-bottom:1.5rem; }
         .sidebar .brand h4 { margin:0; font-size:1.1rem; line-height:1.4; font-weight:700; }
         .sidebar .nav-link { display:flex; align-items:center; gap:.75rem; color:rgba(255,255,255,.9); padding:.85rem 1rem; margin:.2rem 0; border-radius:16px; transition:background .25s,transform .15s; }
@@ -339,42 +322,27 @@ foreach ($registrations as $r) {
         .top-navbar .breadcrumb-item a:hover { opacity:1; }
         .top-navbar .breadcrumb-item.active { color:#6b7280; }
         .user-avatar { width:38px; height:38px; border-radius:50%; background:var(--primary); color:white; display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:1rem; flex-shrink:0; }
-        .top-navbar .breadcrumb-item.active { color:#6b7280; }
         .content-wrapper { padding:1.5rem 2rem 120px; }
 
         /* card */
         .card { background:var(--card); border-radius:18px; box-shadow:0 10px 30px rgba(15,23,42,.06); padding:1.5rem; margin-bottom:1.5rem; }
         .card-title { font-weight:700; color:var(--primary); font-size:1.05rem; display:flex; align-items:center; gap:.5rem; margin-bottom:1rem; }
 
-        /* stats */
-        .stat-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1.25rem; }
-        .stat-box { padding:.55rem 1rem; border-radius:10px; font-size:.88rem; font-weight:600; display:flex; align-items:center; gap:.4rem; }
-        .stat-conflict  { background:#deb8b9; color:#5c1f22; }
-        .stat-pending   { background:#f0e8c0; color:#6b5a20; }
-        .stat-approved  { background:#c8dfe0; color:#1a3f42; }
-        .stat-rejected  { background:#ede4e5; color:#5a3f42; }
-        .stat-total     { background:#f3f4f6; color:#374151; }
-
-        /* conflict card */
-        .conflict-card { border:2px solid #deb8b9; border-radius:14px; padding:1.2rem 1.4rem; margin-bottom:1rem; background:#fff; }
-        .conflict-header { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; flex-wrap:wrap; }
-        .conflict-badge { background:#deb8b9; color:#5c1f22; padding:.2rem .7rem; border-radius:999px; font-size:.78rem; font-weight:700; }
-        .conflict-time { font-size:.9rem; color:#374151; font-weight:600; }
-        .conflict-venue { font-size:.85rem; color:#6b7280; }
-
-        .winner-options { display:flex; flex-wrap:wrap; gap:.75rem; }
-        .winner-option { flex:1; min-width:200px; }
-        .winner-option input[type=radio] { display:none; }
-        .winner-option label {
-            display:block; padding:.85rem 1.1rem; border:2px solid #e5e7eb; border-radius:12px;
-            cursor:pointer; transition:all .2s; background:white;
-        }
-        .winner-option label:hover { border-color:#1e4d6b; background:#f0f4f8; }
-        .winner-option input:checked + label { border-color:#70a3a7; background:#c8dfe0; }
-        .winner-option input[value="none"]:checked + label { border-color:#c9979a; background:#deb8b9; }
-        .winner-label-club { font-weight:700; font-size:.95rem; color:#1f2937; margin-bottom:.2rem; }
-        .winner-label-event { font-size:.82rem; color:#6b7280; }
-        .winner-none-label { font-weight:600; color:#5c1f22; text-align:center; padding:.3rem 0; }
+        /* tabs */
+        .filter-tab { display:inline-flex; align-items:center; gap:.45rem; padding:.4rem 1rem; border-radius:999px; font-size:.85rem; font-weight:600; text-decoration:none; border:1.5px solid transparent; transition:all .2s; cursor:pointer; }
+        .filter-tab .ftab-count { background:rgba(0,0,0,.1); border-radius:999px; padding:.05rem .5rem; font-size:.75rem; }
+        .filter-tab.tab-all      { color:#1e4d6b; border-color:#1e4d6b; }
+        .filter-tab.tab-all.active      { background:#1e4d6b; color:white; }
+        .filter-tab.tab-all.active .ftab-count      { background:rgba(255,255,255,.25); }
+        .filter-tab.tab-clean    { color:#198754; border-color:#198754; }
+        .filter-tab.tab-clean.active    { background:#198754; color:white; }
+        .filter-tab.tab-clean.active .ftab-count    { background:rgba(255,255,255,.25); }
+        .filter-tab.tab-conflict { color:#dc3545; border-color:#dc3545; }
+        .filter-tab.tab-conflict.active { background:#dc3545; color:white; }
+        .filter-tab.tab-conflict.active .ftab-count { background:rgba(255,255,255,.25); }
+        .filter-tab.tab-done     { color:#6f42c1; border-color:#6f42c1; }
+        .filter-tab.tab-done.active     { background:#6f42c1; color:white; }
+        .filter-tab.tab-done.active .ftab-count     { background:rgba(255,255,255,.25); }
 
         /* clean regs table */
         .result-table { width:100%; border-collapse:collapse; font-size:.88rem; }
@@ -399,8 +367,28 @@ foreach ($registrations as $r) {
 
         /* action bar */
         .action-bar { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:1rem; }
-        .btn-sm-outline { background:white; color:#1e4d6b; border:1.5px solid #1e4d6b; border-radius:8px; padding:.4rem .9rem; font-size:.85rem; font-weight:600; cursor:pointer; transition:all .2s; }
+        .btn-sm-outline { background:white; color:#1e4d6b; border:1.5px solid #1e4d6b; border-radius:8px; padding:.4rem .9rem; font-size:.85rem; font-weight:600; cursor:pointer; transition:all .2s; text-decoration:none; display:inline-flex; align-items:center; gap:.3rem; }
         .btn-sm-outline:hover { background:#1e4d6b; color:white; }
+
+        /* conflict card */
+        .conflict-card { border:2px solid #deb8b9; border-radius:14px; padding:1.2rem 1.4rem; margin-bottom:1rem; background:#fff; }
+        .conflict-header { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; flex-wrap:wrap; }
+        .conflict-badge { background:#deb8b9; color:#5c1f22; padding:.2rem .7rem; border-radius:999px; font-size:.78rem; font-weight:700; }
+        .conflict-time { font-size:.9rem; color:#374151; font-weight:600; }
+
+        .winner-options { display:flex; flex-wrap:wrap; gap:.75rem; }
+        .winner-option { flex:1; min-width:200px; }
+        .winner-option input[type=radio] { display:none; }
+        .winner-option label {
+            display:block; padding:.85rem 1.1rem; border:2px solid #e5e7eb; border-radius:12px;
+            cursor:pointer; transition:all .2s; background:white;
+        }
+        .winner-option label:hover { border-color:#1e4d6b; background:#f0f4f8; }
+        .winner-option input:checked + label { border-color:#70a3a7; background:#c8dfe0; }
+        .winner-option input[value="none"]:checked + label { border-color:#c9979a; background:#deb8b9; }
+        .winner-label-club { font-weight:700; font-size:.95rem; color:#1f2937; margin-bottom:.2rem; }
+        .winner-label-event { font-size:.82rem; color:#6b7280; }
+        .winner-none-label { font-weight:600; color:#5c1f22; text-align:center; padding:.3rem 0; }
 
         /* sticky save bar */
         .save-bar { position:fixed; bottom:0; left:260px; right:0; background:white; border-top:1px solid #e5e7eb; padding:1rem 2rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; z-index:100; box-shadow:0 -4px 20px rgba(0,0,0,.07); }
@@ -470,187 +458,66 @@ foreach ($registrations as $r) {
         </div>
         <?php elseif (!empty($registrations)): ?>
 
-        <!-- 統計 -->
-        <div class="stat-row">
-            <div class="stat-box stat-conflict"><i class="bi bi-exclamation-triangle"></i>衝突 <?= count($all_conflicting) ?> 筆</div>
-            <div class="stat-box stat-pending"><i class="bi bi-hourglass-split"></i>待定 <?= $stat['pending'] ?> 筆</div>
-            <div class="stat-box stat-approved"><i class="bi bi-check-circle"></i>已核准 <?= $stat['approved'] ?> 筆</div>
-            <div class="stat-box stat-rejected"><i class="bi bi-x-circle"></i>已拒絕 <?= $stat['rejected'] ?> 筆</div>
-            <div class="stat-box stat-total">共 <?= count($registrations) ?> 筆</div>
+        <!-- 分頁籤 -->
+        <div style="margin-bottom:1.25rem; display:flex; gap:.6rem; flex-wrap:wrap;">
+            <a href="?setting_id=<?= $selected_setting_id ?>&tab=all" class="filter-tab tab-all <?= $tab==='all'?'active':'' ?>">
+                <i class="bi bi-grid"></i> 全部
+                <span class="ftab-count"><?= count($registrations) ?></span>
+            </a>
+            <a href="?setting_id=<?= $selected_setting_id ?>&tab=clean" class="filter-tab tab-clean <?= $tab==='clean'?'active':'' ?>">
+                <i class="bi bi-check2-circle"></i> 無衝突
+                <span class="ftab-count"><?= count($pending_clean) ?></span>
+            </a>
+            <a href="?setting_id=<?= $selected_setting_id ?>&tab=conflict" class="filter-tab tab-conflict <?= $tab==='conflict'?'active':'' ?>">
+                <i class="bi bi-exclamation-triangle"></i> 有衝突
+                <span class="ftab-count"><?= count($unresolved_conflicting_ids) ?></span>
+            </a>
+            <a href="?setting_id=<?= $selected_setting_id ?>&tab=done" class="filter-tab tab-done <?= $tab==='done'?'active':'' ?>">
+                <i class="bi bi-clipboard2-check"></i> 已審核完成
+                <span class="ftab-count"><?= count($done_regs) ?></span>
+            </a>
         </div>
 
-        <form method="POST" id="importForm">
+        <?php if ($tab === 'all' && $selected_setting_id): ?>
+        <div class="card" style="padding:1rem 1.5rem; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem;">
+            <div style="display:flex; align-items:center; gap:.5rem; color:#374151; font-size:.9rem;">
+                <i class="bi bi-file-earmark-spreadsheet" style="color:#1e4d6b;"></i>
+                <strong>場協大會總表匯出</strong>
+                <span style="color:#9ca3af;">（無衝突＋有衝突全部登記合併，並標示衝突組別，供大會現場使用）</span>
+            </div>
+            <form method="GET" action="" style="display:flex; align-items:center; gap:.5rem;">
+                <input type="hidden" name="action" value="export_meeting">
+                <input type="hidden" name="setting_id" value="<?= $selected_setting_id ?>">
+                <label style="font-size:.85rem; color:#6b7280;">排序方式：</label>
+                <select name="sort" style="border:1px solid #e5e7eb; border-radius:7px; padding:.3rem .6rem; font-size:.85rem;">
+                    <option value="time">時間順序（常用）</option>
+                    <option value="venue">場地</option>
+                    <option value="club">社團</option>
+                </select>
+                <button type="submit" style="background:#1e4d6b; color:white; border:none; border-radius:7px; padding:.35rem 1rem; font-size:.85rem; font-weight:600; cursor:pointer;">
+                    <i class="bi bi-download"></i> 匯出大會總表
+                </button>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <!-- ── 無衝突登記 ── -->
+        <?php if ($show_clean): ?>
+        <?php if (empty($pending_clean)): ?>
+        <div class="card text-center py-5">
+            <i class="bi bi-check2-circle fs-1 text-muted d-block mb-2"></i>
+            <div style="color:#6b7280;">目前沒有待處理的無衝突登記。</div>
+        </div>
+        <?php else: ?>
+        <form method="POST" id="cleanForm">
             <input type="hidden" name="save_results" value="1">
             <input type="hidden" name="setting_id" value="<?= $selected_setting_id ?>">
 
-            <!-- ── 衝突時段 ── -->
-            <?php if (!empty($conflict_groups)): ?>
-            <div class="card">
-                <div class="card-title">
-                    <i class="bi bi-exclamation-triangle-fill" style="color:#c9979a;"></i>
-                    衝突需協調（<?= count($conflict_groups) ?> 組）
-                </div>
-                <div class="notice">
-                    <i class="bi bi-info-circle me-1"></i>
-                    以下為場協大會中有衝突的時段。請根據實體協調結果，<strong>點選獲得該時段的社團</strong>。
-                    選定後，同組其他社團將自動設為「拒絕」。
-                </div>
-
-                <?php foreach ($conflict_groups as $gi => $group_ids): ?>
-                <?php
-                    $group_regs = array_values(array_filter($registrations, function($r) use ($group_ids) {
-                        return in_array($r['registration_id'], $group_ids);
-                    }));
-                    // 找衝突場次：找出真正重疊的那些場次做標題
-                    $conflict_sess_labels = [];
-                    for ($ci = 0; $ci < count($group_ids); $ci++) {
-                        for ($cj = $ci + 1; $cj < count($group_ids); $cj++) {
-                            $sa_list = $reg_sessions[$group_ids[$ci]] ?? [];
-                            $sb_list = $reg_sessions[$group_ids[$cj]] ?? [];
-                            foreach ($sa_list as $sa) {
-                                foreach ($sb_list as $sb) {
-                                    if ($sa['space_id'] == $sb['space_id'] &&
-                                        $sa['start_time'] < $sb['end_time'] &&
-                                        $sb['start_time'] < $sa['end_time']) {
-                                        $key = $sa['space_id'] . '|' . $sa['start_time'];
-                                        if (!isset($conflict_sess_labels[$key])) {
-                                            $conflict_sess_labels[$key] = date('m/d H:i', strtotime($sa['start_time']))
-                                                . '–' . date('H:i', strtotime($sa['end_time']))
-                                                . ' ' . htmlspecialchars($sa['space_name'] ?? '');
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 預設 winner（若已有核准紀錄）
-                    $defaultWinner = 'none';
-                    foreach ($group_regs as $gr) {
-                        if ($gr['is_approved'] !== null && (int)$gr['is_approved'] === 1) {
-                            $defaultWinner = $gr['registration_id'];
-                        }
-                    }
-                ?>
-                <div class="conflict-card">
-                    <div class="conflict-header">
-                        <span class="conflict-badge">衝突</span>
-                        <?php foreach ($conflict_sess_labels as $lbl): ?>
-                        <span class="conflict-time"><i class="bi bi-clock me-1"></i><?= $lbl ?></span>
-                        <?php endforeach; ?>
-                    </div>
-
-                    <!-- 傳遞 group members 到後端 -->
-                    <?php foreach ($group_ids as $gid): ?>
-                    <input type="hidden" name="conflict_group[<?= $gi ?>][]" value="<?= $gid ?>">
-                    <?php endforeach; ?>
-
-                    <div class="winner-options">
-                        <?php foreach ($group_regs as $gr): ?>
-                        <div class="winner-option">
-                            <input type="radio"
-                                   name="conflict_winner[<?= $gi ?>]"
-                                   id="w_<?= $gi ?>_<?= $gr['registration_id'] ?>"
-                                   value="<?= $gr['registration_id'] ?>"
-                                   <?= $defaultWinner == $gr['registration_id'] ? 'checked' : '' ?>
-                                   onchange="toggleConflictEdits(<?= $gi ?>)">
-                            <label for="w_<?= $gi ?>_<?= $gr['registration_id'] ?>">
-                                <div class="winner-label-club">
-                                    <?php
-                                        $curStatus = ($gr['is_approved'] === null) ? '' :
-                                            ((int)$gr['is_approved'] === 1 ? '（目前：核准）' : '（目前：拒絕）');
-                                    ?>
-                                    <i class="bi bi-people me-1" style="color:#1e4d6b;"></i>
-                                    <?= htmlspecialchars($gr['club_name']) ?>
-                                    <?php if ($curStatus): ?>
-                                        <span style="font-size:.75rem; color:#9ca3af;"><?= $curStatus ?></span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="winner-label-event">
-                                    <i class="bi bi-calendar2-event me-1"></i><?= htmlspecialchars($gr['event_name']) ?>
-                                    <?php if (!empty($gr['responsible_person'])): ?>
-                                    <span style="color:#9ca3af;"> · <?= htmlspecialchars($gr['responsible_person']) ?></span>
-                                    <?php endif; ?>
-                                </div>
-                                <?php
-                                    $gr_sess = $reg_sessions[$gr['registration_id']] ?? [];
-                                    if (!empty($gr_sess)):
-                                ?>
-                                <div style="margin-top:.4rem; font-size:.78rem; color:#6b7280;">
-                                    <?php foreach ($gr_sess as $gsess): ?>
-                                    <div><?= date('m/d', strtotime($gsess['start_time'])) ?>
-                                         <?= date('H:i', strtotime($gsess['start_time'])) ?>–<?= date('H:i', strtotime($gsess['end_time'])) ?>
-                                         <?= htmlspecialchars($gsess['space_name'] ?? '') ?></div>
-                                    <?php endforeach; ?>
-                                </div>
-                                <?php endif; ?>
-                            </label>
-                            <!-- 落敗者的場次編輯區（由 JS 控制顯示） -->
-                            <div id="conflict_edit_<?= $gi ?>_<?= $gr['registration_id'] ?>" class="conflict-edit-area" style="display:none; margin-top:.5rem; padding:.5rem; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1; font-size:.8rem;">
-                                <div style="font-weight:600; color:#1e4d6b; margin-bottom:.4rem;"><i class="bi bi-pencil-square me-1"></i>調整後場次</div>
-                                <?php foreach ($reg_sessions[$gr['registration_id']] ?? [] as $si_c => $sl_c): ?>
-                                <div style="display:flex; flex-wrap:wrap; gap:.4rem; align-items:flex-end; margin-bottom:.3rem; padding:.3rem .4rem; background:white; border-radius:6px; border:1px solid #e2e8f0;">
-                                    <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][reservation_id]" value="<?= $sl_c['reservation_id'] ?>">
-                                    <div><div style="font-size:.72rem; color:#9ca3af;">開始日期</div>
-                                        <input type="date" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][date]" value="<?= date('Y-m-d',strtotime($sl_c['start_time'])) ?>" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
-                                    </div>
-                                    <div><div style="font-size:.72rem; color:#9ca3af;">開始時間</div>
-                                        <div style="display:flex;align-items:center;gap:2px;">
-                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time_h]" class="es-hour" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);$sel=date('H',strtotime($sl_c['start_time']))==$hh?'selected':'';echo "<option value=\"$hh\" $sel>$hh</option>";}?></select>
-                                            <span>:</span>
-                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time_m]" class="es-min" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);$sel=date('i',strtotime($sl_c['start_time']))==$mm?'selected':'';echo "<option value=\"$mm\" $sel>$mm</option>";}?></select>
-                                            <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time]" class="es-time-val" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" value="<?= date('H:i',strtotime($sl_c['start_time'])) ?>">
-                                        </div>
-                                    </div>
-                                    <div><div style="font-size:.72rem; color:#9ca3af;">結束日期</div>
-                                        <input type="date" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_date]" value="<?= date('Y-m-d',strtotime($sl_c['end_time'])) ?>" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
-                                    </div>
-                                    <div><div style="font-size:.72rem; color:#9ca3af;">結束時間</div>
-                                        <div style="display:flex;align-items:center;gap:2px;">
-                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time_h]" class="es-hour" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);$sel=date('H',strtotime($sl_c['end_time']))==$hh?'selected':'';echo "<option value=\"$hh\" $sel>$hh</option>";}?></select>
-                                            <span>:</span>
-                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time_m]" class="es-min" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);$sel=date('i',strtotime($sl_c['end_time']))==$mm?'selected':'';echo "<option value=\"$mm\" $sel>$mm</option>";}?></select>
-                                            <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time]" class="es-time-val" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" value="<?= date('H:i',strtotime($sl_c['end_time'])) ?>">
-                                        </div>
-                                    </div>
-                                    <div><div style="font-size:.72rem; color:#9ca3af;">場地</div>
-                                        <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][space_id]" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
-                                            <?php foreach($all_spaces as $sp):?><option value="<?= $sp['space_id'] ?>" <?= $sp['space_id']==$sl_c['space_id']?'selected':''?>><?= htmlspecialchars($sp['space_name'])?></option><?php endforeach;?>
-                                        </select>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-
-                        <!-- 無社團取得 -->
-                        <div class="winner-option" style="flex:0 0 140px;">
-                            <input type="radio"
-                                   name="conflict_winner[<?= $gi ?>]"
-                                   id="w_<?= $gi ?>_none"
-                                   value="none"
-                                   <?= $defaultWinner === 'none' ? 'checked' : '' ?>>
-                            <label for="w_<?= $gi ?>_none" style="height:100%; display:flex; align-items:center; justify-content:center;">
-                                <div class="winner-none-label">
-                                    <i class="bi bi-x-circle d-block mb-1" style="font-size:1.3rem;"></i>
-                                    無社團取得<br>（全部拒絕）
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            </div>
-            <?php endif; ?>
-
-            <!-- ── 無衝突登記 ── -->
-            <?php if (!empty($clean_regs)): ?>
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem;">
                     <div class="card-title" style="margin:0;">
                         <i class="bi bi-check2-circle" style="color:#70a3a7;"></i>
-                        無衝突登記（<?= count($clean_regs) ?> 筆）
+                        無衝突登記（<?= count($pending_clean) ?> 筆待處理）
                     </div>
                     <div style="display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;">
                         <!-- 社團搜尋 -->
@@ -668,23 +535,12 @@ foreach ($registrations as $r) {
                                 <i class="bi bi-people me-1"></i>依社團
                             </button>
                         </div>
-                        <!-- 匯出 -->
-                        <?php if ($selected_setting_id): ?>
-                        <a href="?action=export&setting_id=<?= $selected_setting_id ?>"
-                           style="display:inline-flex; align-items:center; gap:.3rem; padding:.28rem .75rem; background:#e8f0f5; color:#1e4d6b; border-radius:7px; font-size:.82rem; font-weight:600; text-decoration:none;"
-                           onmouseover="this.style.background='#d5e3ea'" onmouseout="this.style.background='#e8f0f5'">
-                            <i class="bi bi-file-earmark-spreadsheet"></i> 匯出試算表
-                        </a>
-                        <?php endif; ?>
                     </div>
                 </div>
 
                 <div class="action-bar">
                     <button type="button" class="btn-sm-outline" onclick="setAllClean('approved')">
-                        <i class="bi bi-check-all me-1"></i>全部核准
-                    </button>
-                    <button type="button" class="btn-sm-outline" onclick="setAllClean('pending')">
-                        <i class="bi bi-arrow-counterclockwise me-1"></i>重設
+                        <i class="bi bi-check-all me-1"></i>全部核准（預設）
                     </button>
                 </div>
 
@@ -702,10 +558,11 @@ foreach ($registrations as $r) {
                             </tr>
                         </thead>
                         <tbody id="cleanBody">
-                        <?php foreach ($clean_regs as $idx => $reg):
+                        <?php foreach ($pending_clean as $idx => $reg):
                             $ap = $reg['is_approved'];
-                            $defaultDec = ($ap === null) ? 'pending' : ((int)$ap === 1 ? 'approved' : 'rejected');
-                            $rowCls = ($ap === null) ? '' : ((int)$ap === 1 ? 'row-approved' : 'row-rejected');
+                            // 無衝突登記：尚未決定時預設為「核准」，管理者只需處理需編輯/拒絕的少數項目
+                            $defaultDec = 'approved';
+                            $rowCls = 'row-approved';
                             $rid = (int)$reg['registration_id'];
                             // 解析場地用途（從 description 第2行）
                             $desc_lines = explode("\n", $reg['description'] ?? '');
@@ -748,13 +605,7 @@ foreach ($registrations as $r) {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($ap === null): ?>
-                                    <span class="bdg-pending">待定</span>
-                                <?php elseif ((int)$ap === 1): ?>
-                                    <span class="bdg-approved">✓ 核准</span>
-                                <?php else: ?>
-                                    <span class="bdg-rejected">✗ 拒絕</span>
-                                <?php endif; ?>
+                                <span class="bdg-pending">待定</span>
                             </td>
                             <td>
                                 <div class="chip-group">
@@ -845,7 +696,6 @@ foreach ($registrations as $r) {
                     </table>
                 </div>
             </div>
-            <?php endif; ?>
 
             <!-- 儲存列 -->
             <div class="save-bar">
@@ -858,6 +708,281 @@ foreach ($registrations as $r) {
                 </button>
             </div>
         </form>
+        <?php endif; ?>
+        <?php endif; ?>
+
+        <!-- ── 有衝突登記 ── -->
+        <?php if ($show_conflict): ?>
+        <?php if (empty($unresolved_groups)): ?>
+        <div class="card text-center py-5">
+            <i class="bi bi-check2-circle fs-1 text-muted d-block mb-2"></i>
+            <div style="color:#6b7280;">目前沒有待協調的衝突時段。</div>
+        </div>
+        <?php else: ?>
+        <form method="POST" id="conflictForm">
+            <input type="hidden" name="save_results" value="1">
+            <input type="hidden" name="setting_id" value="<?= $selected_setting_id ?>">
+
+            <div class="card">
+                <div class="card-title">
+                    <i class="bi bi-exclamation-triangle-fill" style="color:#c9979a;"></i>
+                    衝突需協調（<?= count($unresolved_groups) ?> 組，共 <?= count($unresolved_conflicting_ids) ?> 筆登記）
+                </div>
+                <div class="notice">
+                    <i class="bi bi-info-circle me-1"></i>
+                    以下為場協大會中有衝突的時段。請根據實體協調結果，<strong>點選獲得該時段的社團</strong>。
+                    選定後，同組其他社團將自動設為「拒絕」（若該社團另有調整時間/場地，可於下方填入調整後場次再儲存，改為調整核准）。
+                    <strong>請逐組確認後再按下「套用並儲存協調結果」</strong>，未選擇得標社團的組別，其他社團將一併視為拒絕。
+                </div>
+
+                <?php foreach ($unresolved_groups as $gi => $group_ids): ?>
+                <?php
+                    $group_regs = array_values(array_filter($registrations, function($r) use ($group_ids) {
+                        return in_array($r['registration_id'], $group_ids);
+                    }));
+                    // 找衝突場次：找出真正重疊的那些場次做標題
+                    $conflict_sess_labels = [];
+                    for ($ci = 0; $ci < count($group_ids); $ci++) {
+                        for ($cj = $ci + 1; $cj < count($group_ids); $cj++) {
+                            $sa_list = $reg_sessions[$group_ids[$ci]] ?? [];
+                            $sb_list = $reg_sessions[$group_ids[$cj]] ?? [];
+                            foreach ($sa_list as $sa) {
+                                foreach ($sb_list as $sb) {
+                                    if ($sa['space_id'] == $sb['space_id'] &&
+                                        $sa['start_time'] < $sb['end_time'] &&
+                                        $sb['start_time'] < $sa['end_time']) {
+                                        $key = $sa['space_id'] . '|' . $sa['start_time'];
+                                        if (!isset($conflict_sess_labels[$key])) {
+                                            $conflict_sess_labels[$key] = date('m/d H:i', strtotime($sa['start_time']))
+                                                . '–' . date('H:i', strtotime($sa['end_time']))
+                                                . ' ' . htmlspecialchars($sa['space_name'] ?? '');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 預設 winner（若已有核准紀錄）
+                    $defaultWinner = 'none';
+                    foreach ($group_regs as $gr) {
+                        if ($gr['is_approved'] !== null && (int)$gr['is_approved'] === 1) {
+                            $defaultWinner = $gr['registration_id'];
+                        }
+                    }
+                ?>
+                <div class="conflict-card">
+                    <div class="conflict-header">
+                        <span class="conflict-badge">衝突 <?= $gi + 1 ?></span>
+                        <?php foreach ($conflict_sess_labels as $lbl): ?>
+                        <span class="conflict-time"><i class="bi bi-clock me-1"></i><?= $lbl ?></span>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <!-- 傳遞 group members 到後端 -->
+                    <?php foreach ($group_ids as $gid): ?>
+                    <input type="hidden" name="conflict_group[<?= $gi ?>][]" value="<?= $gid ?>">
+                    <?php endforeach; ?>
+
+                    <div class="winner-options">
+                        <?php foreach ($group_regs as $gr): ?>
+                        <div class="winner-option">
+                            <input type="radio"
+                                   name="conflict_winner[<?= $gi ?>]"
+                                   id="w_<?= $gi ?>_<?= $gr['registration_id'] ?>"
+                                   value="<?= $gr['registration_id'] ?>"
+                                   <?= $defaultWinner == $gr['registration_id'] ? 'checked' : '' ?>
+                                   onchange="toggleConflictEdits(<?= $gi ?>)">
+                            <label for="w_<?= $gi ?>_<?= $gr['registration_id'] ?>">
+                                <div class="winner-label-club">
+                                    <?php
+                                        $curStatus = ($gr['is_approved'] === null) ? '' :
+                                            ((int)$gr['is_approved'] === 1 ? '（目前：核准）' : '（目前：拒絕）');
+                                    ?>
+                                    <i class="bi bi-people me-1" style="color:#1e4d6b;"></i>
+                                    <?= htmlspecialchars($gr['club_name']) ?>
+                                    <?php if ($curStatus): ?>
+                                        <span style="font-size:.75rem; color:#9ca3af;"><?= $curStatus ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="winner-label-event">
+                                    <i class="bi bi-calendar2-event me-1"></i><?= htmlspecialchars($gr['event_name']) ?>
+                                    <?php if (!empty($gr['responsible_person'])): ?>
+                                    <span style="color:#9ca3af;"> · <?= htmlspecialchars($gr['responsible_person']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php
+                                    $gr_sess = $reg_sessions[$gr['registration_id']] ?? [];
+                                    if (!empty($gr_sess)):
+                                ?>
+                                <div style="margin-top:.4rem; font-size:.78rem; color:#6b7280;">
+                                    <?php foreach ($gr_sess as $gsess): ?>
+                                    <div><?= date('m/d', strtotime($gsess['start_time'])) ?>
+                                         <?= date('H:i', strtotime($gsess['start_time'])) ?>–<?= date('H:i', strtotime($gsess['end_time'])) ?>
+                                         <?= htmlspecialchars($gsess['space_name'] ?? '') ?></div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php endif; ?>
+                            </label>
+                            <!-- 落敗者的場次編輯區（由 JS 控制顯示） -->
+                            <div id="conflict_edit_<?= $gi ?>_<?= $gr['registration_id'] ?>" class="conflict-edit-area" style="display:none; margin-top:.5rem; padding:.5rem; background:#f8fafc; border-radius:8px; border:1px dashed #cbd5e1; font-size:.8rem;">
+                                <div style="font-weight:600; color:#1e4d6b; margin-bottom:.4rem;"><i class="bi bi-pencil-square me-1"></i>調整後場次（填寫即改為「調整核准」，否則將被拒絕）</div>
+                                <?php foreach ($reg_sessions[$gr['registration_id']] ?? [] as $si_c => $sl_c): ?>
+                                <div style="display:flex; flex-wrap:wrap; gap:.4rem; align-items:flex-end; margin-bottom:.3rem; padding:.3rem .4rem; background:white; border-radius:6px; border:1px solid #e2e8f0;">
+                                    <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][reservation_id]" value="<?= $sl_c['reservation_id'] ?>">
+                                    <div><div style="font-size:.72rem; color:#9ca3af;">開始日期</div>
+                                        <input type="date" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][date]" value="<?= date('Y-m-d',strtotime($sl_c['start_time'])) ?>" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
+                                    </div>
+                                    <div><div style="font-size:.72rem; color:#9ca3af;">開始時間</div>
+                                        <div style="display:flex;align-items:center;gap:2px;">
+                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time_h]" class="es-hour" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);$sel=date('H',strtotime($sl_c['start_time']))==$hh?'selected':'';echo "<option value=\"$hh\" $sel>$hh</option>";}?></select>
+                                            <span>:</span>
+                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time_m]" class="es-min" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);$sel=date('i',strtotime($sl_c['start_time']))==$mm?'selected':'';echo "<option value=\"$mm\" $sel>$mm</option>";}?></select>
+                                            <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][start_time]" class="es-time-val" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="start" value="<?= date('H:i',strtotime($sl_c['start_time'])) ?>">
+                                        </div>
+                                    </div>
+                                    <div><div style="font-size:.72rem; color:#9ca3af;">結束日期</div>
+                                        <input type="date" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_date]" value="<?= date('Y-m-d',strtotime($sl_c['end_time'])) ?>" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
+                                    </div>
+                                    <div><div style="font-size:.72rem; color:#9ca3af;">結束時間</div>
+                                        <div style="display:flex;align-items:center;gap:2px;">
+                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time_h]" class="es-hour" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);$sel=date('H',strtotime($sl_c['end_time']))==$hh?'selected':'';echo "<option value=\"$hh\" $sel>$hh</option>";}?></select>
+                                            <span>:</span>
+                                            <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time_m]" class="es-min" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.8rem;"><?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);$sel=date('i',strtotime($sl_c['end_time']))==$mm?'selected':'';echo "<option value=\"$mm\" $sel>$mm</option>";}?></select>
+                                            <input type="hidden" name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][end_time]" class="es-time-val" data-rid="<?= $gr['registration_id'] ?>" data-idx="<?= $si_c ?>" data-field="end" value="<?= date('H:i',strtotime($sl_c['end_time'])) ?>">
+                                        </div>
+                                    </div>
+                                    <div><div style="font-size:.72rem; color:#9ca3af;">場地</div>
+                                        <select name="edit_session[<?= $gr['registration_id'] ?>][<?= $si_c ?>][space_id]" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .4rem;font-size:.8rem;">
+                                            <?php foreach($all_spaces as $sp):?><option value="<?= $sp['space_id'] ?>" <?= $sp['space_id']==$sl_c['space_id']?'selected':''?>><?= htmlspecialchars($sp['space_name'])?></option><?php endforeach;?>
+                                        </select>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+
+                        <!-- 無社團取得 -->
+                        <div class="winner-option" style="flex:0 0 140px;">
+                            <input type="radio"
+                                   name="conflict_winner[<?= $gi ?>]"
+                                   id="w_<?= $gi ?>_none"
+                                   value="none"
+                                   <?= $defaultWinner === 'none' ? 'checked' : '' ?>
+                                   onchange="toggleConflictEdits(<?= $gi ?>)">
+                            <label for="w_<?= $gi ?>_none" style="height:100%; display:flex; align-items:center; justify-content:center;">
+                                <div class="winner-none-label">
+                                    <i class="bi bi-x-circle d-block mb-1" style="font-size:1.3rem;"></i>
+                                    無社團取得<br>（全部拒絕）
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <!-- 儲存列 -->
+            <div class="save-bar">
+                <div style="font-size:.88rem; color:#6b7280;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    儲存後即時生效：核准的時段將反映於場地日曆，社團可在申請活動時帶入。
+                </div>
+                <button type="submit" class="btn-save">
+                    <i class="bi bi-cloud-upload"></i> 套用並儲存協調結果
+                </button>
+            </div>
+        </form>
+        <?php endif; ?>
+        <?php endif; ?>
+
+        <!-- ── 已審核完成 ── -->
+        <?php if ($show_done): ?>
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-bottom:.75rem;">
+                <div class="card-title" style="margin:0;">
+                    <i class="bi bi-clipboard2-check" style="color:#6f42c1;"></i>
+                    已審核完成（<?= count($done_regs) ?> 筆）
+                </div>
+                <?php if ($selected_setting_id): ?>
+                <a href="?action=export&setting_id=<?= $selected_setting_id ?>"
+                   style="display:inline-flex; align-items:center; gap:.3rem; padding:.32rem .85rem; background:#e8f0f5; color:#1e4d6b; border-radius:7px; font-size:.85rem; font-weight:600; text-decoration:none;"
+                   onmouseover="this.style.background='#d5e3ea'" onmouseout="this.style.background='#e8f0f5'">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> 匯出試算表
+                </a>
+                <?php endif; ?>
+            </div>
+
+            <?php if (empty($done_regs)): ?>
+            <div class="text-center py-4" style="color:#6b7280;">
+                <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+                尚無已審核完成的登記。
+            </div>
+            <?php else: ?>
+            <div class="notice" style="margin-bottom:1rem;">
+                <i class="bi bi-info-circle me-1"></i>
+                以下登記已完成審核，核准／調整核准的時段已即時反映於場地日曆；拒絕的時段已釋出。
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>社團</th>
+                            <th>活動名稱 / 負責人</th>
+                            <th>場次（日期 時間 場地）</th>
+                            <th>結果</th>
+                            <th>備註</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($done_regs as $idx => $reg):
+                        $rid = (int)$reg['registration_id'];
+                        $ap  = (int)$reg['is_approved'];
+                        $sess_list = $reg_sessions[$rid] ?? [];
+                        $rowCls = $ap === 1 ? 'row-approved' : 'row-rejected';
+                    ?>
+                    <tr class="<?= $rowCls ?>">
+                        <td style="color:#9ca3af;"><?= $idx + 1 ?></td>
+                        <td style="font-weight:600;"><?= htmlspecialchars($reg['club_name']) ?></td>
+                        <td>
+                            <div style="font-weight:600; color:#1f2937;"><?= htmlspecialchars($reg['event_name']) ?></div>
+                            <?php if (!empty($reg['responsible_person'])): ?>
+                            <div style="font-size:.8rem; color:#6b7280; margin-top:.15rem;">
+                                <i class="bi bi-person me-1"></i><?= htmlspecialchars($reg['responsible_person']) ?>
+                            </div>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size:.82rem;">
+                            <?php if (!empty($sess_list)): ?>
+                                <?php foreach ($sess_list as $sl): ?>
+                                <div style="white-space:nowrap; padding:.1rem 0; border-bottom:1px solid #f3f4f6;">
+                                    <span style="color:#374151; font-weight:500;"><?= date('m/d', strtotime($sl['start_time'])) ?></span>
+                                    <span style="color:#6b7280;"> <?= date('H:i', strtotime($sl['start_time'])) ?>–<?= date('H:i', strtotime($sl['end_time'])) ?></span><br>
+                                    <span style="color:#9ca3af; font-size:.76rem;"><?= htmlspecialchars($sl['space_name'] ?? '場地未定') ?></span>
+                                </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <span style="color:#9ca3af;">無場次資料</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($ap === 1): ?>
+                                <span class="bdg-approved">✓ 核准</span>
+                            <?php else: ?>
+                                <span class="bdg-rejected">✗ 拒絕</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="font-size:.82rem; color:#6b7280;"><?= htmlspecialchars($reg['approval_note'] ?? '') ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
 
         <?php elseif (empty($all_settings)): ?>
         <div class="card text-center py-5">
@@ -876,8 +1001,8 @@ foreach ($registrations as $r) {
 // 無衝突列：更新列背景色
 function updateCleanRow(radio) {
     const tr = radio.closest('tr');
-    tr.className = radio.value === 'approved' ? 'row-approved' :
-                   radio.value === 'edited'   ? 'row-approved' : '';
+    tr.className = radio.value === 'approved' ? 'row-approved clean-row' :
+                   radio.value === 'edited'   ? 'row-approved clean-row' : 'clean-row';
 }
 
 // 無衝突：批次設定
@@ -1026,6 +1151,7 @@ function renderClubGroupHeaders() {
     document.querySelectorAll('.club-group-header').forEach(el => el.remove());
     if (currentSort !== 'club') return;
     const tbody = document.getElementById('cleanBody');
+    if (!tbody) return;
     let lastClub = null;
     Array.from(tbody.querySelectorAll('tr.clean-row')).forEach(row => {
         if (row.style.display === 'none') return;
@@ -1040,10 +1166,16 @@ function renderClubGroupHeaders() {
     });
 }
 
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // 離開前提示
 let dirty = false;
-document.getElementById('importForm')?.addEventListener('change', () => dirty = true);
-document.getElementById('importForm')?.addEventListener('submit', () => dirty = false);
+document.getElementById('cleanForm')?.addEventListener('change', () => dirty = true);
+document.getElementById('cleanForm')?.addEventListener('submit', () => dirty = false);
+document.getElementById('conflictForm')?.addEventListener('change', () => dirty = true);
+document.getElementById('conflictForm')?.addEventListener('submit', () => dirty = false);
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 </script>
 </body>

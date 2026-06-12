@@ -132,8 +132,8 @@ $student_name = $_SESSION['student_name'] ?? '社長';
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: #1f2937; }
         .sidebar {
             position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
-            background: linear-gradient(180deg, var(--primary), var(--sidebar));
-            color: white; padding: 1.5rem 0.8rem; overflow-y: auto;
+            background: var(--primary);
+            color: white; padding: 1.5rem 0.8rem; overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,.12); z-index: 1200;
         }
         .sidebar .brand { text-align: center; margin-bottom: 1.5rem; }
@@ -144,16 +144,21 @@ $student_name = $_SESSION['student_name'] ?? '社長';
             border-radius: 16px; transition: background .25s, transform .15s; text-decoration: none;
         }
         .sidebar .nav-link:hover,
-        .sidebar .nav-link.active { background: rgba(255,255,255,.15); color: #fff; transform: translateX(4px); }
+        .sidebar .nav-link.active { background: #ece8dd; color: #1e4d6b; transform: translateX(4px); }
         .sidebar .nav-link i { font-size: 1.1rem; }
         .sidebar .sidebar-section { padding: 1rem .5rem; margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,.12); }
 
         .main-content { margin-left: 260px; min-height: 100vh; }
         .top-navbar {
-            background: white; border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea; border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center;
             position: sticky; top: 0; z-index: 1100;
         }
+        .top-navbar .breadcrumb { font-size: .8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: .75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .content-wrapper { padding: 1.5rem 2rem 3rem; }
 
         .panel { background: white; border-radius: 18px; box-shadow: 0 6px 24px rgba(15,23,42,.06); margin-bottom: 1.5rem; }
