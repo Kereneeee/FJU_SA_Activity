@@ -29,7 +29,8 @@ $total_capacity = 0;
 
 foreach ($spaces_list as $space) {
     $total_capacity += intval($space['capacity']);
-    if ($space['status'] === 'available') {
+    $space_status = $space['space_status'] ?? 'available';
+    if ($space_status === 'available') {
         $available_spaces++;
     } else {
         $unavailable_spaces++;
@@ -55,14 +56,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($action === 'save' && $space_id > 0) {
         $space_name = trim($_POST['space_name'] ?? '');
         $capacity = intval($_POST['capacity'] ?? 0);
-        $status = trim($_POST['status'] ?? 'available');
+        $space_status = trim($_POST['space_status'] ?? 'available');
         
         if ($space_name === '') {
             $edit_error = '請填寫場地名稱';
         } else {
-            $stmt = $conn->prepare("UPDATE spaces SET space_name = ?, capacity = ?, status = ? WHERE space_id = ?");
+            $stmt = $conn->prepare("UPDATE spaces SET space_name = ?, capacity = ?, space_status = ? WHERE space_id = ?");
             if ($stmt) {
-                $stmt->bind_param("sisi", $space_name, $capacity, $status, $space_id);
+                $stmt->bind_param("sisi", $space_name, $capacity, $space_status, $space_id);
                 if ($stmt->execute()) {
                     $success_msg = '場地已更新';
                     $edit_space = null;
@@ -105,14 +106,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($action === 'add') {
         $space_name = trim($_POST['space_name'] ?? '');
         $capacity = intval($_POST['capacity'] ?? 0);
-        $status = trim($_POST['status'] ?? 'available');
+        $space_status = trim($_POST['space_status'] ?? 'available');
         
         if ($space_name === '') {
             $edit_error = '請填寫場地名稱';
         } else {
-            $stmt = $conn->prepare("INSERT INTO spaces (space_name, capacity, status) VALUES (?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO spaces (space_name, capacity, space_status) VALUES (?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("sis", $space_name, $capacity, $status);
+                $stmt->bind_param("sis", $space_name, $capacity, $space_status);
                 if ($stmt->execute()) {
                     $success_msg = '場地已新增';
                     // 刷新列表
@@ -506,9 +507,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">狀態</label>
-                            <select name="status" class="form-select" required>
-                                <option value="available" <?php echo $edit_space['status'] === 'available' ? 'selected' : ''; ?>>可用</option>
-                                <option value="unavailable" <?php echo $edit_space['status'] === 'unavailable' ? 'selected' : ''; ?>>不可用</option>
+                            <select name="space_status" class="form-select" required>
+                                <option value="available" <?php echo $edit_space['space_status'] === 'available' ? 'selected' : ''; ?>>可用</option>
+                                <option value="unavailable" <?php echo $edit_space['space_status'] === 'unavailable' ? 'selected' : ''; ?>>不可用</option>
                             </select>
                         </div>
                     </div>
@@ -537,7 +538,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">狀態</label>
-                            <select name="status" class="form-select" required>
+                            <select name="space_status" class="form-select" required>
                                 <option value="available">可用</option>
                                 <option value="unavailable">不可用</option>
                             </select>
@@ -569,9 +570,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 <td><strong><?php echo htmlspecialchars($space['space_name']); ?></strong></td>
                                 <td><?php echo intval($space['capacity']); ?></td>
                                 <td>
-                                    <span class="status-badge status-<?php echo $space['status']; ?>">
-                                        <i class="bi bi-<?php echo $space['status'] === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
-                                        <?php echo $space['status'] === 'available' ? '可用' : '不可用'; ?>
+                                    <span class="status-badge status-<?php echo htmlspecialchars($space['space_status'] ?? 'available'); ?>">
+                                        <i class="bi bi-<?php echo ($space['space_status'] ?? 'available') === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
+                                        <?php echo ($space['space_status'] ?? 'available') === 'available' ? '可用' : '不可用'; ?>
                                     </span>
                                 </td>
                                 <td>
