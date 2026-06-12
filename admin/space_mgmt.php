@@ -441,46 +441,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         </header>
 
         <section class="dashboard-grid">
-            <!-- 統計卡片 -->
-            <div class="summary-row">
-                <div class="card-panel total">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">場地總數</div>
-                            <div class="value"><?php echo $total_spaces; ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-building"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel available">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">可用場地</div>
-                            <div class="value"><?php echo $available_spaces; ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-check-circle"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel unavailable">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">不可用場地</div>
-                            <div class="value"><?php echo $unavailable_spaces; ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-x-circle"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel capacity">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">總容納人數</div>
-                            <div class="value"><?php echo $total_capacity; ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-people"></i></div>
-                    </div>
-                </div>
-            </div>
-
             <?php if ($success_msg): ?>
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> <?php echo htmlspecialchars($success_msg); ?>
