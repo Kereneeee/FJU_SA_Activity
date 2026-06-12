@@ -194,7 +194,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
 
             $description = '追加器材申請';
             $insert_event_stmt->bind_param(
-                "isssssi",
+                "issssssi",
                 $user_id,
                 $new_event_name,
                 $new_club_name,
@@ -238,7 +238,43 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             $insert_stmt->close();
 
             $conn->commit();
-            
+
+            // 寄信通知所有管理員
+            try {
+                require_once __DIR__ . '/../includes/mailer.php';
+                $admins = $conn->query("SELECT email, name FROM users WHERE role='admin' AND email IS NOT NULL");
+                if ($admins) {
+                    // 整理已申請器材名稱清單
+                    $eq_names = [];
+                    foreach ($equipment_selections as $eid => $qty) {
+                        $qty = intval($qty);
+                        if ($qty > 0) {
+                            $nr = $conn->prepare("SELECT name FROM equipment WHERE equipment_id = ?");
+                            $nr->bind_param("i", $eid);
+                            $nr->execute();
+                            $nr_row = $nr->get_result()->fetch_assoc();
+                            $nr->close();
+                            if ($nr_row) $eq_names[] = htmlspecialchars($nr_row['name']) . " × {$qty}";
+                        }
+                    }
+                    $eq_list_html = implode('<br>', $eq_names);
+                    $eq_list_text = implode('、', $eq_names);
+
+                    while ($adm = $admins->fetch_assoc()) {
+                        sendApplicationSubmittedMail($adm['email'], $adm['name'], [
+                            'event_id'     => $new_event_id,
+                            'event_name'   => $new_event_name . '（追加器材申請）',
+                            'club_name'    => $new_club_name,
+                            'student_name' => $_SESSION['student_name'] ?? '學生',
+                            'start_time'   => $new_start_time,
+                            'end_time'     => $new_end_time,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // 寄信失敗不影響申請結果
+            }
+
             header("Location: my_applications.php?success=true");
             exit();
 
@@ -609,16 +645,22 @@ $current_page = 'my_applications';
                                 $borrow_dt = strtotime($event_info['start_time']);
                                 if (date('H:i', $borrow_dt) < '09:30') {
                                     $borrow_dt = strtotime(date('Y-m-d', $borrow_dt) . ' 09:30');
+                                } elseif (date('H:i', $borrow_dt) > '16:30') {
+                                    // 活動時間超出允許範圍（如 18:00），預設帶入 09:30
+                                    $borrow_dt = strtotime(date('Y-m-d', $borrow_dt) . ' 09:30');
                                 }
                                 $borrow_h = date('H', $borrow_dt);
-                                $borrow_m = date('i', $borrow_dt);
+                                // 分鐘取最近的 10 分位
+                                $borrow_m = sprintf('%02d', floor((int)date('i', $borrow_dt) / 10) * 10);
 
                                 $return_dt = strtotime($event_info['end_time']);
                                 if (date('H:i', $return_dt) > '16:30') {
                                     $return_dt = strtotime(date('Y-m-d', $return_dt) . ' 16:30');
+                                } elseif (date('H:i', $return_dt) < '09:30') {
+                                    $return_dt = strtotime(date('Y-m-d', $return_dt) . ' 09:30');
                                 }
                                 $return_h = date('H', $return_dt);
-                                $return_m = date('i', $return_dt);
+                                $return_m = sprintf('%02d', floor((int)date('i', $return_dt) / 10) * 10);
                                 ?>
                                 <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr 1.4fr auto; gap:0.75rem; align-items:flex-end;">
                                     <div>
