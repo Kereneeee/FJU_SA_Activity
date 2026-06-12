@@ -318,6 +318,7 @@ $current_page = 'equipment';
                 </a>
             </div>
 
+
             <!-- 器材清單 -->
             <div class="card">
                 <div class="card-title">
@@ -377,6 +378,22 @@ $current_page = 'equipment';
                     </div>
                     <?php endif; ?>
                 </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">
+                    <i class="bi bi-play-circle"></i> 器材介紹影片
+                </div>
+                <p class="mb-3" style="color:#4b5563; margin-bottom: 1rem;">
+                    想更了解器材使用方式與操作說明，請點擊下方連結觀看介紹影片。
+                </p>
+                <a href="https://youtube.com/playlist?list=PL7-yGYzSH22RpasM5bAGA9d6w6HUtGUF3&si=0SFLlLwe9pFdFi4X"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn-apply"
+                   style="display:inline-flex; align-items:center; gap:0.4rem;">
+                    <i class="bi bi-youtube"></i> 開啟影片播放清單
+                </a>
             </div>
 
         </section>
