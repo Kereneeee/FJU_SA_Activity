@@ -97,9 +97,20 @@ if ($stmt_special) {
 $special_dates_json = json_encode($special_dates);
 
 $bookings = [];
-$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name,
+$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_id, e.event_name, e.club_name,
         u.name AS user_name, u.email AS user_email, e.status,
-        e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date
+        e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date,
+        CASE WHEN fcr.is_approved IS NULL AND EXISTS (
+            SELECT 1 FROM field_coordination_registrations fcr2
+            JOIN events e2 ON fcr2.event_id = e2.event_id
+            JOIN reservations r2 ON e2.event_id = r2.event_id
+            WHERE fcr2.setting_id = fcr.setting_id
+              AND fcr2.registration_id != fcr.registration_id
+              AND fcr2.is_approved IS NULL
+              AND r2.space_id = r.space_id
+              AND r2.start_time < r.end_time
+              AND r.start_time < r2.end_time
+        ) THEN 1 ELSE 0 END AS has_conflict
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
     LEFT JOIN field_coordination_registrations fcr ON e.event_id = fcr.event_id
@@ -137,6 +148,7 @@ if ($stmt) {
             'user_email'  => $row['user_email'],
             'status'      => $status,
             'is_fc'       => intval($row['is_field_coordination']) === 1,
+            'has_conflict' => intval($row['has_conflict']) === 1,
         ];
     }
     $stmt->close();
@@ -272,9 +284,18 @@ if ($stmt) {
         .btn-action.secondary { background: #e5e7eb; color: #1f2937; }
         .btn-action.secondary:hover { background: #d1d5db; }
         .booked-list { margin-top: 1rem; }
-        .booked-card { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; }
-        .booked-card .booked-left { display: grid; gap: 0.3rem; }
-        .booked-label { font-size: 0.9rem; color: #6b7280; }
+        .booking-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e5e7eb; }
+        .booking-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .booking-table thead tr { background: #f3f4f6; }
+        .booking-table th { padding: 0.65rem 0.9rem; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
+        .booking-table td { padding: 0.6rem 0.9rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; color: #1f2937; }
+        .booking-table tbody tr:last-child td { border-bottom: none; }
+        .booking-table tbody tr:hover { background: #f9fafb; }
+        .booking-table .col-time { white-space: nowrap; font-weight: 600; color: #1e40af; }
+        .booking-table a { color: #1d6fa4; text-decoration: none; }
+        .booking-table a:hover { text-decoration: underline; }
+        .tag-fc { display: inline-block; font-size: .72rem; background: #e5e7eb; color: #374151; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
+        .tag-conflict { display: inline-block; font-size: .72rem; background: #fed7aa; color: #7c2d12; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
         .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
         .modal-backdrop.show { display: flex; }
         .modal-dialog { background: white; border-radius: 16px; padding: 2rem; width: min(520px, 90%); box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
@@ -317,7 +338,7 @@ if ($stmt) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
@@ -348,7 +369,7 @@ if ($stmt) {
             </div>
 
             <div id="calendarSection" class="card" style="display: none;">
-                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">教室月行事曆</span></h3>
+                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">請選擇教室與月份</span></h3>
                 <div class="calendar-grid" id="calendarGrid"></div>
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; color:#6b7280; font-size:0.9rem; margin-top:0.5rem;">
                     <p><span>綠色=空閒</span>
@@ -520,7 +541,7 @@ if ($stmt) {
         function getRoomName(roomId) {
             for (const building of buildings) {
                 const room = building.rooms.find(r => r.id === parseInt(roomId));
-                if (room) return `${building.name} ${room.name}`;
+                if (room) return room.name;
             }
             return '未知教室';
         }
@@ -535,8 +556,10 @@ if ($stmt) {
             const calendarTitle = document.getElementById('calendarTitle');
             const monthSelector = document.getElementById('monthSelector');
             const selectedRoomName = getRoomName(selectedRoomId);
+            const monthValue = parseInt(monthSelector.value, 10);
+            const monthLabel = `${initialYear}年${monthValue + 1}月`;
 
-            calendarTitle.textContent = `${selectedRoomName} 月行事曆`;
+            calendarTitle.textContent = `${selectedRoomName} ${monthLabel}行事曆`;
             calendarSection.style.display = 'block';
             document.getElementById('scheduleSection').classList.add('active');
             selectedDate = null;
@@ -633,47 +656,51 @@ if ($stmt) {
             slotList.innerHTML = '';
             bookingDetails.innerHTML = '';
 
-            // 只顯示有預約的時段，空的不列出
-            timeSlots.forEach(slot => {
-                const matching = roomBookings.filter(b => b.start_time.includes(slot.label.split(' - ')[0]));
-                if (matching.length === 0) return;
-                const row = document.createElement('div');
-                row.className = 'slot-row booked';
-                const label = document.createElement('div');
-                label.className = 'slot-label';
-                label.textContent = slot.label;
-                row.appendChild(label);
-                const status = document.createElement('div');
-                status.className = 'slot-meta';
-                status.innerHTML = `<span class="badge-status confirmed">${matching.length} 筆預約</span>`;
-                row.appendChild(status);
-                slotList.appendChild(row);
-            });
-
             if (roomBookings.length === 0) {
-                slotList.innerHTML = '<p class="text-muted" style="padding:.5rem 0;">該日期尚無登記。</p>';
+                bookingDetails.innerHTML = '<p class="text-muted" style="padding:.5rem 0;">該日期尚無登記。</p>';
                 return;
             }
 
+            const statusMap = { approved:'已核准', pending:'待審核', rejected:'已駁回' };
+            const statusClass = { approved:'approved', pending:'pending', rejected:'rejected' };
+
+            let rows = '';
             roomBookings.forEach(booking => {
-                const statusMap = { approved:'已核准', pending:'待審核', rejected:'已駁回' };
+                const timeStr = `${booking.start_time.slice(11,16)} - ${booking.end_time.slice(11,16)}`;
                 const statusLabel = statusMap[booking.status] || booking.status;
-                const fcTag = booking.is_fc ? '<span style="font-size:.72rem;color:#6b7280;margin-left:.3rem;">場協</span>' : '';
-                const card = document.createElement('div');
-                card.className = 'booked-card';
-                card.innerHTML = `
-                    <div class="booked-left">
-                        <div class="booking-time" style="font-weight:700;">${booking.start_time.slice(11,16)} - ${booking.end_time.slice(11,16)}</div>
-                        <div class="booked-label">${booking.event_name}${fcTag}</div>
-                        <div>${booking.club_name}</div>
-                        <div style="font-size:.82rem;color:#6b7280;">${booking.organizer}${booking.user_email ? ' · ' + booking.user_email : ''}</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <span class="badge-status ${booking.status}">${statusLabel}</span>
-                    </div>
-                `;
-                bookingDetails.appendChild(card);
+                const fcTag = booking.is_fc ? '<span class="tag-fc">場協</span>' : '';
+                const conflictTag = booking.has_conflict && booking.is_fc
+                    ? '<span class="tag-conflict"><i class="bi bi-exclamation-triangle"></i> 有衝突</span>' : '';
+                rows += `
+                <tr>
+                    <td class="col-time">${timeStr}</td>
+                    <td>${booking.event_name}${fcTag}${conflictTag}</td>
+                    <td>${booking.club_name}</td>
+                    <td>${booking.organizer || '—'}</td>
+                    <td>${booking.user_email ? `<a href="mailto:${booking.user_email}">${booking.user_email}</a>` : '—'}</td>
+                    <td><span class="badge-status ${statusClass[booking.status] || ''}">${statusLabel}</span></td>
+                </tr>`;
             });
+
+            bookingDetails.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.6rem;">
+                    <span style="font-weight:600; color:#374151;">共 ${roomBookings.length} 筆登記</span>
+                </div>
+                <div class="booking-table-wrap">
+                    <table class="booking-table">
+                        <thead>
+                            <tr>
+                                <th>時間</th>
+                                <th>目的</th>
+                                <th>社團</th>
+                                <th>申請人</th>
+                                <th>聯絡信箱</th>
+                                <th>核准狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
         }
 
         initPage();

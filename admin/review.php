@@ -16,6 +16,11 @@ $spaces = [];
 $rs = $conn->query("SELECT space_id, space_name FROM spaces ORDER BY space_id");
 if ($rs) $spaces = $rs->fetch_all(MYSQLI_ASSOC);
 
+// 器材清單（供編輯表單使用）
+$all_equipment = [];
+$rs = $conn->query("SELECT equipment_id, name FROM equipment ORDER BY name");
+if ($rs) $all_equipment = $rs->fetch_all(MYSQLI_ASSOC);
+
 // 處理刪除 / 編輯 POST
 $flash = '';
 $flash_type = '';
@@ -39,19 +44,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
         exit;
 
     } elseif ($mgmt_act === 'save') {
-        $ev_name  = trim($_POST['event_name']  ?? '');
-        $cl_name  = trim($_POST['club_name']   ?? '');
-        $desc     = trim($_POST['description'] ?? '');
-        $rv_note  = trim($_POST['review_note'] ?? '');
-        $space_id = intval($_POST['space_id']  ?? 0);
-        $st       = trim($_POST['start_time']  ?? '');
-        $et       = trim($_POST['end_time']    ?? '');
-        if ($ev_name === '' || $cl_name === '' || $st === '' || $et === '') {
-            $flash = '請填寫活動名稱、社團名稱與時間。'; $flash_type = 'danger';
+        $ev_name     = trim($_POST['event_name']         ?? '');
+        $cl_name     = trim($_POST['club_name']          ?? '');
+        $desc        = trim($_POST['description']        ?? '');
+        $rv_note     = trim($_POST['review_note']        ?? '');
+        $space_id    = intval($_POST['space_id']         ?? 0);
+        $st          = trim($_POST['start_time']         ?? '');
+        $et          = trim($_POST['end_time']           ?? '');
+        $resp_person = trim($_POST['responsible_person'] ?? '');
+        $ev_type     = trim($_POST['event_type']         ?? '');
+        $act_loc     = trim($_POST['activity_location']  ?? '');
+        $scale_arr   = isset($_POST['activity_scale']) ? (array)$_POST['activity_scale'] : [];
+        $act_scale   = implode(',', array_filter(array_map('trim', $scale_arr)));
+        $new_status  = trim($_POST['status']             ?? '');
+        if (!in_array($new_status, ['pending', 'approved', 'rejected', 'cancelled'])) $new_status = '';
+
+        if ($st === '' || $et === '') {
+            $flash = '請填寫活動時間。'; $flash_type = 'danger';
         } else {
             $conn->begin_transaction(); $ok = true;
-            $s = $conn->prepare("UPDATE events SET event_name=?, club_name=?, description=?, review_note=?, start_time=?, end_time=? WHERE event_id=?");
-            $s->bind_param('ssssssi', $ev_name, $cl_name, $desc, $rv_note, $st, $et, $mgmt_id);
+            $sql_set    = "event_name=?, club_name=?, description=?, review_note=?, start_time=?, end_time=?, responsible_person=?, event_type=?, activity_location=?, activity_scale=?";
+            $bind_vals  = [$ev_name, $cl_name, $desc, $rv_note, $st, $et, $resp_person, $ev_type, $act_loc, $act_scale];
+            $bind_types = 'ssssssssss';
+            if ($new_status !== '') {
+                $sql_set .= ', status=?';
+                $bind_vals[] = $new_status;
+                $bind_types .= 's';
+                if (in_array($new_status, ['approved', 'rejected'])) {
+                    $sql_set .= ', reviewed_at=NOW(), reviewed_by=?';
+                    $bind_vals[] = intval($_SESSION['user_id'] ?? 0);
+                    $bind_types .= 'i';
+                }
+            }
+            $bind_vals[] = $mgmt_id;
+            $bind_types .= 'i';
+            $s = $conn->prepare("UPDATE events SET {$sql_set} WHERE event_id=?");
+            $s->bind_param($bind_types, ...$bind_vals);
             $ok = $ok && $s->execute(); $s->close();
             if ($ok && $space_id > 0) {
                 $s = $conn->prepare("SELECT reservation_id FROM reservations WHERE event_id = ? LIMIT 1");
@@ -63,6 +91,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
                 } else {
                     $s = $conn->prepare("INSERT INTO reservations (event_id, space_id, start_time, end_time) VALUES (?,?,?,?)");
                     $s->bind_param('iiss', $mgmt_id, $space_id, $st, $et); $ok = $ok && $s->execute(); $s->close();
+                }
+            }
+            // 器材更新：先清除再重新寫入
+            if ($ok) {
+                $s = $conn->prepare("DELETE FROM equipment_borrow WHERE event_id = ?");
+                $s->bind_param('i', $mgmt_id); $ok = $ok && $s->execute(); $s->close();
+            }
+            if ($ok) {
+                $equip_ids  = array_map('intval', $_POST['equip_id']  ?? []);
+                $equip_qtys = array_map('intval', $_POST['equip_qty'] ?? []);
+                for ($i = 0; $i < count($equip_ids); $i++) {
+                    $eid = $equip_ids[$i];
+                    $qty = max(1, $equip_qtys[$i] ?? 1);
+                    if ($eid > 0) {
+                        $s = $conn->prepare("INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?,?,?)");
+                        $s->bind_param('iii', $mgmt_id, $eid, $qty);
+                        $ok = $ok && $s->execute(); $s->close();
+                    }
                 }
             }
             if ($ok) { $conn->commit(); $flash = '變更已儲存。'; $flash_type = 'success'; }
@@ -98,10 +144,12 @@ if ($event_id > 0) {
     $stmt = $conn->prepare(
         "SELECT e.*, u.name AS applicant_name, u.email AS applicant_email,
                 oe.event_name AS original_event_name, oe.club_name AS original_club_name,
-                oe.description AS original_description
+                oe.description AS original_description,
+                ru.name AS reviewer_name
          FROM events e
          JOIN users u ON e.user_id = u.user_id
          LEFT JOIN events oe ON e.original_event_id = oe.event_id
+         LEFT JOIN users ru ON e.reviewed_by = ru.user_id
          WHERE e.event_id = ?"
     );
     $stmt->bind_param('i', $event_id);
@@ -244,6 +292,12 @@ if ($event_id === 0) {
         * { box-sizing: border-box; }
         html { overflow-y: scroll; }
         body.modal-open { padding-right: 0 !important; }
+        /* sidebar 在 modal 開啟時沉到 backdrop 下方，避免擋住 modal */
+        body.modal-open .sidebar { z-index: 1039; }
+        /* modal 置中範圍排除 sidebar 佔用的 260px */
+        @media (min-width: 992px) {
+            .modal { padding-left: 260px; }
+        }
 
         body {
             margin: 0;
@@ -324,21 +378,42 @@ if ($event_id === 0) {
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .section-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.2rem; font-weight: 700; color: var(--primary); margin-bottom: 1rem; }
         .summary-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
-        .card-panel { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; min-height: 150px; display: flex; flex-direction: column; justify-content: space-between; }
-        .card-panel .icon-box { width: 50px; height: 50px; border-radius: 14px; display: grid; place-items: center; color: white; font-size: 1.25rem; }
-        .card-panel.total .icon-box { background: #6f42c1; }
-        .card-panel.pending .icon-box { background: #fd7e14; }
-        .card-panel.approved .icon-box { background: var(--success); }
-        .card-panel.rejected .icon-box { background: var(--danger); }
+        .card-panel { background: var(--card); border-radius: 14px; box-shadow: 0 2px 12px rgba(15,23,42,0.07); padding: 1.5rem; min-height: 130px; display: flex; flex-direction: column; justify-content: space-between; border-left: 4px solid transparent; }
+        .card-panel .icon-box { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; font-size: 1.2rem; }
+        .card-panel.total    { border-left-color: #6f42c1; }
+        .card-panel.total    .icon-box { background: rgba(111,66,193,0.12); color: #6f42c1; }
+        .card-panel.pending  { border-left-color: #fd7e14; }
+        .card-panel.pending  .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
+        .card-panel.approved { border-left-color: #198754; }
+        .card-panel.approved .icon-box { background: rgba(25,135,84,0.12); color: #198754; }
+        .card-panel.rejected { border-left-color: #dc3545; }
+        .card-panel.rejected .icon-box { background: rgba(220,53,69,0.12); color: #dc3545; }
         .card-panel .value { font-size: 2rem; font-weight: 700; margin-top: 1rem; }
         .card-panel .label { color: #6b7280; }
         .panel-row { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; }
         .panel-row h5 { margin-bottom: 1rem; font-weight: 700; color: var(--primary); }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
         th { background: #f3f4f6; color: #374151; font-weight: 600; }
         tbody tr:hover { background: #f9fafb; }
-        .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+        #reviewTable { table-layout: fixed; width: 100%; }
+        #reviewTable th, #reviewTable td { white-space: normal; word-break: break-word; vertical-align: top; }
+        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1)  { width: 9%; }
+        #reviewTable th:nth-child(2),  #reviewTable td:nth-child(2)  { width: 17%; }
+        #reviewTable th:nth-child(3),  #reviewTable td:nth-child(3)  { width: 11%; }
+        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4)  { width: 9%; }
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5)  { width: 8%; }
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6)  { width: 9%; }
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7)  { width: 9%; }
+        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8)  { width: 9%; }
+        #reviewTable th:nth-child(9),  #reviewTable td:nth-child(9)  { width: 8%; }
+        #reviewTable th:nth-child(10), #reviewTable td:nth-child(10) { width: 11%; }
+        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1),
+        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4),
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5),
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6),
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7) { white-space: nowrap; }
+        .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
         .status-pending   { background: #f0e8c0; color: #6b5a20; }
         .status-approved  { background: #70a3a7; color: #1a3f42; }
         .status-rejected  { background: #c9979a; color: #5c1f22; }
@@ -366,6 +441,37 @@ if ($event_id === 0) {
             transition: all 0.25s ease;
             margin-right: 0.35rem;
         }
+        .filter-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.4rem 1rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1.5px solid transparent;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .filter-tab .ftab-count {
+            background: rgba(0,0,0,0.1);
+            border-radius: 999px;
+            padding: 0.05rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        .filter-tab.tab-all     { color: #1e4d6b; border-color: #1e4d6b; }
+        .filter-tab.tab-all.active { background: #1e4d6b; color: white; }
+        .filter-tab.tab-all.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-pending  { color: #fd7e14; border-color: #fd7e14; }
+        .filter-tab.tab-pending.active { background: #fd7e14; color: white; }
+        .filter-tab.tab-pending.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-approved { color: #198754; border-color: #198754; }
+        .filter-tab.tab-approved.active { background: #198754; color: white; }
+        .filter-tab.tab-approved.active .ftab-count { background: rgba(255,255,255,0.25); }
+        .filter-tab.tab-rejected { color: #dc3545; border-color: #dc3545; }
+        .filter-tab.tab-rejected.active { background: #dc3545; color: white; }
+        .filter-tab.tab-rejected.active .ftab-count { background: rgba(255,255,255,0.25); }
         .btn-approve {
             background: #198754;
             color: white;
@@ -439,7 +545,7 @@ if ($event_id === 0) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
@@ -452,45 +558,6 @@ if ($event_id === 0) {
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endif; ?>
-
-            <div class="summary-row">
-                <div class="card-panel total">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">總申請數</div>
-                            <div class="value"><?= $total_count ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-stack"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel pending">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">待審核</div>
-                            <div class="value"><?= $status_counts['pending'] ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-clock"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel approved">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">已通過</div>
-                            <div class="value"><?= $status_counts['approved'] ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-check-circle"></i></div>
-                    </div>
-                </div>
-                <div class="card-panel rejected">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">已駁回</div>
-                            <div class="value"><?= $status_counts['rejected'] ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-x-circle"></i></div>
-                    </div>
-                </div>
-            </div>
 
             <?php if ($event_id > 0): ?>
                 <div class="card">
@@ -565,6 +632,13 @@ if ($event_id === 0) {
                                 <?php endif; ?>
                                 <h6 class="mt-4">審核備註</h6>
                                 <p><?= nl2br(htmlspecialchars($detail_event['review_note'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
+                                <?php if (!empty($detail_event['reviewer_name'])): ?>
+                                <h6 class="mt-3">審核人員</h6>
+                                <p>
+                                    <i class="bi bi-person-check me-1" style="color:var(--primary);"></i>
+                                    <?= htmlspecialchars($detail_event['reviewer_name']) ?>
+                                </p>
+                                <?php endif; ?>
                             </div>
                         </div>
 
@@ -628,9 +702,6 @@ if ($event_id === 0) {
                         // 定義所有可能的檔案欄位與對應顯示的名稱
                         $files_to_display = [
                             ['path' => $detail_event['proposal_doc_path'] ?? null, 'label' => '活動企劃書'],
-                            ['path' => $detail_event['document_path'] ?? null, 'label' => '活動申請單 (黃單)'],
-                            ['path' => $detail_event['venue_doc_path'] ?? null, 'label' => '場地申請單'],
-                            ['path' => $detail_event['equipment_doc_path'] ?? null, 'label' => '器材借用單']
                         ];
                         // 篩選出真正有路徑、有上傳的檔案
                         $active_files = array_filter($files_to_display, function($f) {
@@ -698,35 +769,46 @@ if ($event_id === 0) {
                 </div>
             <?php else: ?>
                 <div class="panel-row">
-                    <div>
-                        <h5><i class="bi bi-list-ul"></i> 申請管理列表</h5>
-                        <div style="margin-bottom: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                            <a href="review.php?status=all" class="btn btn-sm <?= $status_filter === 'all' ? 'btn-primary' : 'btn-outline-secondary' ?>">
-                                <i class="bi bi-grid"></i> 全部
-                                <span class="badge bg-secondary ms-1"><?= $total_count ?></span>
-                            </a>
-                            <a href="review.php?status=pending" class="btn btn-sm <?= $status_filter === 'pending' ? 'btn-warning text-dark' : 'btn-outline-warning' ?>">
-                                <i class="bi bi-clock"></i> 待審核
-                                <span class="badge bg-warning text-dark ms-1"><?= $status_counts['pending'] ?? 0 ?></span>
-                            </a>
-                            <a href="review.php?status=approved" class="btn btn-sm <?= $status_filter === 'approved' ? 'btn-success' : 'btn-outline-success' ?>">
-                                <i class="bi bi-check-circle"></i> 已通過
-                                <span class="badge bg-success ms-1"><?= $status_counts['approved'] ?? 0 ?></span>
-                            </a>
-                            <a href="review.php?status=rejected" class="btn btn-sm <?= $status_filter === 'rejected' ? 'btn-danger' : 'btn-outline-danger' ?>">
-                                <i class="bi bi-x-circle"></i> 已駁回
-                                <span class="badge bg-danger ms-1"><?= $status_counts['rejected'] ?? 0 ?></span>
-                            </a>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
+                        <h5 style="margin:0; align-self:center;"><i class="bi bi-list-ul"></i> 申請管理列表</h5>
+                        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                            <div class="input-group input-group-sm" style="width:180px;">
+                                <span class="input-group-text" style="background:#f3f4f6; border-color:#d1d5db;"><i class="bi bi-people"></i></span>
+                                <input type="text" id="searchClub" class="form-control" placeholder="搜尋社團..." style="border-color:#d1d5db;" oninput="filterReviewTable()">
+                            </div>
+                            <div class="input-group input-group-sm" style="width:170px;">
+                                <span class="input-group-text" style="background:#f3f4f6; border-color:#d1d5db;"><i class="bi bi-calendar3"></i></span>
+                                <input type="date" id="searchDate" class="form-control" style="border-color:#d1d5db;" onchange="filterReviewTable()">
+                            </div>
+                            <button onclick="clearSearch()" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;"><i class="bi bi-x-lg"></i> 清除</button>
                         </div>
                     </div>
+                    <div style="margin-bottom: 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap;">
+                            <a href="review.php?status=all" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
+                                <i class="bi bi-grid"></i> 全部
+                                <span class="ftab-count"><?= $total_count ?></span>
+                            </a>
+                            <a href="review.php?status=pending" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
+                                <i class="bi bi-clock"></i> 待審核
+                                <span class="ftab-count"><?= $status_counts['pending'] ?? 0 ?></span>
+                            </a>
+                            <a href="review.php?status=approved" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
+                                <i class="bi bi-check-circle"></i> 已通過
+                                <span class="ftab-count"><?= $status_counts['approved'] ?? 0 ?></span>
+                            </a>
+                            <a href="review.php?status=rejected" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
+                                <i class="bi bi-x-circle"></i> 已駁回
+                                <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
+                            </a>
+                        </div>
                     <?php if (empty($pending_events)): ?>
                         <div class="empty-state">
                             <i class="bi bi-inbox"></i>
                             <p>此分類目前沒有申請</p>
                         </div>
                     <?php else: ?>
-                        <div style="overflow-x:auto;">
-                            <table>
+                        <div>
+                            <table id="reviewTable">
                                 <thead>
                                     <tr>
                                         <th>案件類型</th>
@@ -839,6 +921,7 @@ if ($event_id === 0) {
         </section>
     </main>
     <?php if ($detail_event): ?>
+    <?php $current_scales = array_map('trim', explode(',', $detail_event['activity_scale'] ?? '')); ?>
     <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content" style="border-radius:16px;overflow:hidden;">
@@ -849,23 +932,75 @@ if ($event_id === 0) {
                 <form method="POST">
                     <input type="hidden" name="mgmt_action" value="save">
                     <input type="hidden" name="event_id" value="<?= $detail_event['event_id'] ?>">
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
+                    <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
+
+                        <p class="text-muted fw-semibold mb-2" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;">基本資料</p>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-8">
                                 <label class="form-label fw-semibold">活動名稱</label>
-                                <input type="text" name="event_name" class="form-control" value="<?= htmlspecialchars($detail_event['event_name']) ?>" required>
+                                <input type="text" name="event_name" class="form-control" value="<?= htmlspecialchars($detail_event['event_name']) ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">申請狀態</label>
+                                <select name="status" class="form-select">
+                                    <option value="pending"   <?= ($detail_event['status'] ?? '') === 'pending'   ? 'selected' : '' ?>>待審核</option>
+                                    <option value="approved"  <?= ($detail_event['status'] ?? '') === 'approved'  ? 'selected' : '' ?>>已通過</option>
+                                    <option value="rejected"  <?= ($detail_event['status'] ?? '') === 'rejected'  ? 'selected' : '' ?>>已駁回</option>
+                                    <option value="cancelled" <?= ($detail_event['status'] ?? '') === 'cancelled' ? 'selected' : '' ?>>已取消</option>
+                                </select>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">社團名稱</label>
-                                <input type="text" name="club_name" class="form-control" value="<?= htmlspecialchars($detail_event['club_name']) ?>" required>
+                                <input type="text" name="club_name" class="form-control" value="<?= htmlspecialchars($detail_event['club_name']) ?>">
                             </div>
                             <div class="col-md-6">
+                                <label class="form-label fw-semibold">活動負責人</label>
+                                <input type="text" name="responsible_person" class="form-control" value="<?= htmlspecialchars($detail_event['responsible_person'] ?? '') ?>" placeholder="（選填）">
+                            </div>
+                        </div>
+
+                        <hr class="my-3">
+                        <p class="text-muted fw-semibold mb-2" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;">活動類型與規模</p>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold">活動類型</label>
+                                <select name="event_type" id="editEventType" class="form-select" onchange="toggleEditLocation()">
+                                    <option value=""    <?= empty($detail_event['event_type'])                        ? 'selected' : '' ?>>未指定</option>
+                                    <option value="校內" <?= ($detail_event['event_type'] ?? '') === '校內' ? 'selected' : '' ?>>校內</option>
+                                    <option value="校外" <?= ($detail_event['event_type'] ?? '') === '校外' ? 'selected' : '' ?>>校外</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8" id="editLocationWrap" style="display:<?= ($detail_event['event_type'] ?? '') === '校外' ? 'block' : 'none' ?>;">
+                                <label class="form-label fw-semibold">活動地點</label>
+                                <input type="text" name="activity_location" class="form-control" value="<?= htmlspecialchars($detail_event['activity_location'] ?? '') ?>" placeholder="請填寫校外活動地點">
+                            </div>
+                        </div>
+                        <div class="mb-1">
+                            <label class="form-label fw-semibold">活動規模 / 特殊性質</label>
+                            <div class="d-flex gap-4 flex-wrap pt-1">
+                                <?php foreach (['大型活動', '含酒精活動', '使用火源活動'] as $scale_opt): ?>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="activity_scale[]"
+                                           value="<?= $scale_opt ?>" id="scale_<?= md5($scale_opt) ?>"
+                                           <?= in_array($scale_opt, $current_scales) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="scale_<?= md5($scale_opt) ?>"><?= $scale_opt ?></label>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+
+                        <hr class="my-3">
+                        <p class="text-muted fw-semibold mb-2" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;">活動時間與場地</p>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-5">
                                 <label class="form-label fw-semibold">開始時間</label>
-                                <input type="datetime-local" name="start_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['start_time']))) ?>" required>
+                                <input type="datetime-local" name="start_time" class="form-control" required
+                                       value="<?= !empty($detail_event['start_time']) ? htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['start_time']))) : '' ?>">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-5">
                                 <label class="form-label fw-semibold">結束時間</label>
-                                <input type="datetime-local" name="end_time" class="form-control" value="<?= htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['end_time']))) ?>" required>
+                                <input type="datetime-local" name="end_time" class="form-control" required
+                                       value="<?= !empty($detail_event['end_time']) ? htmlspecialchars(date('Y-m-d\TH:i', strtotime($detail_event['end_time']))) : '' ?>">
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold">場地（第一場次）</label>
@@ -876,6 +1011,35 @@ if ($event_id === 0) {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
+                        </div>
+
+                        <hr class="my-3">
+                        <p class="text-muted fw-semibold mb-2" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;">器材需求</p>
+                        <div id="equipmentRows">
+                            <?php if (!empty($detail_equipment)): ?>
+                                <?php foreach ($detail_equipment as $eq): ?>
+                                <div class="equipment-row d-flex gap-2 align-items-center mb-2">
+                                    <select name="equip_id[]" class="form-select form-select-sm">
+                                        <option value="">請選擇器材</option>
+                                        <?php foreach ($all_equipment as $aeq): ?>
+                                        <option value="<?= intval($aeq['equipment_id']) ?>" <?= intval($eq['equipment_id']) === intval($aeq['equipment_id']) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($aeq['name']) ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <input type="number" name="equip_qty[]" class="form-control form-control-sm" style="width:90px;" min="1" value="<?= intval($eq['quantity']) ?>">
+                                    <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" onclick="removeEquipRow(this)" style="padding:0.25rem 0.55rem;">✕</button>
+                                </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addEquipRow()">
+                            <i class="bi bi-plus-lg"></i> 新增器材
+                        </button>
+
+                        <hr class="my-3">
+                        <p class="text-muted fw-semibold mb-2" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;">說明與備註</p>
+                        <div class="row g-3">
                             <div class="col-12">
                                 <label class="form-label fw-semibold">活動說明</label>
                                 <textarea name="description" class="form-control" rows="3"><?= htmlspecialchars($detail_event['description'] ?? '') ?></textarea>
@@ -885,6 +1049,7 @@ if ($event_id === 0) {
                                 <textarea name="review_note" class="form-control" rows="2"><?= htmlspecialchars($detail_event['review_note'] ?? '') ?></textarea>
                             </div>
                         </div>
+
                     </div>
                     <div class="modal-footer bg-light">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -943,6 +1108,59 @@ if ($event_id === 0) {
         .catch(() => {
             resultDiv.innerHTML = '<div class="alert alert-danger py-2">網路錯誤，請稍後再試。</div>';
         });
+    }
+
+    function toggleEditLocation() {
+        const val = document.getElementById('editEventType').value;
+        document.getElementById('editLocationWrap').style.display = val === '校外' ? 'block' : 'none';
+    }
+
+    const EQUIP_OPTIONS = <?= json_encode($all_equipment, JSON_UNESCAPED_UNICODE) ?>;
+
+    function buildEquipSelect(selectedId) {
+        let html = '<select name="equip_id[]" class="form-select form-select-sm"><option value="">請選擇器材</option>';
+        EQUIP_OPTIONS.forEach(eq => {
+            const sel = parseInt(selectedId) === parseInt(eq.equipment_id) ? ' selected' : '';
+            html += `<option value="${eq.equipment_id}"${sel}>${eq.name}</option>`;
+        });
+        html += '</select>';
+        return html;
+    }
+
+    function addEquipRow(equip_id = '', qty = 1) {
+        const row = document.createElement('div');
+        row.className = 'equipment-row d-flex gap-2 align-items-center mb-2';
+        row.innerHTML = buildEquipSelect(equip_id)
+            + `<input type="number" name="equip_qty[]" class="form-control form-control-sm" style="width:90px;" min="1" value="${qty}">`
+            + `<button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" onclick="removeEquipRow(this)" style="padding:0.25rem 0.55rem;">✕</button>`;
+        document.getElementById('equipmentRows').appendChild(row);
+    }
+
+    function removeEquipRow(btn) {
+        btn.closest('.equipment-row').remove();
+    }
+
+    function filterReviewTable() {
+        const club = document.getElementById('searchClub').value.trim().toLowerCase();
+        const date = document.getElementById('searchDate').value;
+        const dateFormatted = date ? date.replace(/-/g, '/') : '';
+
+        const rows = document.querySelectorAll('#reviewTable tbody tr');
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 7) return;
+            const clubText = cells[3].textContent.trim().toLowerCase();
+            const timeText = cells[6].textContent.trim();
+            const matchClub = !club || clubText.includes(club);
+            const matchDate = !dateFormatted || timeText.includes(dateFormatted);
+            row.style.display = (matchClub && matchDate) ? '' : 'none';
+        });
+    }
+
+    function clearSearch() {
+        document.getElementById('searchClub').value = '';
+        document.getElementById('searchDate').value = '';
+        filterReviewTable();
     }
 
     document.addEventListener('DOMContentLoaded', function () {

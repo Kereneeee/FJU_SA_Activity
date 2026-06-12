@@ -22,9 +22,10 @@ if (!$event_id || !in_array($action, ['approved', 'rejected'])) {
     exit;
 }
 
-$status = $action;
-$stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ?, reviewed_at = NOW() WHERE event_id = ?");
-$stmt->bind_param("ssi", $status, $note, $event_id);
+$status      = $action;
+$reviewer_id = intval($_SESSION['user_id'] ?? 0);
+$stmt = $conn->prepare("UPDATE events SET status = ?, review_note = ?, reviewed_at = NOW(), reviewed_by = ? WHERE event_id = ?");
+$stmt->bind_param("ssii", $status, $note, $reviewer_id, $event_id);
 
 if (!$stmt->execute()) {
     echo json_encode(['success' => false, 'message' => '資料庫錯誤']);

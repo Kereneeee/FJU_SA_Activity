@@ -64,7 +64,7 @@ $current_page = 'equipment';
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }
@@ -234,15 +234,11 @@ $current_page = 'equipment';
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">器材查詢</li>
-                </ol>
-                <h4 class="mt-2 mb-0">器材庫存查詢</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'器材查詢']];
+        $nav_title = '器材庫存查詢';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
 
@@ -251,14 +247,52 @@ $current_page = 'equipment';
                 <div class="card-title">
                     <i class="bi bi-calendar-range"></i> 查詢時段可用庫存
                 </div>
-                <div class="time-picker-row">
+                <div class="time-picker-row" style="display:grid; grid-template-columns:1fr 1.5fr 1fr 1.5fr auto; gap:0.75rem; align-items:flex-end;">
+                    <div>
+                        <label>借用日期</label>
+                        <input type="date" id="borrow_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                    </div>
                     <div>
                         <label>借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                        <input type="datetime-local" id="borrow_time" class="form-control">
+                        <div class="d-flex align-items-center gap-1">
+                            <select id="borrow_hour" class="form-select" style="width:auto" required>
+                                <option value="">時</option>
+                                <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
+                                    <option value="<?= $hh ?>" <?= $hh === '09' ? 'selected' : '' ?>><?= $hh ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <span style="padding:0 4px;font-weight:600">:</span>
+                            <select id="borrow_minute" class="form-select" style="width:auto" required>
+                                <option value="">分</option>
+                                <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
+                                    <option value="<?= $mm ?>" <?= $mm === '30' ? 'selected' : '' ?>><?= $mm ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <input type="hidden" id="equip_borrow_time" name="equip_borrow_time" value="<?= date('Y-m-d') ?>T09:30">
+                    </div>
+                    <div>
+                        <label>歸還日期</label>
+                        <input type="date" id="return_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
                     </div>
                     <div>
                         <label>歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                        <input type="datetime-local" id="return_time" class="form-control">
+                        <div class="d-flex align-items-center gap-1">
+                            <select id="return_hour" class="form-select" style="width:auto" required>
+                                <option value="">時</option>
+                                <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
+                                    <option value="<?= $hh ?>" <?= $hh === '16' ? 'selected' : '' ?>><?= $hh ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <span style="padding:0 4px;font-weight:600">:</span>
+                            <select id="return_minute" class="form-select" style="width:auto" required>
+                                <option value="">分</option>
+                                <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
+                                    <option value="<?= $mm ?>" <?= $mm === '30' ? 'selected' : '' ?>><?= $mm ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <input type="hidden" id="equip_return_time" name="equip_return_time" value="<?= date('Y-m-d') ?>T16:30">
                     </div>
                     <button class="btn-query" onclick="queryAvailability()">
                         <i class="bi bi-search"></i> 查詢
@@ -281,6 +315,7 @@ $current_page = 'equipment';
                     <i class="bi bi-send me-1"></i> 前往活動申請
                 </a>
             </div>
+
 
             <!-- 器材清單 -->
             <div class="card">
@@ -320,9 +355,9 @@ $current_page = 'equipment';
                             <span class="meta-tag">
                                 <i class="bi bi-clipboard-check"></i>
                                 <?php if ($item['borrowing_limit'] > 0): ?>
-                                    每次上限：<?= (int)$item['borrowing_limit'] ?>
+                                    每次建議上限：<?= (int)$item['borrowing_limit'] ?>
                                 <?php else: ?>
-                                    上限：不限
+                                    每次建議上限：不限
                                 <?php endif; ?>
                             </span>
                         </div>
@@ -342,6 +377,22 @@ $current_page = 'equipment';
                     <?php endif; ?>
                 </div>
             </div>
+            
+            <div class="card">
+                <div class="card-title">
+                    <i class="bi bi-play-circle"></i> 器材介紹影片
+                </div>
+                <p class="mb-3" style="color:#4b5563; margin-bottom: 1rem;">
+                    想更了解器材使用方式與操作說明，請點擊下方連結觀看介紹影片。
+                </p>
+                <a href="https://youtube.com/playlist?list=PL7-yGYzSH22RpasM5bAGA9d6w6HUtGUF3&si=0SFLlLwe9pFdFi4X"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn-apply"
+                   style="display:inline-flex; align-items:center; gap:0.4rem;">
+                    <i class="bi bi-youtube"></i> 開啟影片播放清單
+                </a>
+            </div>
 
         </section>
     </main>
@@ -350,8 +401,8 @@ $current_page = 'equipment';
     <script>
     // ── 時段查詢 ──────────────────────────────────────────────
     async function queryAvailability() {
-        const borrowTime = document.getElementById('borrow_time').value;
-        const returnTime = document.getElementById('return_time').value;
+        const borrowTime = document.getElementById('equip_borrow_time').value;
+        const returnTime = document.getElementById('equip_return_time').value;
 
         if (!borrowTime || !returnTime) {
             alert('請先選擇借用時間與歸還時間。');
@@ -362,7 +413,27 @@ $current_page = 'equipment';
             return;
         }
 
-        // 顯示 loading 狀態
+        const borrowDate = document.getElementById('borrow_date').value;
+        const borrowHour = document.getElementById('borrow_hour').value;
+        const borrowMinute = document.getElementById('borrow_minute').value;
+        const returnDate = document.getElementById('return_date').value;
+        const returnHour = document.getElementById('return_hour').value;
+        const returnMinute = document.getElementById('return_minute').value;
+
+        if (!borrowDate || !borrowHour || !borrowMinute || !returnDate || !returnHour || !returnMinute) {
+            alert('請完整選擇借用與歸還日期和時間。');
+            return;
+        }
+
+        const borrowTimeMinutes = parseInt(borrowHour) * 60 + parseInt(borrowMinute);
+        const returnTimeMinutes = parseInt(returnHour) * 60 + parseInt(returnMinute);
+        const MIN = 9 * 60 + 30;
+        const MAX = 16 * 60 + 30;
+        if (borrowTimeMinutes < MIN || borrowTimeMinutes > MAX || returnTimeMinutes < MIN || returnTimeMinutes > MAX) {
+            alert('器材借還時間須在 09:30–16:30 之間。');
+            return;
+        }
+
         document.querySelectorAll('.avail-badge').forEach(b => {
             b.className = 'avail-badge avail-ok';
             b.style.display = 'block';
@@ -376,7 +447,7 @@ $current_page = 'equipment';
             const data = await res.json();
 
             document.querySelectorAll('.equipment-card').forEach(card => {
-                const id    = card.dataset.equipmentId;
+                const id = card.dataset.equipmentId;
                 const total = parseInt(card.dataset.total) || 0;
                 const badge = document.getElementById('avail_' + id);
                 if (!badge) return;
@@ -403,25 +474,26 @@ $current_page = 'equipment';
         }
     }
 
-    // ── 時間限制 09:30–16:30 ──────────────────────────────────
-    function clampEquipmentTime(inputId) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-        function clamp() {
-            if (!input.value) return;
-            const dt = new Date(input.value);
-            const totalMin = dt.getHours() * 60 + dt.getMinutes();
-            if (totalMin < 9 * 60 + 30) dt.setHours(9, 30, 0, 0);
-            else if (totalMin > 16 * 60 + 30) dt.setHours(16, 30, 0, 0);
-            else return;
-            const pad = n => String(n).padStart(2, '0');
-            input.value = `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    function syncEquipmentTime(prefix) {
+        const date = document.getElementById(prefix + '_date').value;
+        const hour = document.getElementById(prefix + '_hour').value;
+        const minute = document.getElementById(prefix + '_minute').value;
+        const hidden = document.getElementById('equip_' + prefix + '_time');
+        if (date && hour && minute) {
+            hidden.value = `${date}T${hour}:${minute}`;
+        } else {
+            hidden.value = '';
         }
-        input.addEventListener('change', clamp);
-        input.addEventListener('blur', clamp);
     }
-    clampEquipmentTime('borrow_time');
-    clampEquipmentTime('return_time');
+
+    ['borrow', 'return'].forEach(prefix => {
+        ['_date', '_hour', '_minute'].forEach(suffix => {
+            const el = document.getElementById(prefix + suffix);
+            if (!el) return;
+            el.addEventListener('change', () => syncEquipmentTime(prefix));
+        });
+        syncEquipmentTime(prefix);
+    });
 
     // ── 搜尋器材 ─────────────────────────────────────────────
     document.getElementById('searchEquipment').addEventListener('input', function () {

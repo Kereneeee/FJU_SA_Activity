@@ -31,7 +31,6 @@ $user_stmt->close();
 // 使用子查詢取代直接 JOIN reservations，避免多場次造成重複列
 $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time,
                e.status, e.review_note, e.user_id,
-               e.document_path, e.venue_doc_path, e.equipment_doc_path,
                e.responsible_person, e.event_type, e.activity_location,
                e.activity_scale, e.proposal_doc_path,
                COALESCE(e.created_at, NOW()) as created_at,
@@ -49,7 +48,6 @@ if (!$stmt) {
     // 降級查詢（舊欄位不存在時）
     $sql_fallback = "SELECT e.event_id, e.event_name, e.club_name, e.description,
                             e.start_time, e.end_time, e.status, e.review_note, e.user_id,
-                            e.document_path, e.venue_doc_path, e.equipment_doc_path,
                             COALESCE(e.created_at, NOW()) as created_at,
                             COALESCE(rc.session_count, 0) AS session_count
                      FROM events e
@@ -197,7 +195,7 @@ function getEquipmentStatusText($equipment_list) {
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }
@@ -538,15 +536,11 @@ function getEquipmentStatusText($equipment_list) {
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">我的申請</li>
-                </ol>
-                <h4 class="mt-2 mb-0">我的申請</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'我的申請']];
+        $nav_title = '我的申請';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <div class="card">
@@ -696,9 +690,6 @@ function getEquipmentStatusText($equipment_list) {
                                 <?php
                                 $docs = [
                                     'proposal_doc_path'  => ['label' => '活動企劃書',   'icon' => 'bi-file-earmark-text-fill'],
-                                    'document_path'      => ['label' => '活動申請單',   'icon' => 'bi-file-earmark-pdf-fill'],
-                                    'venue_doc_path'     => ['label' => '場地申請單',   'icon' => 'bi-file-earmark-pdf-fill'],
-                                    'equipment_doc_path' => ['label' => '器材借用單',   'icon' => 'bi-file-earmark-pdf-fill'],
                                 ];
                                 $has_docs = false;
                                 foreach ($docs as $col => $_) { if (!empty($app[$col])) { $has_docs = true; break; } }

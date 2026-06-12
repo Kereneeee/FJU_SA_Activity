@@ -405,10 +405,15 @@ if ($club_id !== '') {
         /* ── layout ── */
         .main-content { margin-left: 260px; min-height: 100vh; }
         .top-navbar {
-            background: white; border-bottom: 1px solid #e9ecef;
+            background: #d5e3ea; border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem; display: flex; justify-content: space-between;
             align-items: center; position: sticky; top: 0; z-index: 1100;
         }
+        .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
         .content-wrapper { padding: 1.5rem 2rem 3rem; }
 
         /* ── panel ── */
@@ -473,6 +478,12 @@ if ($club_id !== '') {
         .add-section h6 { font-weight: 700; color: var(--primary); margin-bottom: 1rem; display: flex; align-items: center; gap: .4rem; }
 
         /* ── user avatar ── */
+        .user-avatar {
+            width: 38px; height: 38px; border-radius: 50%;
+            background: var(--primary); color: white;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 1rem; cursor: pointer; flex-shrink: 0;
+        }
         .user-avatar-sm {
             width: 32px; height: 32px; border-radius: 50%;
             background: var(--primary); color: white;
@@ -534,31 +545,28 @@ if ($club_id !== '') {
 <?php include(__DIR__ . '/../includes/admin_sidebar.php'); ?>
 
 <main class="main-content">
-    <header class="top-navbar">
-        <div>
-            <ol class="breadcrumb mb-0" style="font-size:.85rem;">
-                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                <?php if ($club_info): ?>
-                    <li class="breadcrumb-item"><a href="user_mgmt.php">身分權限管理</a></li>
-                    <li class="breadcrumb-item active"><?= htmlspecialchars($club_info['club_name']) ?></li>
-                <?php else: ?>
-                    <li class="breadcrumb-item active">身分權限管理</li>
-                <?php endif; ?>
-            </ol>
-            <h4 class="mt-1 mb-0">
-                <?= $club_info ? htmlspecialchars($club_info['club_name']) . ' 幹部管理' : '身分權限管理' ?>
-            </h4>
-        </div>
-        <div class="d-flex align-items-center gap-3">
-            <div style="display:flex;align-items:center;gap:.4rem;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:999px;padding:.3rem .9rem;">
-                <i class="bi bi-calendar-event" style="color:var(--primary);font-size:.9rem;"></i>
-                <span style="font-size:.82rem;font-weight:700;color:var(--primary);">民國 <?= $current_academic_year ?> 學年度</span>
-                <span style="font-size:.75rem;color:#6b7280;"><?= (intval(date('m')) >= 8) ? '上學期' : '下學期' ?></span>
-            </div>
-            <div class="user-avatar-sm" style="width:38px;height:38px;cursor:pointer;" onclick="location.href='profile.php'"></div>
-            <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
-        </div>
-    </header>
+    <?php
+    if ($club_info) {
+        $nav_breadcrumbs = [
+            ['label' => '首頁', 'url' => 'dashboard.php'],
+            ['label' => '身分權限管理', 'url' => 'user_mgmt.php'],
+            ['label' => htmlspecialchars($club_info['club_name'])],
+        ];
+        $nav_title = htmlspecialchars($club_info['club_name']) . ' 幹部管理';
+    } else {
+        $nav_breadcrumbs = [
+            ['label' => '首頁', 'url' => 'dashboard.php'],
+            ['label' => '身分權限管理'],
+        ];
+        $nav_title = '身分權限管理';
+    }
+    $nav_extra = '<div style="display:flex;align-items:center;gap:.4rem;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:999px;padding:.3rem .9rem;">
+        <i class="bi bi-calendar-event" style="color:var(--primary);font-size:.9rem;"></i>
+        <span style="font-size:.82rem;font-weight:700;color:var(--primary);">民國 ' . $current_academic_year . ' 學年度</span>
+        <span style="font-size:.75rem;color:#6b7280;">' . ((intval(date('m')) >= 8) ? '上學期' : '下學期') . '</span>
+    </div>';
+    include __DIR__ . '/../includes/admin_navbar.php';
+    ?>
 
     <section class="content-wrapper">
 

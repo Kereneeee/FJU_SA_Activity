@@ -159,25 +159,90 @@ foreach ($user_clubs as $club) {
         :root {
             --primary: #1e4d6b;
             --sidebar: #14394f;
+            --bg: #f7f5ef;
         }
-
+        * { box-sizing: border-box; }
         body {
-            background: #f4f6fb;
             margin: 0;
-            padding: 0;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: #1f2937;
         }
-
-        .navbar-custom {
-            background: #ffffff;
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 260px;
+            height: 100vh;
+            background: var(--primary);
+            color: white;
+            padding: 1.5rem 0.8rem;
+            overflow-y: hidden;
+            box-shadow: 3px 0 15px rgba(0,0,0,0.12);
+            z-index: 1200;
+        }
+        .sidebar .brand {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .sidebar .brand h4 {
+            margin: 0;
+            font-size: 1.1rem;
+            line-height: 1.4;
+            font-weight: 700;
+        }
+        .sidebar .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: rgba(255,255,255,0.9);
+            padding: 0.85rem 1rem;
+            margin: 0.2rem 0;
+            border-radius: 16px;
+            transition: background 0.25s ease, transform 0.15s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: #ece8dd;
+            color: #1e4d6b;
+            transform: translateX(4px);
+        }
+        .sidebar .nav-link i { font-size: 1.1rem; }
+        .sidebar .sidebar-section {
+            padding: 1rem 0.5rem;
+            margin-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        .main-content {
+            margin-left: 260px;
+            min-height: 100vh;
+            transition: margin-left 0.25s ease;
+        }
+        .top-navbar {
+            background: #d5e3ea;
             border-bottom: 1px solid #bdd0d9;
             padding: 1rem 2rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1100;
         }
-
-        .navbar-custom a {
-            color: var(--primary);
-            text-decoration: none;
-            margin-right: 1rem;
+        .content-wrapper {
+            padding: 1.5rem 2rem 2rem;
+        }
+        @media (max-width: 1100px) {
+            .main-content { margin-left: 0; }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                position: relative;
+                width: 100%;
+                height: auto;
+                box-shadow: none;
+            }
         }
 
         .profile-container {
@@ -386,11 +451,16 @@ foreach ($user_clubs as $club) {
     </style>
 </head>
 <body>
-    <nav class="navbar-custom">
-        <a href="dashboard.php"><i class="bi bi-house-door"></i> 回到儀表板</a>
-        <span class="text-muted">個人檔案</span>
-    </nav>
+    <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
+    <main class="main-content">
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'個人檔案']];
+        $nav_title = '個人檔案';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
+
+    <section class="content-wrapper">
     <div class="profile-container">
         <?php if ($success_msg): ?>
             <div class="alert alert-success alert-custom">
@@ -408,7 +478,7 @@ foreach ($user_clubs as $club) {
         <div class="profile-card">
             <div class="profile-header">
                 <div class="avatar-large">
-                    <?php echo htmlspecialchars(substr($student_name, 0, 1)); ?>
+                    <?php echo htmlspecialchars(mb_substr($student_name, 0, 1)); ?>
                 </div>
                 <div class="profile-info">
                     <h2><?php echo htmlspecialchars($student_name); ?></h2>
@@ -489,6 +559,10 @@ foreach ($user_clubs as $club) {
                             $days_since_confirm = floor(($today - $confirm_date) / (60 * 60 * 24));
                             $needs_reconfirm = ($days_since_confirm >= 365);
                         }
+
+                        // 此身份有效學年度：以幹部確認日期為準（若無則用入社時間），民國學年度＝西元年-1911
+                        $acad_year_date = $officer_status['officer_confirmation_date'] ?: $officer_status['join_date'];
+                        $valid_academic_year = (int)date('Y', strtotime($acad_year_date)) - 1911;
                         ?>
                         <div class="info-row">
                             <div class="info-item">
@@ -508,8 +582,8 @@ foreach ($user_clubs as $club) {
                                 </div>
                             </div>
                             <div class="info-item">
-                                <div class="info-label">入社時間</div>
-                                <div class="info-value"><?php echo date('Y年m月d日', strtotime($officer_status['join_date'])); ?></div>
+                                <div class="info-label">此身份有效學年度</div>
+                                <div class="info-value"><?php echo $valid_academic_year; ?>學年度</div>
                             </div>
                         </div>
 
@@ -587,6 +661,8 @@ foreach ($user_clubs as $club) {
             </div>
         </div>
     </div>
+    </section>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

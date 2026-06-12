@@ -191,17 +191,13 @@ $active_setting = $fc_manager->getActiveSettings();
             min-height: 100vh;
             transition: margin-left 0.25s ease;
         }
-        .top-navbar {
-            background: #d5e3ea;
-            border-bottom: 1px solid #bdd0d9;
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 1100;
-        }
+        .top-navbar { background: #d5e3ea; border-bottom: 1px solid #bdd0d9; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1100; }
+        .top-navbar .breadcrumb { margin: 0; background: transparent; padding: 0; font-size: 0.8rem; }
+        .top-navbar .breadcrumb-item + .breadcrumb-item::before { content: '›'; font-size: 1rem; color: #c9d0d8; }
+        .top-navbar .breadcrumb-item a { color: #1e4d6b; text-decoration: none; opacity: 0.75; }
+        .top-navbar .breadcrumb-item a:hover { opacity: 1; }
+        .top-navbar .breadcrumb-item.active { color: #6b7280; }
+        .user-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--primary); color: white; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1rem; flex-shrink: 0; }
         .content-wrapper {
             padding: 1.5rem 2rem 2rem;
         }
@@ -251,15 +247,14 @@ $active_setting = $fc_manager->getActiveSettings();
     <?php include(__DIR__ . "/../includes/admin_sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">場協登記管理</li>
-                </ol>
-                <h4 class="mt-2 mb-0">場協登記管理</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [
+            ['label' => '首頁', 'url' => 'dashboard.php'],
+            ['label' => '場協登記管理'],
+        ];
+        $nav_title = '場協登記管理';
+        include __DIR__ . '/../includes/admin_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <?php if (!empty($message)): ?>
@@ -382,15 +377,15 @@ $active_setting = $fc_manager->getActiveSettings();
                                 <td><?= date('Y-m-d H:i', strtotime($setting['coordination_meeting_date'])) ?></td>
                                 <td>
                                     <span class="status-badge <?= $setting['status'] === 'active' ? 'status-active' : 'status-inactive' ?>">
-                                        <?= $setting['status'] === 'active' ? '啟用' : '禁用' ?>
+                                        <?= $setting['status'] === 'active' ? '啟用' : '關閉' ?>
                                     </span>
                                 </td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary btn-sm-custom" data-bs-toggle="modal" data-bs-target="#editModal<?= $setting['setting_id'] ?>">
                                         <i class="bi bi-pencil"></i> 編輯
                                     </button>
-                                    <a href="field_coordination_conflicts.php?setting_id=<?= $setting['setting_id'] ?>" class="btn btn-sm btn-outline-info btn-sm-custom">
-                                        <i class="bi bi-exclamation-triangle"></i> 衝突管理
+                                    <a href="field_coordination_import.php?setting_id=<?= $setting['setting_id'] ?>&tab=conflict" class="btn btn-sm btn-outline-info btn-sm-custom">
+                                        <i class="bi bi-exclamation-triangle"></i> 衝突協調
                                     </a>
                                 </td>
                             </tr>
@@ -461,7 +456,7 @@ $active_setting = $fc_manager->getActiveSettings();
                                                     <label class="form-label">狀態 *</label>
                                                     <select name="status" class="form-control" required>
                                                         <option value="active" <?= $setting['status'] === 'active' ? 'selected' : '' ?>>啟用</option>
-                                                        <option value="inactive" <?= $setting['status'] === 'inactive' ? 'selected' : '' ?>>禁用</option>
+                                                        <option value="inactive" <?= $setting['status'] === 'inactive' ? 'selected' : '' ?>>關閉</option>
                                                     </select>
                                                 </div>
 

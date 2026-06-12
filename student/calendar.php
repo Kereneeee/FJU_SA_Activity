@@ -17,8 +17,9 @@ $current_page = 'calendar';
 
 $selected_year = intval($_GET['year'] ?? date('Y'));
 $selected_month = intval($_GET['month'] ?? date('m'));
-$month_start = sprintf('%04d-%02d-01 00:00:00', $selected_year, $selected_month);
-$month_end = date('Y-m-t 23:59:59', strtotime($month_start));
+// 載入整年資料，讓切換月份時每個月都能顯示正確的登記數量
+$month_start = sprintf('%04d-01-01 00:00:00', $selected_year);
+$month_end   = sprintf('%04d-12-31 23:59:59', $selected_year);
 
 // 從 DB 動態建立場地分組
 $buildings = [];
@@ -105,7 +106,18 @@ if ($stmt_special) {
 $special_dates_json = json_encode($special_dates);
 
 $bookings = [];
-$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status, e.is_field_coordination, fcr.is_approved, fcs.coordination_meeting_date
+$sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_id, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status, e.is_field_coordination, fcr.is_approved, fcr.registration_id, fcs.coordination_meeting_date,
+       CASE WHEN fcr.is_approved IS NULL AND EXISTS (
+            SELECT 1 FROM field_coordination_registrations fcr2
+            JOIN events e2 ON fcr2.event_id = e2.event_id
+            JOIN reservations r2 ON e2.event_id = r2.event_id
+            WHERE fcr2.setting_id = fcr.setting_id
+              AND fcr2.registration_id != fcr.registration_id
+              AND fcr2.is_approved IS NULL
+              AND r2.space_id = r.space_id
+              AND r2.start_time < r.end_time
+              AND r.start_time < r2.end_time
+       ) THEN 1 ELSE 0 END AS has_conflict
     FROM reservations r
     JOIN events e ON r.event_id = e.event_id
     LEFT JOIN field_coordination_registrations fcr ON e.event_id = fcr.event_id
@@ -147,6 +159,7 @@ if ($stmt) {
             'status' => $status,
             'is_field_coordination' => intval($row['is_field_coordination']) === 1,
             'is_approved' => $row['is_approved'],
+            'has_conflict' => intval($row['has_conflict']) === 1,
             'coordination_meeting_date' => $row['coordination_meeting_date'],
         ];
     }
@@ -190,7 +203,7 @@ if ($stmt) {
             background: var(--primary);
             color: white;
             padding: 1.5rem 0.8rem;
-            overflow-y: auto;
+            overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
             z-index: 1200;
         }
@@ -254,9 +267,18 @@ if ($stmt) {
         .btn-action.secondary:hover { background: #d1d5db; }
         .btn-action.danger { background: var(--danger); color: white; }
         .booked-list { margin-top: 1rem; }
-        .booked-card { display: grid; grid-template-columns: 1fr auto; gap: 0.8rem; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; }
-        .booked-card .booked-left { display: grid; gap: 0.3rem; }
-        .booked-label { font-size: 0.9rem; color: #6b7280; }
+        .booking-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e5e7eb; }
+        .booking-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .booking-table thead tr { background: #f3f4f6; }
+        .booking-table th { padding: 0.65rem 0.9rem; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
+        .booking-table td { padding: 0.6rem 0.9rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; color: #1f2937; }
+        .booking-table tbody tr:last-child td { border-bottom: none; }
+        .booking-table tbody tr:hover { background: #f9fafb; }
+        .booking-table .col-time { white-space: nowrap; font-weight: 600; color: #1e40af; }
+        .booking-table a { color: #1d6fa4; text-decoration: none; }
+        .booking-table a:hover { text-decoration: underline; }
+        .tag-fc { display: inline-block; font-size: .72rem; background: #dbeafe; color: #1e40af; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
+        .tag-conflict { display: inline-block; font-size: .72rem; background: #fed7aa; color: #7c2d12; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
         .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
         .modal-backdrop.show { display: flex; }
         .modal-dialog { background: white; border-radius: 16px; padding: 2rem; width: min(520px, 90%); box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
@@ -286,15 +308,11 @@ if ($stmt) {
     <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
     <main class="main-content">
-        <header class="top-navbar">
-            <div>
-                <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                    <li class="breadcrumb-item active" aria-current="page">空間日曆</li>
-                </ol>
-                <h4 class="mt-2 mb-0">空間日曆</h4>
-            </div>
-        </header>
+        <?php
+        $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'空間日曆']];
+        $nav_title = '空間日曆';
+        include __DIR__ . '/../includes/student_navbar.php';
+        ?>
 
         <section class="content-wrapper">
             <div class="card">
@@ -328,7 +346,7 @@ if ($stmt) {
             </div>
 
             <div id="calendarSection" class="card" style="display: none;">
-                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">教室月行事曆</span></h3>
+                <h3><i class="bi bi-calendar2"></i> <span id="calendarTitle">請選擇教室與月份</span></h3>
                 <div class="calendar-grid" id="calendarGrid"></div>
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; color:#6b7280; font-size:0.9rem; margin-top:0.5rem;">
                     <p><span>綠色=空閒</span>
@@ -354,14 +372,10 @@ if ($stmt) {
         const bookings = <?php echo json_encode($bookings); ?>;
         const initialYear = <?php echo $selected_year; ?>;
         const initialMonth = <?php echo $selected_month - 1; ?>;
-
-        console.log("從資料庫接到的特殊日期：", specialDates);
-        
         let selectedBuildingId = <?php echo $selectedBuildingId ? $selectedBuildingId : 'null'; ?>;
         let selectedRoomId = <?php echo $selectedRoomId ? $selectedRoomId : 'null'; ?>;
         let selectedDate = null;
         let selectedSlot = null;
-        
         /**
          * 檢查特定日期是否屬於資料庫中的收費特殊日期
          * @param {string} dateStr - 格式為 'YYYY-MM-DD'
@@ -502,7 +516,7 @@ if ($stmt) {
         function getRoomName(roomId) {
             for (const building of buildings) {
                 const room = building.rooms.find(r => r.id === parseInt(roomId));
-                if (room) return `${building.name} ${room.name}`;
+                if (room) return room.name;
             }
             return '未知教室';
         }
@@ -517,8 +531,10 @@ if ($stmt) {
             const calendarTitle = document.getElementById('calendarTitle');
             const monthSelector = document.getElementById('monthSelector');
             const selectedRoomName = getRoomName(selectedRoomId);
+            const monthValue = parseInt(monthSelector.value, 10);
+            const monthLabel = `${initialYear}年${monthValue + 1}月`;
 
-            calendarTitle.textContent = `${selectedRoomName} 月行事曆`;
+            calendarTitle.textContent = `${selectedRoomName} ${monthLabel}行事曆`;
             calendarSection.style.display = 'block';
             document.getElementById('scheduleSection').classList.add('active');
             selectedDate = null;
@@ -526,7 +542,7 @@ if ($stmt) {
             document.getElementById('slotList').innerHTML = '';
             document.getElementById('bookingDetails').innerHTML = '';
 
-            const year = new Date().getFullYear();
+            const year = initialYear;
             const month = parseInt(monthSelector.value);
             const firstDay = new Date(year, month, 1);
             const startDay = new Date(firstDay);
@@ -612,42 +628,52 @@ if ($stmt) {
             slotList.innerHTML = '';
             bookingDetails.innerHTML = '';
 
-            const summary = document.createElement('div');
-            summary.className = 'slot-row';
-            summary.innerHTML = `<div class="slot-label">今日共 ${roomBookings.length} 筆登記</div>`;
-            slotList.appendChild(summary);
-
             if (roomBookings.length === 0) {
-                bookingDetails.innerHTML = '<p class="text-muted">該日期尚未有場地登記，代表目前可用。</p>';
+                bookingDetails.innerHTML = '<p class="text-muted" style="padding:1rem 0;">該日期尚未有場地登記，代表目前可用。</p>';
                 return;
             }
 
-            bookingDetails.innerHTML = '<h4 style="margin-bottom:0.8rem; color:#374151;">當日登記清單</h4>';
+            const statusMap = { approved: '已核准', pending: '待審核', rejected: '已駁回' };
+            const statusClass = { approved: 'approved', pending: 'pending', rejected: 'rejected' };
+
+            let rows = '';
             roomBookings.forEach(item => {
-                const card = document.createElement('div');
-                card.className = 'booked-card';
-                let statusLabel = '待審核';
-                if (item.status === 'approved') {
-                    statusLabel = '已核准';
-                } else if (item.status === 'rejected') {
-                    statusLabel = '已駁回';
-                }
+                const timeStr = `${new Date(item.start_time).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})} - ${new Date(item.end_time).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}`;
+                const statusLabel = statusMap[item.status] || item.status;
                 const fcTag = item.is_field_coordination && item.status === 'pending'
-                    ? '<span style="font-size:.72rem;background:#dbeafe;color:#1e40af;padding:.1rem .4rem;border-radius:4px;margin-left:.4rem;">場協待確認</span>' : '';
-                card.innerHTML = `
-                    <div class="booked-left">
-                        <div class="booking-time" style="font-weight:700;">${new Date(item.start_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })} - ${new Date(item.end_time).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
-                        <div class="booking-title">${item.event_name}${fcTag}</div>
-                        <div class="booking-club">社團：${item.club_name}</div>
-                        <div class="booking-organizer">申請人：${item.organizer}</div>
-                        <div class="booking-email">聯絡信箱：${item.user_email ? item.user_email : '無'}</div>
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; justify-content:center; align-items:flex-end;">
-                        <span class="badge-status ${item.status}">${statusLabel}</span>
-                    </div>
-                `;
-                bookingDetails.appendChild(card);
+                    ? '<span class="tag-fc">場協待確認</span>' : '';
+                const conflictTag = item.has_conflict && item.is_field_coordination
+                    ? '<span class="tag-conflict"><i class="bi bi-exclamation-triangle"></i> 有衝突</span>' : '';
+                rows += `
+                <tr>
+                    <td class="col-time">${timeStr}</td>
+                    <td>${item.event_name}${fcTag}${conflictTag}</td>
+                    <td>${item.club_name}</td>
+                    <td>${item.organizer || '—'}</td>
+                    <td>${item.user_email ? `<a href="mailto:${item.user_email}">${item.user_email}</a>` : '—'}</td>
+                    <td><span class="badge-status ${statusClass[item.status] || ''}">${statusLabel}</span></td>
+                </tr>`;
             });
+
+            bookingDetails.innerHTML = `
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.6rem;">
+                    <span style="font-weight:600; color:#374151;">共 ${roomBookings.length} 筆登記</span>
+                </div>
+                <div class="booking-table-wrap">
+                    <table class="booking-table">
+                        <thead>
+                            <tr>
+                                <th>時間</th>
+                                <th>目的</th>
+                                <th>社團</th>
+                                <th>申請人</th>
+                                <th>聯絡信箱</th>
+                                <th>核准狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
         }
 
         window.addEventListener('DOMContentLoaded', () => {

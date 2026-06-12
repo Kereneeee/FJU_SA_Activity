@@ -269,6 +269,15 @@ if ($noti_result) {
             line-height: 1.5;
             font-size: 0.85rem;
         }
+        .action-card.pending-card {
+            background: #6b2737;
+        }
+        .action-card.pending-card .pending-count {
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1;
+            margin: 0.4rem 0;
+        }
         .panel-row {
             display: grid;
             grid-template-columns: 2fr 1fr;
@@ -317,22 +326,31 @@ if ($noti_result) {
         .status-pending { background: #f0e8c0; color: #6b5a20; }
         .status-alert { background: #f8d7da; color: #842029; }
         .welcome-banner {
-            padding: 1.5rem 0;
+            padding: 1.25rem 1.5rem;
             background: #e3f2fd;
             border-radius: 12px;
             margin-bottom: 1.5rem;
+            overflow: hidden;
         }
         .welcome-inner {
             display: flex;
             align-items: center;
             gap: 1rem;
             flex-wrap: wrap;
+            min-width: 0;
+        }
+        .welcome-inner > div {
+            min-width: 0;
+            overflow: hidden;
         }
         .welcome-banner h5 {
-            margin: 0 0 0.5rem;
+            margin: 0 0 0.3rem;
             color: #1565c0;
             font-size: 1.15rem;
             font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         .welcome-banner p {
             margin: 0;
@@ -390,7 +408,7 @@ if ($noti_result) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?php echo htmlspecialchars(substr($user_name, 0, 1)); ?>
+                    <?php echo htmlspecialchars(mb_substr($user_name, 0, 1)); ?>
                 </div>
                 <small class="text-muted"><?php echo htmlspecialchars($user_name); ?></small>
             </div>
@@ -409,21 +427,16 @@ if ($noti_result) {
                     </div>
                 </div>
             </div>
-            <div class="summary-row">
-                <div class="card-panel pending">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="label">待審核申請</div>
-                            <div class="value"><?php echo htmlspecialchars($pending_count); ?></div>
-                        </div>
-                        <div class="icon-box"><i class="bi bi-hourglass-split"></i></div>
-                    </div>
-                    <p class="footer-note">提醒您處理未決申請。</p>
-                </div>
-            </div>
-
             <div class="quick-actions">
-                <div class="action-card review" onclick="location.href='review.php'">
+                <div class="action-card pending-card" onclick="location.href='review.php?filter=pending'">
+                    <div class="action-top">
+                        <span>待審核申請</span>
+                        <div class="action-icon"><i class="bi bi-hourglass-split"></i></div>
+                    </div>
+                    <div class="pending-count"><?php echo htmlspecialchars($pending_count); ?></div>
+                    <p>目前待處理的申請案件數量。</p>
+                </div>
+                <div class="action-card" onclick="location.href='review.php'">
                     <div class="action-top">
                         <span>審核管理</span>
                         <div class="action-icon"><i class="bi bi-clipboard-check"></i></div>
@@ -431,29 +444,53 @@ if ($noti_result) {
                     <h6>審核申請案件</h6>
                     <p>快速處理待審核的申請案件。</p>
                 </div>
-                <div class="action-card event" onclick="location.href='event_mgmt.php'">
+                <div class="action-card" onclick="location.href='equipment_mgmt.php'">
                     <div class="action-top">
-                        <span>申請紀錄</span>
-                        <div class="action-icon"><i class="bi bi-calendar-check"></i></div>
-                    </div>
-                    <h6>管理申請紀錄</h6>
-                    <p>編輯與刪除申請紀錄。</p>
-                </div>
-                <div class="action-card equipment" onclick="location.href='equipment_mgmt.php'">
-                    <div class="action-top">
-                        <span>器材管理</span>
+                        <span>器材庫存管理</span>
                         <div class="action-icon"><i class="bi bi-tools"></i></div>
                     </div>
                     <h6>管理器材庫存</h6>
                     <p>新增、編輯或刪除器材項目。</p>
                 </div>
-                <div class="action-card space" onclick="location.href='space_mgmt.php'">
+                <div class="action-card" onclick="location.href='space_mgmt.php'">
                     <div class="action-top">
                         <span>空間管理</span>
                         <div class="action-icon"><i class="bi bi-building"></i></div>
                     </div>
                     <h6>管理場地資源</h6>
                     <p>查看與編輯空間使用狀態。</p>
+                </div>
+                <div class="action-card" onclick="location.href='field_coordination_mgmt.php'">
+                    <div class="action-top">
+                        <span>場協登記管理</span>
+                        <div class="action-icon"><i class="bi bi-people"></i></div>
+                    </div>
+                    <h6>管理場協登記</h6>
+                    <p>查看與審核場地協調登記申請。</p>
+                </div>
+                <div class="action-card" onclick="location.href='field_coordination_import.php'">
+                    <div class="action-top">
+                        <span>場協結果匯入</span>
+                        <div class="action-icon"><i class="bi bi-cloud-upload"></i></div>
+                    </div>
+                    <h6>匯入場協結果</h6>
+                    <p>將協調會議結果匯入系統。</p>
+                </div>
+                <div class="action-card" onclick="location.href='calendar.php'">
+                    <div class="action-top">
+                        <span>完整行事曆</span>
+                        <div class="action-icon"><i class="bi bi-calendar-week"></i></div>
+                    </div>
+                    <h6>查看完整行事曆</h6>
+                    <p>檢視所有場地預約與活動時程。</p>
+                </div>
+                <div class="action-card" onclick="location.href='user_mgmt.php'">
+                    <div class="action-top">
+                        <span>身分權限管理</span>
+                        <div class="action-icon"><i class="bi bi-people-fill"></i></div>
+                    </div>
+                    <h6>管理社團幹部</h6>
+                    <p>設定社團幹部名單與身分權限。</p>
                 </div>
             </div>
 

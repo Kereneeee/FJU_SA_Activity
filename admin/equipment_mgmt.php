@@ -116,7 +116,7 @@ $borrowed_by_equipment = [];
 $borrow_sql = "SELECT eb.equipment_id, COALESCE(SUM(eb.quantity), 0) AS borrowed_quantity
                FROM equipment_borrow eb
                LEFT JOIN events ev ON eb.event_id = ev.event_id
-               WHERE ev.status = 'approved'
+               WHERE ev.status = 'approved' OR ev.event_id IS NULL
                GROUP BY eb.equipment_id";
 $result_borrowed = $conn->query($borrow_sql);
 if ($result_borrowed) {
@@ -139,13 +139,14 @@ foreach ($equipment_list as $eq) {
 
 // 取得借用中的器材詳情（連結學生端）
 $borrowing_details = [];
-$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity, e.status AS event_status, eq.name as equipment_name,
+$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity,
+                      COALESCE(e.status, 'pending') AS event_status, eq.name as equipment_name,
                       e.event_name, e.club_name, e.start_time, e.end_time, u.name as student_name, u.email
                FROM equipment_borrow eb
                LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                LEFT JOIN events e ON eb.event_id = e.event_id
                LEFT JOIN users u ON e.user_id = u.user_id
-               WHERE e.status IN ('pending', 'approved')
+               WHERE e.event_id IS NULL OR e.status IN ('pending', 'approved')
                ORDER BY e.start_time DESC";
 $result_borrow = $conn->query($sql_borrow);
 if ($result_borrow) {
@@ -315,27 +316,33 @@ foreach ($borrowing_details as $borrow) {
         }
         .card-panel {
             background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(15,23,42,0.07);
             padding: 1.5rem;
-            min-height: 150px;
+            min-height: 130px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            border-left: 4px solid transparent;
         }
         .card-panel .icon-box {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
+            width: 46px;
+            height: 46px;
+            border-radius: 12px;
             display: grid;
             place-items: center;
-            color: white;
-            font-size: 1.25rem;
+            font-size: 1.2rem;
         }
-        .card-panel.items .icon-box { background: #0d6efd; }
-        .card-panel.total .icon-box { background: #6f42c1; }
-        .card-panel.available .icon-box { background: #198754; }
-        .card-panel.borrowed .icon-box { background: #fd7e14; }
+        .card-panel.items    { border-left-color: #0d6efd; }
+        .card-panel.items    .icon-box { background: rgba(13,110,253,0.12); color: #0d6efd; }
+        .card-panel.total    { border-left-color: #6f42c1; }
+        .card-panel.total    .icon-box { background: rgba(111,66,193,0.12); color: #6f42c1; }
+        .card-panel.available { border-left-color: #198754; }
+        .card-panel.available .icon-box { background: rgba(25,135,84,0.12); color: #198754; }
+        .card-panel.borrowed { border-left-color: #fd7e14; }
+        .card-panel.borrowed .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
+        .card-panel.pending  { border-left-color: #fd7e14; }
+        .card-panel.pending  .icon-box { background: rgba(253,126,20,0.12); color: #fd7e14; }
         .card-panel .value {
             font-size: 2rem;
             font-weight: 700;
@@ -347,6 +354,7 @@ foreach ($borrowing_details as $borrow) {
             border-radius: 18px;
             box-shadow: 0 10px 30px rgba(15,23,42,0.06);
             padding: 1.5rem;
+            margin-bottom: 1.5rem;
         }
         .panel-row h5 {
             margin-bottom: 1rem;
@@ -354,9 +362,43 @@ foreach ($borrowing_details as $borrow) {
             color: var(--primary);
         }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-        th { background: #f3f4f6; color: #374151; font-weight: 600; }
+        th, td { padding: 0.75rem 0.8rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f3f4f6; color: #374151; font-weight: 600; white-space: nowrap; }
         tbody tr:hover { background: #f9fafb; }
+        .inventory-table {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 900px;
+        }
+        .inventory-table th,
+        .inventory-table td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .inventory-table .status-badge,
+        .inventory-table .action-cell {
+            white-space: nowrap;
+            flex-wrap: nowrap;
+        }
+        .inventory-table .action-cell form,
+        .inventory-table .action-cell .btn {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .inventory-table .col-code { width: 9%; }
+        .inventory-table .col-name { width: 20%; }
+        .inventory-table .col-total { width: 8%; }
+        .inventory-table .col-available { width: 8%; }
+        .inventory-table .col-borrowed { width: 8%; }
+        .inventory-table .col-limit { width: 8%; }
+        .inventory-table .col-status { width: 12%; }
+        .inventory-table .col-stock { width: 12%; }
+        .inventory-table .col-action { width: 15%; }
+        .stock-text {
+            font-weight: 600;
+            color: var(--primary);
+        }
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -534,7 +576,7 @@ foreach ($borrowing_details as $borrow) {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <div class="user-avatar" onclick="location.href='profile.php'">
-                    <?= htmlspecialchars(substr($user_name, 0, 1)) ?>
+                    <?= htmlspecialchars(mb_substr($user_name, 0, 1)) ?>
                 </div>
                 <small class="text-muted"><?= htmlspecialchars($user_name) ?></small>
             </div>
@@ -599,22 +641,22 @@ foreach ($borrowing_details as $borrow) {
                         <div class="icon-box"><i class="bi bi-arrow-left-right"></i></div>
                     </div>
                 </div>
-                <div class="card-panel pending" style="--primary: #fd7e14;">
+                <div class="card-panel pending">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="label">待審核申請</div>
                             <div class="value"><?php echo $pending_borrows; ?></div>
                         </div>
-                        <div class="icon-box" style="background: #fd7e14;"><i class="bi bi-hourglass-split"></i></div>
+                        <div class="icon-box"><i class="bi bi-hourglass-split"></i></div>
                     </div>
                 </div>
-                <div class="card-panel available" style="--primary: #198754;">
+                <div class="card-panel available">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <div class="label">已核准申請</div>
                             <div class="value"><?php echo $approved_borrows; ?></div>
                         </div>
-                        <div class="icon-box" style="background: #198754;"><i class="bi bi-check-circle"></i></div>
+                        <div class="icon-box"><i class="bi bi-check-circle"></i></div>
                     </div>
                 </div>
             </div>
@@ -664,51 +706,134 @@ foreach ($borrowing_details as $borrow) {
             </div>
             <?php endif; ?>
 
-            <?php if (!empty($edit_equipment)): ?>
+            <!-- 器材列表 -->
             <div class="panel-row">
-                <h5><i class="bi bi-pencil-square"></i> 編輯器材</h5>
-                <?php if ($edit_error): ?>
-                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
-                <?php endif; ?>
-                <form method="POST" class="mb-4">
-                    <input type="hidden" name="action" value="save">
-                    <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
-                    <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">器材代碼</label>
-                            <input type="text" name="code" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['code'] ?? ''); ?>">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">器材名稱</label>
-                            <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['name']); ?>" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">狀態</label>
-                            <select name="equipment_status" class="form-select" required>
-                                <option value="available" <?php echo $edit_equipment['equipment_status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
-                                <option value="maintenance" <?php echo $edit_equipment['equipment_status'] === 'maintenance' ? 'selected' : ''; ?>>維修中</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">總數量</label>
-                            <input type="number" name="total_quantity" class="form-control" value="<?php echo intval($edit_equipment['total_quantity'] ?? 0); ?>" min="0" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">借用限制數量</label>
-                            <input type="number" name="borrowing_limit" class="form-control" value="<?php echo intval($edit_equipment['borrowing_limit'] ?? 0); ?>" min="0" required>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">描述</label>
-                            <textarea name="description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_equipment['description'] ?? ''); ?></textarea>
-                        </div>
-                    </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
-                        <a href="equipment_mgmt.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
-                    </div>
-                </form>
+                <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
+                <div style="width: 100%; overflow-x: auto;">
+                <table class="inventory-table">
+                    <thead>
+                        <tr>
+                            <th class="col-code">器材代碼</th>
+                            <th class="col-name">器材名稱</th>
+                            <th class="col-total">總數量</th>
+                            <th class="col-available">可借數量</th>
+                            <th class="col-borrowed">借出數量</th>
+                            <th class="col-limit">借用限制</th>
+                            <th class="col-status">狀態</th>
+                            <th class="col-stock">庫存</th>
+                            <th class="col-action">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($equipment_list as $eq): ?>
+                        <?php 
+                            $equipment_id = intval($eq['equipment_id']);
+                            $total_q = intval($eq['total_quantity'] ?? 0);
+                            $borrowed = intval($borrowed_by_equipment[$equipment_id] ?? 0);
+                            $avail_q = max(0, $total_q - $borrowed);
+                            $stock_percent = $total_q > 0 ? round(($avail_q / $total_q) * 100) : 0;
+                            $equip_status = $eq['equipment_status'] ?? 'available';
+                        ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
+                            <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
+                            <td><?php echo $total_q; ?></td>
+                            <td><?php echo $avail_q; ?></td>
+                            <td><?php echo $borrowed; ?></td>
+                            <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
+                            <td>
+                                <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
+                                    <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
+                                    <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
+                                </span>
+                            </td>
+                            <td>
+                                <span class="stock-text"><?php echo $stock_percent; ?>%</span>
+                            </td>
+                            <td>
+                                <div class="action-cell">
+                                    <form method="POST" style="display: inline;">
+                                        <input type="hidden" name="action" value="edit">
+                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
+                                        <button type="submit" class="btn btn-edit btn-sm"><i class="bi bi-pencil"></i> 編輯</button>
+                                    </form>
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('確定要刪除此器材？');">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
+                                        <button type="submit" class="btn btn-delete btn-sm"><i class="bi bi-trash"></i> 刪除</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        
+                        <?php if (empty($equipment_list)): ?>
+                        <tr>
+                            <td colspan="8" style="text-align: center; color: #999; padding: 30px;">
+                                <i class="bi bi-inbox"></i> 目前沒有器材記錄
+                            </td>
+                        </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+                </div>
             </div>
+
+            <?php if (!empty($edit_equipment)): ?>
+            <div class="modal fade show" tabindex="-1" role="dialog" style="display: block; background: rgba(0, 0, 0, 0.5);">
+                <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+                    <div class="modal-content">
+                        <form method="POST" class="mb-0">
+                            <input type="hidden" name="action" value="save">
+                            <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
+                            <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="bi bi-pencil-square"></i> 編輯器材</h5>
+                                <a href="equipment_mgmt.php" class="btn-close" aria-label="關閉"></a>
+                            </div>
+                            <div class="modal-body">
+                                <?php if ($edit_error): ?>
+                                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
+                                <?php endif; ?>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label">器材代碼</label>
+                                        <input type="text" name="code" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['code'] ?? ''); ?>">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">器材名稱</label>
+                                        <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_equipment['name']); ?>" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">狀態</label>
+                                        <select name="equipment_status" class="form-select" required>
+                                            <option value="available" <?php echo $edit_equipment['equipment_status'] === 'available' ? 'selected' : ''; ?>>可借用</option>
+                                            <option value="maintenance" <?php echo $edit_equipment['equipment_status'] === 'maintenance' ? 'selected' : ''; ?>>維修中</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">總數量</label>
+                                        <input type="number" name="total_quantity" class="form-control" value="<?php echo intval($edit_equipment['total_quantity'] ?? 0); ?>" min="0" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">借用限制數量</label>
+                                        <input type="number" name="borrowing_limit" class="form-control" value="<?php echo intval($edit_equipment['borrowing_limit'] ?? 0); ?>" min="0" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">描述</label>
+                                        <textarea name="description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_equipment['description'] ?? ''); ?></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <a href="equipment_mgmt.php" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
+                                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-backdrop fade show"></div>
             <?php else: ?>
             <div class="panel-row">
                 <h5><i class="bi bi-plus-circle"></i> 新增器材</h5>
@@ -752,83 +877,6 @@ foreach ($borrowing_details as $borrow) {
                 </form>
             </div>
             <?php endif; ?>
-
-            <!-- 器材列表 -->
-            <div class="panel-row">
-                <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
-                <div style="overflow-x: auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>器材代碼</th>
-                            <th>器材名稱</th>
-                            <th>總數量</th>
-                            <th>可借數量</th>
-                            <th>借出數量</th>
-                            <th>借用限制</th>
-                            <th>狀態</th>
-                            <th>庫存</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($equipment_list as $eq): ?>
-                        <?php 
-                            $total_q = intval($eq['total_quantity'] ?? 0);
-                            $borrowed = intval($borrowed_by_equipment[intval($eq['equipment_id'])] ?? 0);
-                            $avail_q = max(0, $total_q - $borrowed);
-                            $usage_percent = $total_q > 0 ? ($borrowed / $total_q) * 100 : 0;
-                            $equip_status = $eq['equipment_status'] ?? 'available';
-                        ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
-                            <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
-                            <td><?php echo $total_q; ?></td>
-                            <td><?php echo $avail_q; ?></td>
-                            <td><?php echo $borrowed; ?></td>
-                            <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
-                            <td>
-                                <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
-                                    <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
-                                    <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
-                                </span>
-                            </td>
-                            <td>
-                                <div class="quantity-bar">
-                                    <div class="bar-bg">
-                                            <div class="bar-fill" style="width: <?php echo 100 - $usage_percent; ?>%"></div>
-                                    </div>
-                                    <span class="bar-text"><?php echo round(100 - $usage_percent); ?>%</span>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="action-cell">
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="action" value="edit">
-                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
-                                        <button type="submit" class="btn btn-edit btn-sm"><i class="bi bi-pencil"></i> 編輯</button>
-                                    </form>
-                                    <form method="POST" style="display: inline;" onsubmit="return confirm('確定要刪除此器材？');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="equipment_id" value="<?php echo intval($eq['equipment_id']); ?>">
-                                        <button type="submit" class="btn btn-delete btn-sm"><i class="bi bi-trash"></i> 刪除</button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                        
-                        <?php if (empty($equipment_list)): ?>
-                        <tr>
-                            <td colspan="8" style="text-align: center; color: #999; padding: 30px;">
-                                <i class="bi bi-inbox"></i> 目前沒有器材記錄
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-                </div>
-            </div>
         </section>
     </main>
 
