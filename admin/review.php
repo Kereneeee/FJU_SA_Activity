@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
                     $eid = $equip_ids[$i];
                     $qty = max(1, $equip_qtys[$i] ?? 1);
                     if ($eid > 0) {
-                        $s = $conn->prepare("INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?,?,?)");
+                        $s = $conn->prepare("INSERT INTO equipment_borrow (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end) VALUES (?,?,?,NULL,NULL,NULL)");
                         $s->bind_param('iii', $mgmt_id, $eid, $qty);
                         $ok = $ok && $s->execute(); $s->close();
                     }

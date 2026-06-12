@@ -18,8 +18,8 @@ SELECT
 
     COALESCE(SUM(
         CASE
-            WHEN ev.start_time < ?
-             AND ev.end_time > ?
+            WHEN COALESCE(eb.borrow_start, ev.start_time) < ?
+             AND COALESCE(eb.borrow_end,   ev.end_time)   > ?
              AND ev.status IN ('approved')
             THEN eb.quantity
             ELSE 0

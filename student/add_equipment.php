@@ -31,25 +31,33 @@ if (!$event_id) {
     }
     $user_stmt->close();
 
-    // 獲取活動信息
-    $event_sql = "SELECT e.event_id, e.user_id, e.event_name, e.club_name, e.start_time, e.end_time, 
-                         e.status as event_status, s.space_name
-                  FROM events e
-                  LEFT JOIN reservations r ON e.event_id = r.event_id
-                  LEFT JOIN spaces s ON r.space_id = s.space_id
-                  WHERE e.event_id = ? AND e.user_id = ?";
-    
+    // 獲取活動信息（不 JOIN reservations，避免多場次造成重複列）
+    $event_sql = "SELECT event_id, user_id, event_name, club_name, start_time, end_time, status AS event_status
+                  FROM events WHERE event_id = ? AND user_id = ?";
     $event_stmt = $conn->prepare($event_sql);
     $event_stmt->bind_param("ii", $event_id, $user_id);
     $event_stmt->execute();
     $event_result = $event_stmt->get_result();
-
     if ($event_result && $event_result->num_rows > 0) {
         $event_info = $event_result->fetch_assoc();
     } else {
         $error = "無法找到該活動申請，或您無權修改此申請";
     }
     $event_stmt->close();
+
+    // 撈該活動所有場次（供使用者選擇）
+    $event_sessions = [];
+    if ($event_info) {
+        $sess_sql = "SELECT r.reservation_id, r.space_id, r.start_time, r.end_time, s.space_name
+                     FROM reservations r
+                     LEFT JOIN spaces s ON r.space_id = s.space_id
+                     WHERE r.event_id = ? ORDER BY r.start_time";
+        $ss = $conn->prepare($sess_sql);
+        $ss->bind_param("i", $event_id);
+        $ss->execute();
+        $event_sessions = $ss->get_result()->fetch_all(MYSQLI_ASSOC);
+        $ss->close();
+    }
 }
 
 // 獲取所有可用的器材
@@ -120,26 +128,48 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
         }
     }
 
+    // 讀取使用者選的場次與借用時段
+    $selected_reservation_id = intval($_POST['reservation_id'] ?? 0);
+    $post_borrow_start = trim($_POST['borrow_start'] ?? '');
+    $post_borrow_end   = trim($_POST['borrow_end']   ?? '');
+
+    // 找到對應場次，取出時間
+    $selected_session = null;
+    foreach ($event_sessions as $sess) {
+        if ($sess['reservation_id'] == $selected_reservation_id) {
+            $selected_session = $sess;
+            break;
+        }
+    }
+    if (!$selected_session && !empty($event_sessions)) {
+        $selected_session   = $event_sessions[0];
+        $selected_reservation_id = intval($selected_session['reservation_id']);
+    }
+
+    // 使用使用者填的借用時段，沒有則 fallback 到場次時間
+    $borrow_start_final = $post_borrow_start ?: ($selected_session['start_time'] ?? $event_info['start_time']);
+    $borrow_end_final   = $post_borrow_end   ?: ($selected_session['end_time']   ?? $event_info['end_time']);
+
     if (!$has_equipment) {
         $error = "請至少選擇一項器材";
     } else {
         try {
-            // ===== 庫存與上限驗證 =====
-            $borrow_time = $event_info['start_time'];
-            $return_time = $event_info['end_time'];
+            // ===== 庫存與上限驗證（使用選定借用時段 + COALESCE）=====
+            $borrow_time = $borrow_start_final;
+            $return_time = $borrow_end_final;
 
             $check_sql = "
-                SELECT 
-                    e.equipment_id, 
-                    e.name, 
+                SELECT
+                    e.equipment_id,
+                    e.name,
                     e.borrowing_limit,
                     (e.total_quantity - COALESCE(SUM(
-                        CASE 
-                            WHEN ev.start_time < ? 
-                             AND ev.end_time > ? 
+                        CASE
+                            WHEN COALESCE(eb.borrow_start, ev.start_time) < ?
+                             AND COALESCE(eb.borrow_end,   ev.end_time)   > ?
                              AND ev.status = 'approved'
-                            THEN eb.quantity 
-                            ELSE 0 
+                            THEN eb.quantity
+                            ELSE 0
                         END
                     ), 0)) AS available_quantity
                 FROM equipment e
@@ -179,10 +209,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             
             $original_event_id = intval($event_id);
             $new_event_name = $event_info['event_name'];
-            $new_club_name = $event_info['club_name'];
-            $new_start_time = $event_info['start_time'];
-            $new_end_time = $event_info['end_time'];
-            $new_status = 'pending';
+            $new_club_name  = $event_info['club_name'];
+            $new_start_time = $borrow_start_final;   // 用選定場次的借用時段
+            $new_end_time   = $borrow_end_final;
+            $new_status     = 'pending';
             
             // 插入新的追加申請 event 紀錄
             $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, original_event_id)
@@ -218,18 +248,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             }
 
             // 🟢 核心修正 2：將不可用的 status 欄位完全從 SQL 語法中移除，精準對應你的實體資料表欄位 (event_id, equipment_id, quantity)
-            $insert_sql = "INSERT INTO equipment_borrow (event_id, equipment_id, quantity) VALUES (?, ?, ?)";
+            $insert_sql = "INSERT INTO equipment_borrow
+                             (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end)
+                           VALUES (?, ?, ?, ?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_sql);
             if (!$insert_stmt) {
                 throw new Exception('建立器材借用記錄失敗：' . $conn->error);
             }
+            $rid_param = $selected_reservation_id ?: null;
 
             foreach ($equipment_selections as $equip_id => $quantity) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
-                    // 僅綁定 3 個參數，與上方 SQL 完美對齊，使用新建立的 event_id
-                    $insert_stmt->bind_param("iii", $new_event_id, $equip_id, $quantity);
+                    $insert_stmt->bind_param(
+                        "iiiss",
+                        $new_event_id, $equip_id, $quantity,
+                        $rid_param, $borrow_start_final, $borrow_end_final
+                    );
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
                     }
@@ -430,7 +466,6 @@ $current_page = 'my_applications';
             border: 1px solid #d1d5db;
             border-radius: 8px;
             background: #f9fafb;
-            cursor: not-allowed;
             color: #6b7280;
         }
         .form-group input:disabled,
@@ -438,6 +473,7 @@ $current_page = 'my_applications';
         .form-group textarea:disabled {
             background: #f3f4f6;
             opacity: 0.7;
+            cursor: not-allowed;
         }
         .equipment-grid {
             display: grid;
@@ -609,17 +645,32 @@ $current_page = 'my_applications';
                             </div>
 
                             <div class="form-group">
-                                <label>活動日期與時間</label>
-                                <div class="read-only-value">
-                                    <?php echo date('Y-m-d H:i', strtotime($event_info['start_time'])); ?> 至 <?php echo date('H:i', strtotime($event_info['end_time'])); ?>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>預訂場地</label>
-                                <div class="read-only-value">
-                                    <?php echo htmlspecialchars($event_info['space_name'] ?? '未指定'); ?>
-                                </div>
+                                <label>選擇場次 <span class="text-danger">*</span></label>
+                                <?php if (empty($event_sessions)): ?>
+                                    <div class="read-only-value" style="color:#9ca3af;">此活動無場地場次紀錄</div>
+                                    <input type="hidden" name="reservation_id" value="0">
+                                <?php elseif (count($event_sessions) === 1): ?>
+                                    <div class="read-only-value">
+                                        <?= date('Y/m/d', strtotime($event_sessions[0]['start_time'])) ?>
+                                        <?= date('H:i', strtotime($event_sessions[0]['start_time'])) ?>～<?= date('H:i', strtotime($event_sessions[0]['end_time'])) ?>
+                                        <?= htmlspecialchars($event_sessions[0]['space_name'] ?? '') ?>
+                                    </div>
+                                    <input type="hidden" name="reservation_id" value="<?= $event_sessions[0]['reservation_id'] ?>">
+                                <?php else: ?>
+                                    <select name="reservation_id" id="reservationSelect" class="form-select"
+                                            onchange="applySessionTime(this)"
+                                            style="max-width:480px; cursor:pointer;">
+                                        <?php foreach ($event_sessions as $sess): ?>
+                                        <option value="<?= $sess['reservation_id'] ?>"
+                                                data-start="<?= htmlspecialchars($sess['start_time']) ?>"
+                                                data-end="<?= htmlspecialchars($sess['end_time']) ?>">
+                                            <?= date('Y/m/d', strtotime($sess['start_time'])) ?>
+                                            <?= date('H:i', strtotime($sess['start_time'])) ?>～<?= date('H:i', strtotime($sess['end_time'])) ?>
+                                            ｜<?= htmlspecialchars($sess['space_name'] ?? '未指定場地') ?>
+                                        </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                <?php endif; ?>
                             </div>
 
                             <div class="form-group">
@@ -642,18 +693,20 @@ $current_page = 'my_applications';
                                     <small style="font-weight:400; color:#6b7280; margin-left:0.5rem;">（可用量將依時段即時更新）</small>
                                 </div>
                                 <?php
-                                $borrow_dt = strtotime($event_info['start_time']);
+                                // 預設時間：優先用第一個場次，沒有場次才用 event 整體時間
+                                $init_src_start = !empty($event_sessions) ? $event_sessions[0]['start_time'] : $event_info['start_time'];
+                                $init_src_end   = !empty($event_sessions) ? $event_sessions[0]['end_time']   : $event_info['end_time'];
+
+                                $borrow_dt = strtotime($init_src_start);
                                 if (date('H:i', $borrow_dt) < '09:30') {
                                     $borrow_dt = strtotime(date('Y-m-d', $borrow_dt) . ' 09:30');
                                 } elseif (date('H:i', $borrow_dt) > '16:30') {
-                                    // 活動時間超出允許範圍（如 18:00），預設帶入 09:30
                                     $borrow_dt = strtotime(date('Y-m-d', $borrow_dt) . ' 09:30');
                                 }
                                 $borrow_h = date('H', $borrow_dt);
-                                // 分鐘取最近的 10 分位
                                 $borrow_m = sprintf('%02d', floor((int)date('i', $borrow_dt) / 10) * 10);
 
-                                $return_dt = strtotime($event_info['end_time']);
+                                $return_dt = strtotime($init_src_end);
                                 if (date('H:i', $return_dt) > '16:30') {
                                     $return_dt = strtotime(date('Y-m-d', $return_dt) . ' 16:30');
                                 } elseif (date('H:i', $return_dt) < '09:30') {
@@ -684,7 +737,7 @@ $current_page = 'my_applications';
                                                 <?php endforeach; ?>
                                             </select>
                                         </div>
-                                        <input type="hidden" id="equip_borrow_time" name="equip_borrow_time" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $borrow_dt)) ?>">
+                                        <input type="hidden" id="equip_borrow_time" name="borrow_start" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $borrow_dt)) ?>">
                                     </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還日期</label>
@@ -707,7 +760,7 @@ $current_page = 'my_applications';
                                                 <?php endforeach; ?>
                                             </select>
                                         </div>
-                                        <input type="hidden" id="equip_return_time" name="equip_return_time" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $return_dt)) ?>">
+                                        <input type="hidden" id="equip_return_time" name="borrow_end" value="<?= htmlspecialchars(date('Y-m-d\TH:i', $return_dt)) ?>">
                                     </div>
                                     <button type="button" onclick="queryEquipmentAvailability()"
                                         style="background:#1e4d6b; color:white; border:none; border-radius:8px; padding:0.65rem 1.1rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:background 0.2s;"
@@ -855,6 +908,38 @@ $current_page = 'my_applications';
 
         syncEquipTime('borrow');
         syncEquipTime('return');
+
+        // ── 場次切換 → 更新借用時間預設值 ───────────────────────────
+        function applySessionTime(select) {
+            const opt   = select.selectedOptions[0];
+            if (!opt) return;
+            const start = new Date(opt.dataset.start);
+            const end   = new Date(opt.dataset.end);
+
+            const capH = (h, m, minH, minM, maxH, maxM) => {
+                if (h < minH || (h === minH && m < minM)) { h = minH; m = minM; }
+                if (h > maxH || (h === maxH && m > maxM)) { h = minH; m = minM; }
+                return [h, Math.floor(m / 10) * 10];
+            };
+
+            let [bh, bm] = capH(start.getHours(), start.getMinutes(), 9, 30, 16, 30);
+            let [rh, rm] = (() => {
+                let h = end.getHours(), m = end.getMinutes();
+                if (h > 16 || (h === 16 && m > 30)) { h = 16; m = 30; }
+                if (h < 9  || (h === 9  && m < 30))  { h = 9;  m = 30; }
+                return [h, Math.floor(m / 10) * 10];
+            })();
+
+            const fmt = n => String(n).padStart(2, '0');
+            document.getElementById('borrow_date').value  = opt.dataset.start.slice(0, 10);
+            document.getElementById('return_date').value  = opt.dataset.end.slice(0, 10);
+            document.getElementById('borrow_hour').value  = fmt(bh);
+            document.getElementById('borrow_minute').value= fmt(bm);
+            document.getElementById('return_hour').value  = fmt(rh);
+            document.getElementById('return_minute').value= fmt(rm);
+            syncEquipTime('borrow');
+            syncEquipTime('return');
+        }
 
         // ── 搜尋器材名稱或編號 ──────────────────────────────────────
         document.getElementById('searchEquipmentAdd').addEventListener('input', function() {

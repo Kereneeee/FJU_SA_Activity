@@ -685,14 +685,22 @@ function getEquipmentStatusText($equipment_list) {
                                         <div class="status-box equipment-status">
                                             <?php
                                             $child_requests = $app['child_requests'] ?? [];
-                                            $latest_child   = !empty($child_requests) ? $child_requests[0] : null;
-                                            if ($latest_child):
-                                                $c_label = $status_map[$latest_child['status']] ?? '未知';
-                                                $c_class = $status_class_map[$latest_child['status']] ?? 'status-pending';
+                                            // 取最緊急的子申請狀態：pending > rejected > approved
+                                            $child_priority = ['pending' => 0, 'rejected' => 1, 'approved' => 2];
+                                            $urgent_child = null;
+                                            foreach ($child_requests as $_c) {
+                                                if ($urgent_child === null ||
+                                                    ($child_priority[$_c['status']] ?? 9) < ($child_priority[$urgent_child['status']] ?? 9)) {
+                                                    $urgent_child = $_c;
+                                                }
+                                            }
+                                            if ($urgent_child):
+                                                $c_label = $status_map[$urgent_child['status']] ?? '未知';
+                                                $c_class = $status_class_map[$urgent_child['status']] ?? 'status-pending';
                                             ?>
                                                 <div class="status-box-label">器材狀態</div>
                                                 <span class="status-badge <?= $c_class ?>"><?= $c_label ?></span>
-                                            <?php elseif ($has_equipment): ?>
+                                            <?php elseif ($has_equipment): ?>  <?php // 父活動直接掛的器材，狀態同父活動 ?>
                                                 <div class="status-box-label">器材狀態</div>
                                                 <span class="status-badge <?= $equipment_status_class ?>"><?= $equipment_status ?></span>
                                             <?php endif; ?>
