@@ -3,7 +3,7 @@
 require_once(__DIR__ . "/../DB/db_config.php");
 
 // 檢查登入
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
     exit();
     

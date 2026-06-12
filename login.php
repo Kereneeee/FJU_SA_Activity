@@ -57,9 +57,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$locked) {
 
             if ($passwordOk) {
 
-                // 登入成功：清除計數器
-                $_SESSION['login_attempts']     = 0;
-                $_SESSION['login_locked_until'] = 0;
+                // 清除所有舊 session 資料，防止雙分頁登入不同帳號時的角色殘留
+                $_SESSION = [];
+                session_regenerate_id(true);
 
                 $_SESSION["user_id"]      = $user["user_id"];
                 $_SESSION["user_name"]    = $user["name"];

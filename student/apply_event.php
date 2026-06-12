@@ -5,7 +5,7 @@ session_start();
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
     exit();
 }

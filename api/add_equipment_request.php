@@ -7,7 +7,7 @@
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     http_response_code(401);
     die(json_encode(['success' => false, 'message' => '未登入']));
 }
