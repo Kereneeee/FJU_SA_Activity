@@ -13,7 +13,8 @@ function checkLogin() {
 function checkAdmin() {
     checkLogin();
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-        die('只有管理員可以進入此頁面');
+        header('Location: ../login.php');
+        exit;
     }
 }
 

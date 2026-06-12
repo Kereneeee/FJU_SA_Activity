@@ -1,6 +1,4 @@
 <?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/DB/db_config.php");
 
@@ -8,7 +6,20 @@ $error      = "";
 $error_type = "";   // "empty" | "account" | "password"
 $input_value = "";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+// 暴力破解保護
+$_SESSION['login_attempts']    = $_SESSION['login_attempts']    ?? 0;
+$_SESSION['login_locked_until'] = $_SESSION['login_locked_until'] ?? 0;
+
+$locked = false;
+$lock_seconds_left = 0;
+if ($_SESSION['login_locked_until'] > time()) {
+    $locked = true;
+    $lock_seconds_left = $_SESSION['login_locked_until'] - time();
+    $error      = "登入嘗試次數過多，請 {$lock_seconds_left} 秒後再試。";
+    $error_type = "locked";
+}
+
+if ($_SERVER["REQUEST_METHOD"] == "POST" && !$locked) {
 
     $identifier = trim($_POST["identifier"]);   // 學號 or email
     $password   = trim($_POST["password"]);
@@ -31,7 +42,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($result->num_rows > 0) {
             $user = $result->fetch_assoc();
 
-            if ($password === $user["password"]) {
+            $passwordOk = false;
+            if (password_verify($password, $user["password"])) {
+                $passwordOk = true;
+            } elseif ($password === $user["password"]) {
+                // 舊明文密碼：驗證通過後自動升級為 hash
+                $passwordOk = true;
+                $newHash = password_hash($password, PASSWORD_DEFAULT);
+                $upd = $conn->prepare("UPDATE users SET password = ? WHERE user_id = ?");
+                $upd->bind_param("si", $newHash, $user["user_id"]);
+                $upd->execute();
+                $upd->close();
+            }
+
+            if ($passwordOk) {
+
+                // 登入成功：清除計數器
+                $_SESSION['login_attempts']     = 0;
+                $_SESSION['login_locked_until'] = 0;
 
                 $_SESSION["user_id"]      = $user["user_id"];
                 $_SESSION["user_name"]    = $user["name"];
@@ -50,13 +78,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 exit();
 
             } else {
-                $error      = "密碼錯誤，請確認後再試";
-                $error_type = "password";
+                $_SESSION['login_attempts']++;
+                if ($_SESSION['login_attempts'] >= 5) {
+                    $_SESSION['login_locked_until'] = time() + 300; // 鎖定 5 分鐘
+                    $_SESSION['login_attempts']     = 0;
+                    $error      = "登入嘗試次數過多，帳號已暫時鎖定 5 分鐘。";
+                    $error_type = "locked";
+                } else {
+                    $remaining  = 5 - $_SESSION['login_attempts'];
+                    $error      = "密碼錯誤，請確認後再試（還剩 {$remaining} 次機會）。";
+                    $error_type = "password";
+                }
             }
 
+
         } else {
-            $error      = "查無此帳號，請確認學號或電子信箱是否正確";
-            $error_type = "account";
+            $_SESSION['login_attempts']++;
+            if ($_SESSION['login_attempts'] >= 5) {
+                $_SESSION['login_locked_until'] = time() + 300;
+                $_SESSION['login_attempts']     = 0;
+                $error      = "登入嘗試次數過多，帳號已暫時鎖定 5 分鐘。";
+                $error_type = "locked";
+            } else {
+                $error      = "查無此帳號，請確認學號或電子信箱是否正確";
+                $error_type = "account";
+            }
         }
     }
 }
@@ -178,6 +224,11 @@ body {
     background: #deb8b9;
     color: #5c1f22;
     border: 1px solid #c9979a;
+}
+.login-alert.type-locked {
+    background: #f3e8ff;
+    color: #5b21b6;
+    border: 1px solid #c4b5fd;
 }
 </style>
 </head>

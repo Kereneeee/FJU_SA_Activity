@@ -1,7 +1,5 @@
 <?php
 session_start();
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
@@ -82,6 +80,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'batch
         if ($submit_count > 0) {
             $message      = "成功送出 {$submit_count} 筆提名申請，請等待管理者審核。";
             $message_type = 'success';
+
+            // 寄信通知所有管理員
+            try {
+                require_once __DIR__ . '/../includes/mailer.php';
+                $admins = $conn->query("SELECT email, name FROM users WHERE role='admin' AND email IS NOT NULL");
+                if ($admins) {
+                    while ($adm = $admins->fetch_assoc()) {
+                        sendNominationSubmittedMail($adm['email'], $adm['name'], [
+                            'club_name'      => $club_name,
+                            'nominator_name' => $student_name,
+                            'count'          => $submit_count,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // 寄信失敗不影響提名結果
+            }
         }
         if (!empty($submit_errors)) {
             $message     .= ($message ? '<br>' : '') . implode('<br>', $submit_errors);

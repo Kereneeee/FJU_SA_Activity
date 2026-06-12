@@ -4,8 +4,6 @@
  * 用於處理"追加申請器材"功能
  */
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 

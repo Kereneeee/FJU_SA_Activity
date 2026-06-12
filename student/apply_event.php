@@ -1,8 +1,6 @@
 <?php
 session_start();
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
@@ -161,8 +159,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
             $proposal_filename = null;
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
-                $ext = pathinfo($_FILES['proposal_document']['name'], PATHINFO_EXTENSION);
-                $fn  = 'proposal_' . time() . '_' . uniqid() . '.' . $ext;
+                $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+                $realMime = finfo_file($finfo, $_FILES['proposal_document']['tmp_name']);
+                finfo_close($finfo);
+                if ($realMime !== 'application/pdf') {
+                    throw new Exception("企劃書只允許上傳 PDF 格式。");
+                }
+                $fn = 'proposal_' . time() . '_' . uniqid() . '.pdf';
                 if (move_uploaded_file($_FILES['proposal_document']['tmp_name'], $upload_dir . $fn)) {
                     $proposal_filename = $fn;
                 } else {

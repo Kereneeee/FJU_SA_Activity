@@ -2,8 +2,6 @@
 // 🟢 核心修正 1：必須把 session_start() 放在最頂端，否則下方檢查登入狀態必定失敗
 session_start(); 
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
@@ -136,9 +134,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             $equipment_doc_filename = null;
 
             if (isset($_FILES['equipment_document']) && $_FILES['equipment_document']['error'] == UPLOAD_ERR_OK) {
-                $file_ext = pathinfo($_FILES['equipment_document']['name'], PATHINFO_EXTENSION);
-                $new_filename = 'equip_' . time() . "_" . uniqid() . "." . $file_ext;
-                $target_path = $upload_dir . $new_filename;
+                // 驗證真實 MIME type（防止偽裝副檔名）
+                $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+                $realMime = finfo_file($finfo, $_FILES['equipment_document']['tmp_name']);
+                finfo_close($finfo);
+                if ($realMime !== 'application/pdf') {
+                    throw new Exception("只允許上傳 PDF 格式的器材借用單。");
+                }
+                $new_filename = 'equip_' . time() . '_' . uniqid() . '.pdf';
+                $target_path  = $upload_dir . $new_filename;
 
                 if (!move_uploaded_file($_FILES['equipment_document']['tmp_name'], $target_path)) {
                     throw new Exception("器材申請單檔案搬移失敗。");

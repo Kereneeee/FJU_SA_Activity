@@ -4,8 +4,6 @@
  * 用於處理管理員對器材申請的審核
  */
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
