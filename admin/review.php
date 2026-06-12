@@ -399,18 +399,16 @@ if ($event_id === 0) {
         #reviewTable { table-layout: fixed; width: 100%; }
         #reviewTable th, #reviewTable td { white-space: normal; word-break: break-word; vertical-align: top; }
         #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1)  { width: 11%; }
-        #reviewTable th:nth-child(2),  #reviewTable td:nth-child(2)  { width: 15%; }
-        #reviewTable th:nth-child(3),  #reviewTable td:nth-child(3)  { width: 11%; }
-        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4)  { width: 10%; }
+        #reviewTable th:nth-child(2),  #reviewTable td:nth-child(2)  { width: 13%; }
+        #reviewTable th:nth-child(3),  #reviewTable td:nth-child(3)  { width: 10%; }
+        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4)  { width: 9%; }
         #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5)  { width: 7%; }
-        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6)  { width: 9%; }
-        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7)  { width: 9%; }
-        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8)  { width: 9%; }
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6)  { width: 10%; }
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7)  { width: 11%; }
+        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8)  { width: 10%; }
         #reviewTable th:nth-child(9),  #reviewTable td:nth-child(9)  { width: 8%; }
         #reviewTable th:nth-child(10), #reviewTable td:nth-child(10) { width: 11%; }
-        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5),
-        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6),
-        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7) { white-space: nowrap; }
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5) { white-space: nowrap; }
         .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
         .status-pending   { background: #f0e8c0; color: #6b5a20; }
         .status-approved  { background: #70a3a7; color: #1a3f42; }
