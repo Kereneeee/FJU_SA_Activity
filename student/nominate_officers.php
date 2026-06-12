@@ -154,7 +154,7 @@ $student_name = $_SESSION['student_name'] ?? '社長';
             padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center;
             position: sticky; top: 0; z-index: 1100;
         }
-        .content-wrapper { padding: 1.5rem 2rem 3rem; max-width: 820px; }
+        .content-wrapper { padding: 1.5rem 2rem 3rem; }
 
         .panel { background: white; border-radius: 18px; box-shadow: 0 6px 24px rgba(15,23,42,.06); margin-bottom: 1.5rem; }
         .panel-header { border-radius: 18px 18px 0 0; }
@@ -237,112 +237,119 @@ $student_name = $_SESSION['student_name'] ?? '社長';
         </div>
         <?php endif; ?>
 
-        <!-- ① 查詢學號 + 加入清單 -->
-        <div class="panel">
-            <div class="panel-header"><i class="bi bi-search"></i> 查詢學生並加入提名清單</div>
-            <div class="panel-body">
+        <div class="row g-4 align-items-start">
 
-                <!-- 學號查詢（即時自動完成） -->
-                <div class="search-block">
-                    <div class="sid-wrap">
-                        <label class="form-label fw-semibold mb-1">輸入學號</label>
-                        <input type="text" id="sidInput" class="form-control" style="width:220px;"
-                               placeholder="輸入學號搜尋" maxlength="20" autocomplete="off">
-                        <div id="acDropdown" class="autocomplete-dropdown"></div>
+            <!-- 左欄：查詢 + 清單 -->
+            <div class="col-lg-7">
+
+                <!-- ① 查詢學號 + 加入清單 -->
+                <div class="panel">
+                    <div class="panel-header"><i class="bi bi-search"></i> 查詢學生並加入提名清單</div>
+                    <div class="panel-body">
+
+                        <div class="search-block">
+                            <div class="sid-wrap">
+                                <label class="form-label fw-semibold mb-1">輸入學號</label>
+                                <input type="text" id="sidInput" class="form-control" style="width:220px;"
+                                       placeholder="輸入學號搜尋" maxlength="20" autocomplete="off">
+                                <div id="acDropdown" class="autocomplete-dropdown"></div>
+                            </div>
+                        </div>
+
+                        <div id="searchResult" class="search-result">
+                            <div class="avatar-sm" id="resAvatar"></div>
+                            <div style="flex:1;">
+                                <div id="resName" style="font-weight:700;font-size:1rem;"></div>
+                                <div id="resSid" style="font-size:.83rem;color:#6b7280;"></div>
+                            </div>
+                            <div class="d-flex gap-2 align-items-end flex-wrap">
+                                <div>
+                                    <label class="form-label fw-semibold mb-1" style="font-size:.85rem;">身分</label>
+                                    <select id="roleSelect" class="form-select form-select-sm" style="width:120px;" onchange="handleRoleChange()">
+                                        <option value="一般成員">一般成員</option>
+                                        <option value="幹部">幹部</option>
+                                    </select>
+                                </div>
+                                <div id="titleWrap">
+                                    <label class="form-label fw-semibold mb-1" style="font-size:.85rem;">幹部職稱 <span class="text-danger">*</span></label>
+                                    <input type="text" id="titleInput" class="form-control form-control-sm"
+                                           style="width:180px;" placeholder="例：器材幹部" maxlength="50">
+                                </div>
+                                <button type="button" id="addBtn" class="btn btn-success btn-sm" onclick="addToList()">
+                                    <i class="bi bi-plus-circle"></i> 加入清單
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="errMsg" class="alert alert-danger mt-3" style="display:none;"></div>
                     </div>
                 </div>
 
-                <!-- 選定學生後顯示 -->
-                <div id="searchResult" class="search-result">
-                    <div class="avatar-sm" id="resAvatar"></div>
-                    <div style="flex:1;">
-                        <div id="resName" style="font-weight:700;font-size:1rem;"></div>
-                        <div id="resSid" style="font-size:.83rem;color:#6b7280;"></div>
+                <!-- ② 待提名清單 -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <i class="bi bi-list-check"></i> 待提名清單
+                        <span id="listCount" style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:.1rem .55rem;font-size:.78rem;margin-left:.4rem;">0</span>
                     </div>
-                    <div class="d-flex gap-2 align-items-end flex-wrap">
-                        <div>
-                            <label class="form-label fw-semibold mb-1" style="font-size:.85rem;">身分</label>
-                            <select id="roleSelect" class="form-select form-select-sm" style="width:120px;" onchange="handleRoleChange()">
-                                <option value="一般成員">一般成員</option>
-                                <option value="幹部">幹部</option>
-                            </select>
+                    <div class="panel-body">
+                        <div id="nomList" class="nom-list">
+                            <div class="empty-hint" id="emptyHint"><i class="bi bi-inbox"></i> 尚未加入任何提名，請先查詢學號。</div>
                         </div>
-                        <div id="titleWrap">
-                            <label class="form-label fw-semibold mb-1" style="font-size:.85rem;">幹部職稱 <span class="text-danger">*</span></label>
-                            <input type="text" id="titleInput" class="form-control form-control-sm"
-                                   style="width:180px;" placeholder="例：器材幹部" maxlength="50">
-                        </div>
-                        <button type="button" id="addBtn" class="btn btn-success btn-sm" onclick="addToList()">
-                            <i class="bi bi-plus-circle"></i> 加入清單
-                        </button>
+                        <form method="POST" id="submitForm" style="margin-top:1.25rem;">
+                            <input type="hidden" name="action" value="batch_nominate">
+                            <div id="hiddenFields"></div>
+                            <button type="submit" id="submitBtn" class="btn btn-primary" disabled onclick="return validateSubmit()">
+                                <i class="bi bi-send"></i> 送出所有提名申請
+                            </button>
+                            <span class="text-muted ms-2" style="font-size:.85rem;">提交後由課外活動指導組審核</span>
+                        </form>
                     </div>
                 </div>
 
-                <div id="errMsg" class="alert alert-danger mt-3" style="display:none;"></div>
-            </div>
-        </div>
+            </div><!-- /左欄 -->
 
-        <!-- ② 待提名清單 -->
-        <div class="panel">
-            <div class="panel-header">
-                <i class="bi bi-list-check"></i> 待提名清單
-                <span id="listCount" style="background:#e0f2fe;color:#0369a1;border-radius:999px;padding:.1rem .55rem;font-size:.78rem;margin-left:.4rem;">0</span>
-            </div>
-            <div class="panel-body">
-                <div id="nomList" class="nom-list">
-                    <div class="empty-hint" id="emptyHint"><i class="bi bi-inbox"></i> 尚未加入任何提名，請先查詢學號。</div>
-                </div>
-
-                <!-- 送出表單（由 JS 動態填入） -->
-                <form method="POST" id="submitForm" style="margin-top:1.25rem;">
-                    <input type="hidden" name="action" value="batch_nominate">
-                    <div id="hiddenFields"></div>
-                    <button type="submit" id="submitBtn" class="btn btn-primary" disabled onclick="return validateSubmit()">
-                        <i class="bi bi-send"></i> 送出所有提名申請
-                    </button>
-                    <span class="text-muted ms-2" style="font-size:.85rem;">提交後由課外活動指導組審核</span>
-                </form>
-            </div>
-        </div>
-
-        <!-- ③ 我的提名紀錄 -->
-        <div class="panel">
-            <div class="panel-header"><i class="bi bi-clock-history"></i> 我的提名紀錄</div>
-            <div class="panel-body">
-                <?php if (empty($my_nominations)): ?>
-                    <p class="text-muted mb-0">目前尚無提名紀錄。</p>
-                <?php else: ?>
-                    <?php foreach ($my_nominations as $n): ?>
-                    <div class="rec-row">
-                        <div style="flex:1;min-width:0;">
-                            <span style="font-weight:600;"><?= htmlspecialchars($n['nominated_name']) ?></span>
-                            <span style="color:#9ca3af;font-size:.82rem;margin-left:.4rem;">學號 <?= htmlspecialchars($n['nominated_sid']) ?></span>
-                            <span class="title-tag"><?= htmlspecialchars($n['officer_title'] ?: '一般成員') ?></span>
-                            <br>
-                            <span style="color:#9ca3af;font-size:.8rem;"><?= date('Y/m/d H:i', strtotime($n['created_at'])) ?></span>
-                            <?php if ($n['status'] === 'rejected' && !empty($n['review_note'])): ?>
-                            <br><span style="color:#842029;font-size:.8rem;">駁回原因：<?= htmlspecialchars($n['review_note']) ?></span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                            <?php if ($n['status'] === 'pending'): ?>
-                                <span class="badge-pending"><i class="bi bi-hourglass-split"></i> 待審核</span>
-                                <form method="POST" onsubmit="return confirm('確定撤回此提名？')">
-                                    <input type="hidden" name="action" value="cancel">
-                                    <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
-                                    <button type="submit" class="btn btn-outline-secondary btn-sm">撤回</button>
-                                </form>
-                            <?php elseif ($n['status'] === 'approved'): ?>
-                                <span class="badge-approved"><i class="bi bi-check-circle"></i> 已核准</span>
-                            <?php else: ?>
-                                <span class="badge-rejected"><i class="bi bi-x-circle"></i> 已駁回</span>
-                            <?php endif; ?>
-                        </div>
+            <!-- 右欄：提名紀錄 -->
+            <div class="col-lg-5">
+                <div class="panel" style="position:sticky; top:80px;">
+                    <div class="panel-header"><i class="bi bi-clock-history"></i> 我的提名紀錄</div>
+                    <div class="panel-body" style="max-height:calc(100vh - 180px); overflow-y:auto;">
+                        <?php if (empty($my_nominations)): ?>
+                            <p class="text-muted mb-0">目前尚無提名紀錄。</p>
+                        <?php else: ?>
+                            <?php foreach ($my_nominations as $n): ?>
+                            <div class="rec-row">
+                                <div style="flex:1;min-width:0;">
+                                    <span style="font-weight:600;"><?= htmlspecialchars($n['nominated_name']) ?></span>
+                                    <span style="color:#9ca3af;font-size:.82rem;margin-left:.4rem;">學號 <?= htmlspecialchars($n['nominated_sid']) ?></span>
+                                    <span class="title-tag"><?= htmlspecialchars($n['officer_title'] ?: '一般成員') ?></span>
+                                    <br>
+                                    <span style="color:#9ca3af;font-size:.8rem;"><?= date('Y/m/d H:i', strtotime($n['created_at'])) ?></span>
+                                    <?php if ($n['status'] === 'rejected' && !empty($n['review_note'])): ?>
+                                    <br><span style="color:#842029;font-size:.8rem;">駁回原因：<?= htmlspecialchars($n['review_note']) ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                    <?php if ($n['status'] === 'pending'): ?>
+                                        <span class="badge-pending"><i class="bi bi-hourglass-split"></i> 待審核</span>
+                                        <form method="POST" onsubmit="return confirm('確定撤回此提名？')">
+                                            <input type="hidden" name="action" value="cancel">
+                                            <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm">撤回</button>
+                                        </form>
+                                    <?php elseif ($n['status'] === 'approved'): ?>
+                                        <span class="badge-approved"><i class="bi bi-check-circle"></i> 已核准</span>
+                                    <?php else: ?>
+                                        <span class="badge-rejected"><i class="bi bi-x-circle"></i> 已駁回</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
-        </div>
+                </div>
+            </div><!-- /右欄 -->
+
+        </div><!-- /row -->
 
     </section>
 </main>

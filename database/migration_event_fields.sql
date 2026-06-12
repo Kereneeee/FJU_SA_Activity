@@ -13,3 +13,4 @@ ALTER TABLE events ADD COLUMN activity_scale VARCHAR(200) DEFAULT '一般活動'
 
 -- 新增企劃書路徑
 ALTER TABLE events ADD COLUMN proposal_doc_path VARCHAR(255) DEFAULT NULL COMMENT '活動企劃書路徑';
+3
