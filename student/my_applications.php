@@ -28,9 +28,9 @@ if ($user_result && $user_result->num_rows > 0) {
 }
 $user_stmt->close();
 
-// 只撈父活動（original_event_id IS NULL），追加申請子活動另外合併顯示
+// 撈取使用者的活動申請（events 表不再含追加申請）
 $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time,
-               e.status, e.review_note, e.user_id, e.original_event_id,
+               e.status, e.review_note, e.user_id,
                e.responsible_person, e.event_type, e.activity_location,
                e.activity_scale, e.proposal_doc_path,
                COALESCE(e.created_at, NOW()) as created_at,
@@ -40,19 +40,19 @@ $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_tim
             SELECT event_id, COUNT(*) AS session_count
             FROM reservations GROUP BY event_id
         ) rc ON rc.event_id = e.event_id
-        WHERE e.user_id = ? AND (e.original_event_id IS NULL OR e.original_event_id = 0)
+        WHERE e.user_id = ?
         ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
     // 降級查詢（舊欄位不存在時）
     $sql_fallback = "SELECT e.event_id, e.event_name, e.club_name, e.description,
-                            e.start_time, e.end_time, e.status, e.review_note, e.user_id, e.original_event_id,
+                            e.start_time, e.end_time, e.status, e.review_note, e.user_id,
                             COALESCE(e.created_at, NOW()) as created_at,
                             COALESCE(rc.session_count, 0) AS session_count
                      FROM events e
                      LEFT JOIN (SELECT event_id, COUNT(*) AS session_count FROM reservations GROUP BY event_id) rc ON rc.event_id = e.event_id
-                     WHERE e.user_id = ? AND (e.original_event_id IS NULL OR e.original_event_id = 0)
+                     WHERE e.user_id = ?
                      ORDER BY CASE WHEN e.status = 'pending' THEN 0 ELSE 1 END, e.created_at DESC";
     $stmt = $conn->prepare($sql_fallback);
     if (!$stmt) die("準備SQL語句失敗: " . $conn->error);
@@ -86,12 +86,12 @@ foreach ($applications as &$app) {
         $app['equipment_list'] = [];
     }
 
-    // 追加器材子申請（original_event_id = 本活動）
+    // 追加器材申請（equipment_requests WHERE parent_event_id = 本活動）
     $child_stmt = $conn->prepare(
-        "SELECT e.event_id, e.status, e.created_at, e.review_note
-         FROM events e
-         WHERE e.original_event_id = ?
-         ORDER BY e.created_at DESC"
+        "SELECT er.request_id, er.status, er.created_at, er.review_note
+         FROM equipment_requests er
+         WHERE er.parent_event_id = ?
+         ORDER BY er.created_at DESC"
     );
     $app['child_requests'] = [];
     if ($child_stmt) {
@@ -104,11 +104,11 @@ foreach ($applications as &$app) {
                 "SELECT eb.equipment_id, eq.name, eq.code, eb.quantity
                  FROM equipment_borrow eb
                  LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
-                 WHERE eb.event_id = ?"
+                 WHERE eb.request_id = ?"
             );
             $child['equipment'] = [];
             if ($ceq) {
-                $ceq->bind_param("i", $child['event_id']);
+                $ceq->bind_param("i", $child['request_id']);
                 $ceq->execute();
                 $child['equipment'] = $ceq->get_result()->fetch_all(MYSQLI_ASSOC);
                 $ceq->close();

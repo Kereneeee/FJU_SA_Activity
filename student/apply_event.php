@@ -298,14 +298,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             // ── 器材庫存預先驗證（只計已核准活動）────────────────────────
             $chk = $conn->prepare("
                 SELECT (e.total_quantity - COALESCE(SUM(
-                    CASE WHEN COALESCE(eb.borrow_start, ev.start_time) < ?
-                          AND COALESCE(eb.borrow_end,   ev.end_time)   > ?
-                          AND ev.status = 'approved'
+                    CASE WHEN COALESCE(eb.borrow_start, er.borrow_start) < ?
+                          AND COALESCE(eb.borrow_end,   er.borrow_end)   > ?
+                          AND (
+                              (eb.request_id IS NULL     AND ev.status = 'approved') OR
+                              (eb.request_id IS NOT NULL AND er.status = 'approved')
+                          )
                          THEN eb.quantity ELSE 0 END
                 ), 0)) AS available, e.name
                 FROM equipment e
                 LEFT JOIN equipment_borrow eb ON e.equipment_id = eb.equipment_id
                 LEFT JOIN events ev ON eb.event_id = ev.event_id
+                LEFT JOIN equipment_requests er ON eb.request_id = er.request_id
                 WHERE e.equipment_id = ?
                 GROUP BY e.equipment_id");
             // 把 borrow_start/end 從 YYYY-MM-DDTHH:MM 轉成 YYYY-MM-DD HH:MM:00

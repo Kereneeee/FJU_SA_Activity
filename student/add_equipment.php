@@ -40,6 +40,10 @@ if (!$event_id) {
     $event_result = $event_stmt->get_result();
     if ($event_result && $event_result->num_rows > 0) {
         $event_info = $event_result->fetch_assoc();
+        if (!in_array($event_info['event_status'] ?? '', ['pending', 'approved'])) {
+            $error = "此活動已" . ($event_info['event_status'] === 'rejected' ? '駁回' : '取消') . "，無法追加器材申請";
+            $event_info = null;
+        }
     } else {
         $error = "無法找到該活動申請，或您無權修改此申請";
     }
@@ -67,24 +71,28 @@ if ($event_info) {
     $return_time = $event_info['end_time'];
 
     $sql_equipment = "
-        SELECT 
-            e.equipment_id, 
-            e.name, 
+        SELECT
+            e.equipment_id,
+            e.name,
             e.code,
             e.total_quantity,
             e.borrowing_limit,
             (e.total_quantity - COALESCE(SUM(
-                CASE 
-                    WHEN ev.start_time < ? 
-                     AND ev.end_time > ? 
-                     AND ev.status = 'approved'
-                    THEN eb.quantity 
-                    ELSE 0 
+                CASE
+                    WHEN COALESCE(eb.borrow_start, er.borrow_start) < ?
+                     AND COALESCE(eb.borrow_end,   er.borrow_end)   > ?
+                     AND (
+                         (eb.request_id IS NULL     AND ev.status = 'approved') OR
+                         (eb.request_id IS NOT NULL AND er.status = 'approved')
+                     )
+                    THEN eb.quantity
+                    ELSE 0
                 END
             ), 0)) AS available_quantity
         FROM equipment e
         LEFT JOIN equipment_borrow eb ON e.equipment_id = eb.equipment_id
         LEFT JOIN events ev ON eb.event_id = ev.event_id
+        LEFT JOIN equipment_requests er ON eb.request_id = er.request_id
         WHERE e.equipment_status = 'available'
         GROUP BY e.equipment_id
         ORDER BY e.name";
@@ -165,9 +173,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                     e.borrowing_limit,
                     (e.total_quantity - COALESCE(SUM(
                         CASE
-                            WHEN COALESCE(eb.borrow_start, ev.start_time) < ?
-                             AND COALESCE(eb.borrow_end,   ev.end_time)   > ?
-                             AND ev.status = 'approved'
+                            WHEN COALESCE(eb.borrow_start, er.borrow_start) < ?
+                             AND COALESCE(eb.borrow_end,   er.borrow_end)   > ?
+                             AND (
+                                 (eb.request_id IS NULL     AND ev.status = 'approved') OR
+                                 (eb.request_id IS NOT NULL AND er.status = 'approved')
+                             )
                             THEN eb.quantity
                             ELSE 0
                         END
@@ -175,6 +186,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                 FROM equipment e
                 LEFT JOIN equipment_borrow eb ON e.equipment_id = eb.equipment_id
                 LEFT JOIN events ev ON eb.event_id = ev.event_id
+                LEFT JOIN equipment_requests er ON eb.request_id = er.request_id
                 WHERE e.equipment_id = ?
                 GROUP BY e.equipment_id";
             
@@ -204,67 +216,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             // ---- 驗證全數通過，開始進行資料庫操作 ----
             $conn->begin_transaction();
 
-            // 🟢 核心修正：建立新的 event 紀錄（追加申請），而不是更新原活動
-            // 新記錄中必須寫入 original_event_id（指向原活動）
-            
-            $original_event_id = intval($event_id);
-            $new_event_name = $event_info['event_name'];
-            $new_club_name  = $event_info['club_name'];
-            $new_start_time = $borrow_start_final;   // 用選定場次的借用時段
-            $new_end_time   = $borrow_end_final;
-            $new_status     = 'pending';
-            
-            // 插入新的追加申請 event 紀錄
-            $insert_event_sql = "INSERT INTO events (user_id, event_name, club_name, description, start_time, end_time, status, original_event_id)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            $insert_event_stmt = $conn->prepare($insert_event_sql);
-            if (!$insert_event_stmt) {
+            $parent_event_id = intval($event_id);
+            $rid_param = $selected_reservation_id ?: null;
+
+            // 建立 equipment_requests 追加申請紀錄
+            $insert_req_sql = "INSERT INTO equipment_requests
+                                 (parent_event_id, user_id, club_name, borrow_start, borrow_end, status)
+                               VALUES (?, ?, ?, ?, ?, 'pending')";
+            $insert_req_stmt = $conn->prepare($insert_req_sql);
+            if (!$insert_req_stmt) {
                 throw new Exception('建立追加申請紀錄失敗：' . $conn->error);
             }
-
-            $description = '追加器材申請';
-            $insert_event_stmt->bind_param(
-                "issssssi",
-                $user_id,
-                $new_event_name,
-                $new_club_name,
-                $description,
-                $new_start_time,
-                $new_end_time,
-                $new_status,
-                $original_event_id
+            $insert_req_stmt->bind_param(
+                "iisss",
+                $parent_event_id, $user_id, $event_info['club_name'],
+                $borrow_start_final, $borrow_end_final
             );
-            
-            if (!$insert_event_stmt->execute()) {
-                throw new Exception('建立追加申請紀錄失敗：' . $insert_event_stmt->error);
+            if (!$insert_req_stmt->execute()) {
+                throw new Exception('建立追加申請紀錄失敗：' . $insert_req_stmt->error);
             }
-            
-            // 取得新建立的 event_id
-            $new_event_id = $conn->insert_id;
-            $insert_event_stmt->close();
-            
-            if ($new_event_id <= 0) {
+            $new_request_id = $conn->insert_id;
+            $insert_req_stmt->close();
+
+            if ($new_request_id <= 0) {
                 throw new Exception('無法獲取新建立的申請 ID');
             }
 
-            // 🟢 核心修正 2：將不可用的 status 欄位完全從 SQL 語法中移除，精準對應你的實體資料表欄位 (event_id, equipment_id, quantity)
+            // 建立 equipment_borrow 紀錄：event_id 指向父活動，request_id 指向新申請
             $insert_sql = "INSERT INTO equipment_borrow
-                             (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end)
-                           VALUES (?, ?, ?, ?, ?, ?)";
+                             (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end, request_id)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_sql);
             if (!$insert_stmt) {
                 throw new Exception('建立器材借用記錄失敗：' . $conn->error);
             }
-            $rid_param = $selected_reservation_id ?: null;
 
             foreach ($equipment_selections as $equip_id => $quantity) {
                 $quantity = intval($quantity);
                 if ($quantity > 0) {
                     $equip_id = intval($equip_id);
                     $insert_stmt->bind_param(
-                        "iiiss",
-                        $new_event_id, $equip_id, $quantity,
-                        $rid_param, $borrow_start_final, $borrow_end_final
+                        "iiisssi",
+                        $parent_event_id, $equip_id, $quantity,
+                        $rid_param, $borrow_start_final, $borrow_end_final, $new_request_id
                     );
                     if (!$insert_stmt->execute()) {
                         throw new Exception("器材申請插入失敗: " . $insert_stmt->error);
@@ -298,12 +292,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
 
                     while ($adm = $admins->fetch_assoc()) {
                         sendApplicationSubmittedMail($adm['email'], $adm['name'], [
-                            'event_id'     => $new_event_id,
-                            'event_name'   => $new_event_name . '（追加器材申請）',
-                            'club_name'    => $new_club_name,
+                            'event_id'     => $parent_event_id,
+                            'event_name'   => $event_info['event_name'] . '（追加器材申請）',
+                            'club_name'    => $event_info['club_name'],
                             'student_name' => $_SESSION['student_name'] ?? '學生',
-                            'start_time'   => $new_start_time,
-                            'end_time'     => $new_end_time,
+                            'start_time'   => $borrow_start_final,
+                            'end_time'     => $borrow_end_final,
                         ]);
                     }
                 }

@@ -39,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
         $s->bind_param('i', $mgmt_id); $ok = $ok && $s->execute(); $s->close();
         if ($ok) { $conn->commit(); $flash = '申請已刪除。'; $flash_type = 'success'; }
         else     { $conn->rollback(); $flash = '刪除失敗，請稍後再試。'; $flash_type = 'danger'; }
-        $redirect_status = $_POST['redirect_status'] ?? 'all';
+        $rs_raw = $_POST['redirect_status'] ?? '';
+        $redirect_status = in_array($rs_raw, ['all','pending','approved','rejected','cancelled']) ? $rs_raw : 'all';
         header("Location: review.php?status={$redirect_status}&flash=" . urlencode($flash) . "&flash_type={$flash_type}");
         exit;
 
@@ -93,22 +94,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
                     $s->bind_param('iiss', $mgmt_id, $space_id, $st, $et); $ok = $ok && $s->execute(); $s->close();
                 }
             }
-            // 器材更新：先清除再重新寫入
+            // 器材更新：先查回原始時段，清除後重寫（保留 borrow_start/borrow_end/reservation_id）
+            $prev_borrow = [];
             if ($ok) {
-                $s = $conn->prepare("DELETE FROM equipment_borrow WHERE event_id = ?");
+                $s = $conn->prepare("SELECT equipment_id, reservation_id, borrow_start, borrow_end FROM equipment_borrow WHERE event_id = ?");
+                $s->bind_param('i', $mgmt_id); $s->execute();
+                $res = $s->get_result();
+                while ($row = $res->fetch_assoc()) $prev_borrow[intval($row['equipment_id'])] = $row;
+                $s->close();
+            }
+            if ($ok) {
+                // 只刪直接掛在活動上的器材，保留追加申請（request_id IS NOT NULL）的器材列
+                $s = $conn->prepare("DELETE FROM equipment_borrow WHERE event_id = ? AND request_id IS NULL");
                 $s->bind_param('i', $mgmt_id); $ok = $ok && $s->execute(); $s->close();
             }
             if ($ok) {
                 $equip_ids  = array_map('intval', $_POST['equip_id']  ?? []);
                 $equip_qtys = array_map('intval', $_POST['equip_qty'] ?? []);
-                for ($i = 0; $i < count($equip_ids); $i++) {
-                    $eid = $equip_ids[$i];
-                    $qty = max(1, $equip_qtys[$i] ?? 1);
-                    if ($eid > 0) {
-                        $s = $conn->prepare("INSERT INTO equipment_borrow (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end) VALUES (?,?,?,NULL,NULL,NULL)");
-                        $s->bind_param('iii', $mgmt_id, $eid, $qty);
-                        $ok = $ok && $s->execute(); $s->close();
+                $s = $conn->prepare("INSERT INTO equipment_borrow (event_id, equipment_id, quantity, reservation_id, borrow_start, borrow_end) VALUES (?,?,?,?,?,?)");
+                if ($s) {
+                    for ($i = 0; $i < count($equip_ids); $i++) {
+                        $eid = $equip_ids[$i];
+                        $qty = max(1, $equip_qtys[$i] ?? 1);
+                        if ($eid > 0) {
+                            $prev = $prev_borrow[$eid] ?? null;
+                            $rid  = $prev ? ($prev['reservation_id'] !== null ? (string)$prev['reservation_id'] : null) : null;
+                            $bs   = $prev ? $prev['borrow_start'] : null;
+                            $be   = $prev ? $prev['borrow_end']   : null;
+                            $s->bind_param('iiisss', $mgmt_id, $eid, $qty, $rid, $bs, $be);
+                            $ok = $ok && $s->execute();
+                        }
                     }
+                    $s->close();
                 }
             }
             if ($ok) { $conn->commit(); $flash = '變更已儲存。'; $flash_type = 'success'; }
@@ -130,25 +147,33 @@ $sql_counts = "SELECT status, COUNT(*) AS cnt FROM events GROUP BY status";
 $result_counts = $conn->query($sql_counts);
 if ($result_counts) {
     while ($row = $result_counts->fetch_assoc()) {
-        $status_counts[$row['status']] = intval($row['cnt']);
+        $status_counts[$row['status']] = ($status_counts[$row['status']] ?? 0) + intval($row['cnt']);
+        $total_count += intval($row['cnt']);
+    }
+}
+$sql_req_counts = "SELECT status, COUNT(*) AS cnt FROM equipment_requests GROUP BY status";
+$result_req_counts = $conn->query($sql_req_counts);
+if ($result_req_counts) {
+    while ($row = $result_req_counts->fetch_assoc()) {
+        $status_counts[$row['status']] = ($status_counts[$row['status']] ?? 0) + intval($row['cnt']);
         $total_count += intval($row['cnt']);
     }
 }
 
-$event_id = isset($_GET['event_id']) ? intval($_GET['event_id']) : 0;
+$event_id   = isset($_GET['event_id'])   ? intval($_GET['event_id'])   : 0;
+$request_id = isset($_GET['request_id']) ? intval($_GET['request_id']) : 0;
 $detail_event = null;
 $detail_equipment = [];
 $detail_error = '';
+$detail_request = null;
+$detail_request_equipment = [];
 
 if ($event_id > 0) {
     $stmt = $conn->prepare(
         "SELECT e.*, u.name AS applicant_name, u.email AS applicant_email,
-                oe.event_name AS original_event_name, oe.club_name AS original_club_name,
-                oe.description AS original_description,
                 ru.name AS reviewer_name
          FROM events e
          JOIN users u ON e.user_id = u.user_id
-         LEFT JOIN events oe ON e.original_event_id = oe.event_id
          LEFT JOIN users ru ON e.reviewed_by = ru.user_id
          WHERE e.event_id = ?"
     );
@@ -182,7 +207,7 @@ if ($event_id > 0) {
             "SELECT eq.equipment_id, eq.name, eb.quantity
              FROM equipment_borrow eb
              JOIN equipment eq ON eb.equipment_id = eq.equipment_id
-             WHERE eb.event_id = ?"
+             WHERE eb.event_id = ? AND eb.request_id IS NULL"
         );
         $stmt->bind_param('i', $event_id);
         $stmt->execute();
@@ -196,23 +221,52 @@ if ($event_id > 0) {
     }
 
     if ($detail_event) {
-        $has_activity = trim($detail_event['event_name']) !== '' || trim($detail_event['club_name']) !== '';
+        $has_activity  = trim($detail_event['event_name']) !== '' || trim($detail_event['club_name']) !== '';
         $has_equipment = !empty($detail_equipment);
-        $has_original_event = !empty($detail_event['original_event_id']);
-
-        // 🟢 【修改】新的分類邏輯：根據 original_event_id 和器材相關欄位判斷案件類型
-        if ($has_original_event) {
-            // 【器材申請】標籤：status = 'pending' AND original_event_id IS NOT NULL
-            $detail_event['case_type'] = '器材申請';
-        } elseif ($has_activity && $has_equipment) {
-            // 【活動+器材申請】標籤：status = 'pending' AND original_event_id IS NULL AND 有器材相關欄位
+        if ($has_activity && $has_equipment) {
             $detail_event['case_type'] = '活動+器材申請';
         } elseif ($has_activity) {
-            // 【活動申請】標籤：status = 'pending' AND original_event_id IS NULL AND 沒有器材相關欄位
             $detail_event['case_type'] = '活動申請';
         } else {
             $detail_event['case_type'] = '一般申請';
         }
+    }
+}
+
+// 器材追加申請詳情載入
+if ($request_id > 0) {
+    $stmt = $conn->prepare(
+        "SELECT er.*, u.name AS applicant_name, u.email AS applicant_email,
+                pe.event_name AS parent_event_name, pe.club_name AS parent_club_name,
+                pe.event_type AS parent_event_type,
+                ru.name AS reviewer_name
+         FROM equipment_requests er
+         JOIN users u  ON er.user_id = u.user_id
+         JOIN events pe ON er.parent_event_id = pe.event_id
+         LEFT JOIN users ru ON er.reviewed_by = ru.user_id
+         WHERE er.request_id = ?"
+    );
+    $stmt->bind_param('i', $request_id);
+    $stmt->execute();
+    $detail_request = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($detail_request) {
+        $stmt2 = $conn->prepare(
+            "SELECT eq.equipment_id, eq.name, eb.quantity
+             FROM equipment_borrow eb
+             JOIN equipment eq ON eb.equipment_id = eq.equipment_id
+             WHERE eb.request_id = ?"
+        );
+        $stmt2->bind_param('i', $request_id);
+        $stmt2->execute();
+        $res2 = $stmt2->get_result();
+        if ($res2) {
+            while ($row2 = $res2->fetch_assoc()) {
+                $detail_request_equipment[] = $row2;
+            }
+        }
+        $stmt2->close();
     }
 }
 
@@ -221,21 +275,20 @@ $allowed_statuses = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
 $status_filter = in_array($_GET['status'] ?? '', $allowed_statuses) ? $_GET['status'] : 'all';
 
 $pending_events = [];
-if ($event_id === 0) {
-    $where_status = $status_filter !== 'all'
+if ($event_id === 0 && $request_id === 0) {
+    // ── 活動申請 ─────────────────────────────────────────────────────────
+    $ev_status_cond = $status_filter !== 'all'
         ? "WHERE e.status = '" . $conn->real_escape_string($status_filter) . "'"
         : '';
-
-    $sql_pending =
+    $sql_events =
         "SELECT e.*, u.name AS applicant_name, u.email AS applicant_email,
                 COALESCE(ec.equipment_count, 0) AS equipment_count,
-                COALESCE(rc.session_count, 0) AS session_count,
-                oe.event_name AS original_event_name, oe.club_name AS original_club_name
+                COALESCE(rc.session_count, 0) AS session_count
          FROM events e
          JOIN users u ON e.user_id = u.user_id
          LEFT JOIN (
              SELECT event_id, COUNT(*) AS equipment_count
-             FROM equipment_borrow
+             FROM equipment_borrow WHERE request_id IS NULL
              GROUP BY event_id
          ) ec ON ec.event_id = e.event_id
          LEFT JOIN (
@@ -243,20 +296,17 @@ if ($event_id === 0) {
              FROM reservations
              GROUP BY event_id
          ) rc ON rc.event_id = e.event_id
-         LEFT JOIN events oe ON e.original_event_id = oe.event_id
-         {$where_status}
+         {$ev_status_cond}
          ORDER BY e.created_at DESC";
-    $result_pending = $conn->query($sql_pending);
-    if ($result_pending) {
-        $pending_events = $result_pending->fetch_all(MYSQLI_ASSOC);
-        foreach ($pending_events as &$ev) {
-            $has_activity = (trim($ev['event_name']) !== '' || trim($ev['club_name']) !== '');
+    $result_events = $conn->query($sql_events);
+    $event_rows = [];
+    if ($result_events) {
+        $event_rows = $result_events->fetch_all(MYSQLI_ASSOC);
+        foreach ($event_rows as &$ev) {
+            $ev['record_type'] = 'event';
+            $has_activity  = (trim($ev['event_name']) !== '' || trim($ev['club_name']) !== '');
             $has_equipment = intval($ev['equipment_count']) > 0;
-            $has_original_event = !empty($ev['original_event_id']);
-
-            if ($has_original_event) {
-                $ev['case_type'] = '器材申請';
-            } elseif ($has_activity && $has_equipment) {
+            if ($has_activity && $has_equipment) {
                 $ev['case_type'] = '活動+器材申請';
             } elseif ($has_activity) {
                 $ev['case_type'] = '活動申請';
@@ -266,6 +316,46 @@ if ($event_id === 0) {
         }
         unset($ev);
     }
+
+    // ── 器材追加申請 ───────────────────────────────────────────────────────
+    $er_status_cond = $status_filter !== 'all'
+        ? "WHERE er.status = '" . $conn->real_escape_string($status_filter) . "'"
+        : '';
+    $sql_requests =
+        "SELECT er.request_id, er.status, er.created_at, er.borrow_start, er.borrow_end,
+                er.review_note, er.reviewed_at, er.user_id,
+                u.name AS applicant_name, u.email AS applicant_email,
+                pe.event_name, pe.club_name, pe.event_type,
+                COALESCE(ebc.equipment_count, 0) AS equipment_count
+         FROM equipment_requests er
+         JOIN users u  ON er.user_id = u.user_id
+         JOIN events pe ON er.parent_event_id = pe.event_id
+         LEFT JOIN (
+             SELECT request_id, COUNT(*) AS equipment_count
+             FROM equipment_borrow WHERE request_id IS NOT NULL
+             GROUP BY request_id
+         ) ebc ON ebc.request_id = er.request_id
+         {$er_status_cond}
+         ORDER BY er.created_at DESC";
+    $result_requests = $conn->query($sql_requests);
+    $request_rows = [];
+    if ($result_requests) {
+        while ($rr = $result_requests->fetch_assoc()) {
+            $rr['record_type']    = 'equipment_request';
+            $rr['case_type']      = '器材追加申請';
+            $rr['event_id']       = 0;
+            $rr['start_time']     = $rr['borrow_start'];
+            $rr['session_count']  = 0;
+            $rr['activity_scale'] = '';
+            $request_rows[] = $rr;
+        }
+    }
+
+    // 合併並依 created_at 降序排列
+    $pending_events = array_merge($event_rows, $request_rows);
+    usort($pending_events, function ($a, $b) {
+        return strtotime($b['created_at']) - strtotime($a['created_at']);
+    });
 }
 ?>
 <!DOCTYPE html>
@@ -418,6 +508,7 @@ if ($event_id === 0) {
         .case-tag.activity { background: #e7f1ff; color: #0c4a9c; }
         .case-tag.activity-equip { background: #fff4e5; color: #7a4a00; }
         .case-tag.equipment { background: #f8e7ff; color: #5f2b7b; }
+        .case-tag.equipment-request { background: #fce7f3; color: #831843; }
         .event-link { color: #0d6efd; text-decoration: none; }
         .event-link:hover { text-decoration: underline; }
         .detail-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.25rem; }
@@ -555,7 +646,76 @@ if ($event_id === 0) {
                 </div>
             <?php endif; ?>
 
-            <?php if ($event_id > 0): ?>
+            <?php if ($request_id > 0): ?>
+                <div class="card">
+                    <div class="section-title"><i class="bi bi-tools"></i> 器材追加申請詳情</div>
+                    <?php if (!$detail_request): ?>
+                        <div class="alert alert-warning">找不到對應的器材追加申請。</div>
+                    <?php else: ?>
+                        <div class="detail-grid">
+                            <div class="detail-block">
+                                <h6>原始活動</h6>
+                                <p><?= htmlspecialchars($detail_request['parent_event_name']) ?></p>
+                                <h6>申請社團</h6>
+                                <p><?= htmlspecialchars($detail_request['parent_club_name']) ?></p>
+                                <h6>申請人</h6>
+                                <p><?= htmlspecialchars($detail_request['applicant_name']) ?> / <?= htmlspecialchars($detail_request['applicant_email']) ?></p>
+                                <h6>借用時段</h6>
+                                <p><?= htmlspecialchars(date('Y/m/d H:i', strtotime($detail_request['borrow_start']))) ?> 至 <?= htmlspecialchars(date('Y/m/d H:i', strtotime($detail_request['borrow_end']))) ?></p>
+                            </div>
+                            <div class="detail-block">
+                                <h6>申請狀態</h6>
+                                <span class="status-badge status-<?= htmlspecialchars($detail_request['status']) ?>">
+                                    <i class="bi bi-<?= $detail_request['status'] === 'pending' ? 'clock' : ($detail_request['status'] === 'approved' ? 'check-lg' : 'x-lg') ?>"></i>
+                                    <?= $detail_request['status'] === 'pending' ? '待審核' : ($detail_request['status'] === 'approved' ? '已通過' : '已駁回') ?>
+                                </span>
+                                <div style="margin-top:0.75rem;">
+                                    <span class="case-tag equipment-request">器材追加申請</span>
+                                </div>
+                                <h6 class="mt-4">申請時間</h6>
+                                <p><?= !empty($detail_request['created_at']) ? date('Y/m/d H:i:s', strtotime($detail_request['created_at'])) : '—' ?></p>
+                                <?php if (!empty($detail_request['reviewed_at'])): ?>
+                                <h6 class="mt-3">審核時間</h6>
+                                <p><?= date('Y/m/d H:i:s', strtotime($detail_request['reviewed_at'])) ?></p>
+                                <?php endif; ?>
+                                <h6 class="mt-4">審核備註</h6>
+                                <p><?= nl2br(htmlspecialchars($detail_request['review_note'] ?? '')) ?: '<span style="color:#9ca3af;">（無）</span>' ?></p>
+                                <?php if (!empty($detail_request['reviewer_name'])): ?>
+                                <h6 class="mt-3">審核人員</h6>
+                                <p><i class="bi bi-person-check me-1" style="color:var(--primary);"></i><?= htmlspecialchars($detail_request['reviewer_name']) ?></p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php if (!empty($detail_request_equipment)): ?>
+                        <div class="detail-block mt-3">
+                            <h6><i class="bi bi-tools me-1"></i>申請器材</h6>
+                            <ul class="detail-list">
+                                <?php foreach ($detail_request_equipment as $item): ?>
+                                    <li><?= htmlspecialchars($item['name']) ?> × <?= intval($item['quantity']) ?></li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </div>
+                        <?php endif; ?>
+                        <div class="detail-block mt-3">
+                            <input type="hidden" id="reviewRequestId" value="<?= $request_id ?>">
+                            <div class="mb-3">
+                                <label class="form-label">審核備註（選填）</label>
+                                <textarea id="reviewNote" class="note-area" placeholder="填寫審核結果說明..." rows="4"><?= htmlspecialchars($detail_request['review_note'] ?? '') ?></textarea>
+                            </div>
+                            <div id="reviewResult" class="mb-3"></div>
+                            <div class="d-flex flex-wrap gap-3">
+                                <?php if ($detail_request['status'] === 'pending'): ?>
+                                <button type="button" onclick="submitReview('approved')" class="btn btn-success"><i class="bi bi-check-circle"></i> 全部核准</button>
+                                <button type="button" onclick="submitReview('rejected')" class="btn btn-danger"><i class="bi bi-x-circle"></i> 駁回</button>
+                                <?php else: ?>
+                                <div class="alert alert-info mb-0 py-2">此申請已完成審核（<?= $detail_request['status'] === 'approved' ? '已核准' : '已駁回' ?>）</div>
+                                <?php endif; ?>
+                                <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php elseif ($event_id > 0): ?>
                 <div class="card">
                     <div class="section-title"><i class="bi bi-file-earmark-text"></i> 活動詳細申請內容</div>
                     <?php if ($detail_error): ?>
@@ -637,17 +797,6 @@ if ($event_id === 0) {
                                 <?php endif; ?>
                             </div>
                         </div>
-
-                        <?php if (!empty($detail_event['original_event_id'])): ?>
-                        <div class="detail-block mt-3">
-                            <h6>原活動資訊（器材補充申請）</h6>
-                            <p><strong>活動名稱：</strong><?= htmlspecialchars($detail_event['original_event_name'] ?? '未知') ?></p>
-                            <p><strong>申請社團：</strong><?= htmlspecialchars($detail_event['original_club_name'] ?? '未知') ?></p>
-                            <?php if (!empty($detail_event['original_description'])): ?>
-                            <p><strong>原說明：</strong><?= nl2br(htmlspecialchars($detail_event['original_description'])) ?></p>
-                            <?php endif; ?>
-                        </div>
-                        <?php endif; ?>
 
                         <!-- 場次列表 -->
                         <?php if (!empty($detail_sessions)): ?>
@@ -820,17 +969,28 @@ if ($event_id === 0) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($pending_events as $ev): ?>
+                                    <?php foreach ($pending_events as $ev):
+                                        $is_req = isset($ev['record_type']) && $ev['record_type'] === 'equipment_request';
+                                        $row_link = $is_req
+                                            ? 'review.php?request_id=' . intval($ev['request_id'])
+                                            : 'review.php?event_id='   . intval($ev['event_id']);
+                                        $ct_class_map = [
+                                            '活動+器材申請' => 'activity-equip',
+                                            '活動申請'      => 'activity',
+                                            '器材申請'      => 'equipment',
+                                            '器材追加申請'  => 'equipment-request',
+                                        ];
+                                    ?>
                                         <tr>
                                             <td>
-                                                <span class="case-tag <?= $ev['case_type'] === '活動+器材申請' ? 'activity-equip' : ($ev['case_type'] === '活動申請' ? 'activity' : ($ev['case_type'] === '器材申請' ? 'equipment' : '')) ?>">
+                                                <span class="case-tag <?= $ct_class_map[$ev['case_type']] ?? '' ?>">
                                                     <?= htmlspecialchars($ev['case_type']) ?>
                                                 </span>
                                             </td>
                                             <td>
-                                                <a class="event-link" href="review.php?event_id=<?= intval($ev['event_id']) ?>">
+                                                <a class="event-link" href="<?= $row_link ?>">
                                                     <strong>
-                                                        <?= htmlspecialchars($ev['event_name'] ?: ($ev['original_event_name'] ? '[器材申請] ' . $ev['original_event_name'] : '器材申請')) ?>
+                                                        <?= htmlspecialchars($ev['event_name'] ?: '（未命名）') ?>
                                                     </strong>
                                                 </a>
                                                 <?php if (!empty($ev['activity_scale']) && $ev['activity_scale'] !== '一般活動'): ?>
@@ -897,13 +1057,15 @@ if ($event_id === 0) {
                                             </td>
                                             <td>
                                                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-                                                    <a href="review.php?event_id=<?= intval($ev['event_id']) ?>" class="btn btn-sm btn-outline-primary m-0"><i class="bi bi-eye"></i> 查看</a>
+                                                    <a href="<?= $row_link ?>" class="btn btn-sm btn-outline-primary m-0"><i class="bi bi-eye"></i> 查看</a>
+                                                    <?php if (!$is_req): ?>
                                                     <form method="POST" onsubmit="return confirm('確定要刪除此申請？此操作無法復原。');">
                                                         <input type="hidden" name="mgmt_action" value="delete">
                                                         <input type="hidden" name="event_id" value="<?= intval($ev['event_id']) ?>">
                                                         <input type="hidden" name="redirect_status" value="<?= htmlspecialchars($status_filter) ?>">
                                                         <button type="submit" class="btn btn-sm btn-outline-danger m-0"><i class="bi bi-trash"></i> 刪除</button>
                                                     </form>
+                                                    <?php endif; ?>
                                                 </div>
                                             </td>
                                         </tr>
@@ -1078,19 +1240,26 @@ if ($event_id === 0) {
 
     <script>
     function submitReview(action) {
-        const event_id = parseInt(document.getElementById('reviewEventId').value);
-        const note     = document.getElementById('reviewNote').value;
-        const resultDiv = document.getElementById('reviewResult');
-        const label    = action === 'approved' ? '核准' : '駁回';
+        const evEl  = document.getElementById('reviewEventId');
+        const reqEl = document.getElementById('reviewRequestId');
+        const event_id   = evEl  ? (parseInt(evEl.value)  || 0) : 0;
+        const request_id = reqEl ? (parseInt(reqEl.value) || 0) : 0;
+        const note       = document.getElementById('reviewNote').value;
+        const resultDiv  = document.getElementById('reviewResult');
+        const label      = action === 'approved' ? '核准' : '駁回';
 
         if (!confirm('確定要' + label + '此申請？')) return;
 
         resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="bi bi-hourglass-split me-1"></i>處理中...</div>';
 
+        const payload = request_id > 0
+            ? { request_id: request_id, action: action, note: note }
+            : { event_id: event_id,     action: action, note: note };
+
         fetch('../api/review_action.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event_id: event_id, action: action, note: note })
+            body: JSON.stringify(payload)
         })
         .then(r => r.json())
         .then(data => {
