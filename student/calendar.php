@@ -273,7 +273,7 @@ if ($stmt) {
         .btn-action.danger { background: var(--danger); color: white; }
         .booked-list { margin-top: 1rem; }
         .booking-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e5e7eb; }
-        .booking-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .booking-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 0.88rem; }
         .booking-table thead tr { background: #f3f4f6; }
         .booking-table th { padding: 0.65rem 0.9rem; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; white-space: nowrap; }
         .booking-table td { padding: 0.6rem 0.9rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle; color: #1f2937; }
@@ -365,12 +365,12 @@ if ($stmt) {
 
         <!-- 日期預約詳情 popup -->
         <div id="scheduleMdl" class="schedule-overlay" onclick="closeScheduleModal(event)">
-            <div class="schedule-dialog" style="width:min(900px,95vw);max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
-                <div class="modal-header">
+            <div class="schedule-dialog" style="width:min(900px,95vw);max-height:85vh;display:flex;flex-direction:column;" onclick="event.stopPropagation()">
+                <div class="modal-header" style="flex-shrink:0;">
                     <h5 class="modal-title" id="scheduleMdlTitle">預約時段</h5>
                     <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
                 </div>
-                <div id="scheduleMdlBody"></div>
+                <div id="scheduleMdlBody" style="overflow-y:auto;overflow-x:auto;"></div>
             </div>
         </div>
     </main>
