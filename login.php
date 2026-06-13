@@ -68,8 +68,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$locked) {
                 $_SESSION["student_id"]   = $user["email"];        // 統一用 email 當識別碼
                 $_SESSION["student_no"]   = $user["student_id"];   // 真實學號（int）
 
-                session_regenerate_id(true);
-
                 if ($user["role"] == "admin") {
                     header("Location: admin/dashboard.php");
                 } else {
