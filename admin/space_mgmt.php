@@ -12,7 +12,6 @@ $user_id = $_SESSION['user_id'];
 
 // 篩選/排序參數（GET）
 $sp_status = in_array($_GET['sp_status'] ?? '', ['available', 'unavailable']) ? $_GET['sp_status'] : '';
-$sp_sort   = in_array($_GET['sp_sort'] ?? '', ['name', 'capacity_asc', 'capacity_desc']) ? $_GET['sp_sort'] : 'name';
 
 // 取得所有場地（統計用，永遠抓全部）
 $result_spaces = $conn->query("SELECT * FROM spaces ORDER BY space_id ASC");
@@ -38,15 +37,9 @@ if ($sp_status !== '') {
         return ($s['space_status'] ?? 'available') === $sp_status;
     }));
 }
-// 排序
-usort($spaces_list, function ($a, $b) use ($sp_sort) {
-    if ($sp_sort === 'capacity_asc')  return intval($a['capacity']) - intval($b['capacity']);
-    if ($sp_sort === 'capacity_desc') return intval($b['capacity']) - intval($a['capacity']);
-    return strcmp($a['space_name'], $b['space_name']);
-});
 
-// 重新載入並套用篩選/排序（POST 成功後呼叫）
-$refresh_spaces = function() use ($conn, $sp_status, $sp_sort, &$spaces_all, &$spaces_list) {
+// 重新載入並套用篩選（POST 成功後呼叫）
+$refresh_spaces = function() use ($conn, $sp_status, &$spaces_all, &$spaces_list) {
     $res = $conn->query("SELECT * FROM spaces ORDER BY space_id ASC");
     $spaces_all = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
     $spaces_list = $spaces_all;
@@ -55,11 +48,6 @@ $refresh_spaces = function() use ($conn, $sp_status, $sp_sort, &$spaces_all, &$s
             return ($s['space_status'] ?? 'available') === $sp_status;
         }));
     }
-    usort($spaces_list, function ($a, $b) use ($sp_sort) {
-        if ($sp_sort === 'capacity_asc')  return intval($a['capacity']) - intval($b['capacity']);
-        if ($sp_sort === 'capacity_desc') return intval($b['capacity']) - intval($a['capacity']);
-        return strcmp($a['space_name'], $b['space_name']);
-    });
 };
 
 // 處理編輯或刪除動作
@@ -453,6 +441,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .modal-backdrop {
             z-index: 1340;
         }
+        .sort-btn {
+            padding: .35rem .85rem; border: 1.5px solid #d1d5db; background: white;
+            color: #374151; border-radius: 8px; cursor: pointer; font-size: .83rem;
+            transition: all .2s; display: inline-flex; align-items: center; gap: .3rem;
+        }
+        .sort-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .sort-btn.sort-active { border-color: var(--primary); background: var(--primary); color: white; }
     </style>
 </head>
 <body>
@@ -488,23 +483,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- 場地列表 -->
             <div class="panel-row">
                 <h5><i class="bi bi-list-ul"></i> 場地列表</h5>
-                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-3">
+                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-2">
                     <select name="sp_status" class="form-select form-select-sm" style="width:auto">
                         <option value="">所有狀態</option>
                         <option value="available"   <?= $sp_status==='available'  ?'selected':'' ?>>可用</option>
                         <option value="unavailable" <?= $sp_status==='unavailable'?'selected':'' ?>>不可用</option>
                     </select>
-                    <select name="sp_sort" class="form-select form-select-sm" style="width:auto">
-                        <option value="name"         <?= $sp_sort==='name'        ?'selected':'' ?>>名稱排序</option>
-                        <option value="capacity_asc" <?= $sp_sort==='capacity_asc'?'selected':'' ?>>容量 小→大</option>
-                        <option value="capacity_desc"<?= $sp_sort==='capacity_desc'?'selected':''?>>容量 大→小</option>
-                    </select>
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 套用</button>
-                    <?php if ($sp_status !== '' || $sp_sort !== 'name'): ?>
+                    <?php if ($sp_status !== ''): ?>
                     <a href="space_mgmt.php" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> 清除</a>
                     <?php endif; ?>
                     <small class="text-muted ms-auto">顯示 <?= count($spaces_list) ?> / <?= $total_spaces ?> 個場地</small>
                 </form>
+                <div id="spaceSortBar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
+                    <span style="font-size:.83rem;color:#6b7280;">排序：</span>
+                    <button id="sortNameBtn" class="sort-btn sort-active" onclick="sortSpaces('name')">
+                        <i class="bi bi-sort-alpha-down"></i> 名稱 <span id="sortNameDir">↓</span>
+                    </button>
+                    <button id="sortCapBtn" class="sort-btn" onclick="sortSpaces('capacity')">
+                        <i class="bi bi-people"></i> 容量 <span id="sortCapDir">↓</span>
+                    </button>
+                </div>
                 <div style="overflow-x: auto;">
                     <table>
                         <thead>
@@ -517,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         </thead>
                         <tbody>
                             <?php foreach ($spaces_list as $space): ?>
-                            <tr>
+                            <tr data-name="<?= htmlspecialchars(mb_strtolower($space['space_name'])) ?>" data-capacity="<?= intval($space['capacity']) ?>">
                                 <td><strong><?php echo htmlspecialchars($space['space_name']); ?></strong></td>
                                 <td><?php echo intval($space['capacity']); ?></td>
                                 <td>
@@ -649,6 +648,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             });
         });
+    </script>
+    <script>
+        let spaceSortKey = 'name';
+        let spaceSortDir = 'asc';
+        function sortSpaces(key, toggle) {
+            if (toggle === undefined) toggle = true;
+            if (spaceSortKey === key) {
+                if (toggle) spaceSortDir = spaceSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                spaceSortKey = key;
+                spaceSortDir = key === 'name' ? 'asc' : 'desc';
+            }
+            document.querySelectorAll('#spaceSortBar .sort-btn').forEach(b => b.classList.remove('sort-active'));
+            document.getElementById(key === 'name' ? 'sortNameBtn' : 'sortCapBtn').classList.add('sort-active');
+            document.getElementById('sortNameDir').textContent = spaceSortKey === 'name' ? (spaceSortDir === 'asc' ? '↑' : '↓') : '↑';
+            document.getElementById('sortCapDir').textContent  = spaceSortKey === 'capacity' ? (spaceSortDir === 'asc' ? '↑' : '↓') : '↓';
+            var tbody = document.querySelector('#spaceSortBar ~ div table tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr[data-name]'));
+            rows.sort(function(a, b) {
+                if (spaceSortKey === 'name') {
+                    var cmp = a.dataset.name.localeCompare(b.dataset.name, 'zh-TW');
+                    return spaceSortDir === 'asc' ? cmp : -cmp;
+                } else {
+                    var cmp = parseInt(a.dataset.capacity) - parseInt(b.dataset.capacity);
+                    return spaceSortDir === 'asc' ? cmp : -cmp;
+                }
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+        }
+        document.addEventListener('DOMContentLoaded', function() { sortSpaces('name', false); });
     </script>
 </body>
 </html>

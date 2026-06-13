@@ -101,10 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // 篩選／排序參數（GET）
-$sort_by     = in_array($_GET['sort_by'] ?? '', ['event_date', 'apply_date']) ? $_GET['sort_by'] : 'event_date';
-$sort_dir    = ($_GET['sort_dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
 $club_filter = trim($_GET['club_filter'] ?? '');
-$order_col   = ($sort_by === 'apply_date') ? 'e.created_at' : 'e.start_time';
 
 // 取得器材列表
 $sql = "SELECT * FROM equipment ORDER BY equipment_id ASC";
@@ -155,7 +152,7 @@ $sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity,
 if ($club_filter !== '') {
     $sql_borrow .= " AND e.club_name = ?";
 }
-$sql_borrow .= " ORDER BY {$order_col} {$sort_dir}";
+$sql_borrow .= " ORDER BY e.start_time DESC";
 
 if ($club_filter !== '') {
     $stmt_borrow = $conn->prepare($sql_borrow);
@@ -584,6 +581,13 @@ foreach ($borrowing_details as $borrow) {
         .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
         .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
         .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+        .sort-btn {
+            padding: .35rem .85rem; border: 1.5px solid #d1d5db; background: white;
+            color: #374151; border-radius: 8px; cursor: pointer; font-size: .83rem;
+            transition: all .2s; display: inline-flex; align-items: center; gap: .3rem;
+        }
+        .sort-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .sort-btn.sort-active { border-color: var(--primary); background: var(--primary); color: white; }
     </style>
 </head>
 <body>
@@ -621,18 +625,9 @@ foreach ($borrowing_details as $borrow) {
             <div class="panel-row">
                 <h5><i class="bi bi-clipboard-list"></i> 器材借用狀態</h5>
 
-                <!-- 篩選／排序列 -->
-                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-3">
-                    <label class="form-label mb-0" style="white-space:nowrap;">排序：</label>
-                    <select name="sort_by" class="form-select form-select-sm" style="width:auto">
-                        <option value="event_date" <?= $sort_by==='event_date'?'selected':'' ?>>活動日期</option>
-                        <option value="apply_date" <?= $sort_by==='apply_date'?'selected':'' ?>>申請日期</option>
-                    </select>
-                    <select name="sort_dir" class="form-select form-select-sm" style="width:auto">
-                        <option value="desc" <?= $sort_dir==='DESC'?'selected':'' ?>>降冪（新→舊）</option>
-                        <option value="asc"  <?= $sort_dir==='ASC' ?'selected':'' ?>>升冪（舊→新）</option>
-                    </select>
-                    <label class="form-label mb-0 ms-2" style="white-space:nowrap;">社團：</label>
+                <!-- 篩選列 -->
+                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-2">
+                    <label class="form-label mb-0" style="white-space:nowrap;">社團：</label>
                     <select name="club_filter" class="form-select form-select-sm" style="width:auto">
                         <option value="">所有社團</option>
                         <?php foreach ($all_borrow_clubs as $club): ?>
@@ -640,13 +635,22 @@ foreach ($borrowing_details as $borrow) {
                         <?php endforeach; ?>
                     </select>
                     <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 套用</button>
-                    <?php if ($club_filter!=='' || $sort_by!=='event_date' || $sort_dir!=='DESC'): ?>
+                    <?php if ($club_filter!==''): ?>
                     <a href="equipment_mgmt.php" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> 清除</a>
                     <?php endif; ?>
                     <?php if (!empty($borrowing_details)): ?>
                     <small class="text-muted ms-auto">共 <?= count($borrowing_details) ?> 筆</small>
                     <?php endif; ?>
                 </form>
+                <div id="equipSortBar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
+                    <span style="font-size:.83rem;color:#6b7280;">排序：</span>
+                    <button id="equipSortEventBtn" class="sort-btn sort-active" onclick="sortEquipTable('event')">
+                        <i class="bi bi-calendar-event"></i> 活動時間 <span id="equipSortEventDir">↓</span>
+                    </button>
+                    <button id="equipSortApplyBtn" class="sort-btn" onclick="sortEquipTable('apply')">
+                        <i class="bi bi-clock"></i> 申請時間 <span id="equipSortApplyDir">↓</span>
+                    </button>
+                </div>
 
                 <?php if (!empty($borrowing_details)): ?>
                 <div style="overflow-x: auto;">
@@ -664,8 +668,11 @@ foreach ($borrowing_details as $borrow) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($borrowing_details as $borrow): ?>
-                            <tr>
+                            <?php foreach ($borrowing_details as $borrow):
+                                $b_event_ts = !empty($borrow['start_time'])  ? strtotime($borrow['start_time'])  : 0;
+                                $b_apply_ts = !empty($borrow['created_at'])  ? strtotime($borrow['created_at'])  : 0;
+                            ?>
+                            <tr data-event-ts="<?= $b_event_ts ?>" data-apply-ts="<?= $b_apply_ts ?>">
                                 <td><?php echo htmlspecialchars($borrow['event_name'] ?? '未知活動'); ?></td>
                                 <td><?php echo htmlspecialchars($borrow['club_name'] ?? '未知社團'); ?></td>
                                 <td><?php echo htmlspecialchars($borrow['equipment_name'] ?? '未知器材'); ?></td>
@@ -795,6 +802,33 @@ foreach ($borrowing_details as $borrow) {
             <?php endif; ?>
         </section>
     </main>
-
+    <script>
+        var equipSortKey = 'event';
+        var equipSortDir = 'desc';
+        function sortEquipTable(key, toggle) {
+            if (toggle === undefined) toggle = true;
+            if (equipSortKey === key) {
+                if (toggle) equipSortDir = equipSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                equipSortKey = key;
+                equipSortDir = 'desc';
+            }
+            document.querySelectorAll('#equipSortBar .sort-btn').forEach(function(b) { b.classList.remove('sort-active'); });
+            document.getElementById(key === 'event' ? 'equipSortEventBtn' : 'equipSortApplyBtn').classList.add('sort-active');
+            document.getElementById('equipSortEventDir').textContent = equipSortKey === 'event' ? (equipSortDir === 'desc' ? '↓' : '↑') : '↓';
+            document.getElementById('equipSortApplyDir').textContent = equipSortKey === 'apply' ? (equipSortDir === 'desc' ? '↓' : '↑') : '↓';
+            var tbody = document.querySelector('.borrowing-table tbody');
+            if (!tbody) return;
+            var rows = Array.from(tbody.querySelectorAll('tr[data-event-ts]'));
+            var attr = equipSortKey === 'event' ? 'eventTs' : 'applyTs';
+            rows.sort(function(a, b) {
+                var av = parseInt(a.dataset[attr]) || 0;
+                var bv = parseInt(b.dataset[attr]) || 0;
+                return equipSortDir === 'desc' ? bv - av : av - bv;
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+        }
+        document.addEventListener('DOMContentLoaded', function() { sortEquipTable('event', false); });
+    </script>
 </body>
 </html>

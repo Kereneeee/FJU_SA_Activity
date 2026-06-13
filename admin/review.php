@@ -293,9 +293,6 @@ if ($request_id > 0) {
 $allowed_statuses = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
 $status_filter = in_array($_GET['status'] ?? '', $allowed_statuses) ? $_GET['status'] : 'all';
 
-// 排序參數
-$sort_by  = in_array($_GET['sort_by'] ?? '', ['event_date', 'apply_date']) ? $_GET['sort_by'] : 'apply_date';
-$sort_dir = ($_GET['sort_dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
 
 $pending_events = [];
 if ($event_id === 0 && $request_id === 0) {
@@ -374,13 +371,10 @@ if ($event_id === 0 && $request_id === 0) {
         }
     }
 
-    // 合併並依選定欄位排序
+    // 合併並依申請時間降序排列（客戶端可再切換排序）
     $pending_events = array_merge($event_rows, $request_rows);
-    $sort_col = ($sort_by === 'event_date') ? 'start_time' : 'created_at';
-    usort($pending_events, function ($a, $b) use ($sort_col, $sort_dir) {
-        $ta = strtotime($a[$sort_col] ?? '0');
-        $tb = strtotime($b[$sort_col] ?? '0');
-        return $sort_dir === 'asc' ? ($ta - $tb) : ($tb - $ta);
+    usort($pending_events, function ($a, $b) {
+        return strtotime($b['created_at'] ?? '0') - strtotime($a['created_at'] ?? '0');
     });
 }
 ?>
@@ -639,6 +633,13 @@ if ($event_id === 0 && $request_id === 0) {
         .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
         .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
         .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+        .sort-btn {
+            padding: .35rem .85rem; border: 1.5px solid #d1d5db; background: white;
+            color: #374151; border-radius: 8px; cursor: pointer; font-size: .83rem;
+            transition: all .2s; display: inline-flex; align-items: center; gap: .3rem;
+        }
+        .sort-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .sort-btn.sort-active { border-color: var(--primary); background: var(--primary); color: white; }
     </style>
 </head>
 <body>
@@ -946,9 +947,6 @@ if ($event_id === 0 && $request_id === 0) {
                 </div>
             <?php else: ?>
                 <div class="panel-row">
-                    <?php
-                    $sort_qs = http_build_query(['sort_by' => $sort_by, 'sort_dir' => $sort_dir]);
-                    ?>
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
                         <h5 style="margin:0; align-self:center;"><i class="bi bi-list-ul"></i> 申請管理列表</h5>
                         <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
@@ -961,31 +959,31 @@ if ($event_id === 0 && $request_id === 0) {
                                 <input type="date" id="searchDate" class="form-control" style="border-color:#d1d5db;" onchange="filterReviewTable()">
                             </div>
                             <button onclick="clearSearch()" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;"><i class="bi bi-x-lg"></i> 清除</button>
-                            <div style="width:1px; height:1.5rem; background:#d1d5db;"></div>
-                            <select id="sortBy" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
-                                <option value="apply_date" <?= $sort_by==='apply_date'?'selected':'' ?>>申請日期</option>
-                                <option value="event_date" <?= $sort_by==='event_date'?'selected':'' ?>>活動日期</option>
-                            </select>
-                            <select id="sortDir" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
-                                <option value="desc" <?= $sort_dir==='desc'?'selected':'' ?>>降冪</option>
-                                <option value="asc"  <?= $sort_dir==='asc' ?'selected':'' ?>>升冪</option>
-                            </select>
                         </div>
                     </div>
+                    <div id="reviewSortBar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;">
+                        <span style="font-size:.83rem;color:#6b7280;">排序：</span>
+                        <button id="sortApplyBtn" class="sort-btn sort-active" onclick="sortReviewTable('apply')">
+                            <i class="bi bi-clock"></i> 申請時間 <span id="sortApplyDir">↓</span>
+                        </button>
+                        <button id="sortEventBtn" class="sort-btn" onclick="sortReviewTable('event')">
+                            <i class="bi bi-calendar-event"></i> 活動時間 <span id="sortEventDir">↓</span>
+                        </button>
+                    </div>
                     <div style="margin-bottom: 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap;">
-                            <a href="review.php?status=all&<?= $sort_qs ?>" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
+                            <a href="review.php?status=all" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
                                 <i class="bi bi-grid"></i> 全部
                                 <span class="ftab-count"><?= $total_count ?></span>
                             </a>
-                            <a href="review.php?status=pending&<?= $sort_qs ?>" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
+                            <a href="review.php?status=pending" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
                                 <i class="bi bi-clock"></i> 待審核
                                 <span class="ftab-count"><?= $status_counts['pending'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=approved&<?= $sort_qs ?>" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
+                            <a href="review.php?status=approved" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
                                 <i class="bi bi-check-circle"></i> 已通過
                                 <span class="ftab-count"><?= $status_counts['approved'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=rejected&<?= $sort_qs ?>" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
+                            <a href="review.php?status=rejected" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
                                 <i class="bi bi-x-circle"></i> 已駁回
                                 <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
@@ -1024,8 +1022,10 @@ if ($event_id === 0 && $request_id === 0) {
                                             '器材申請'      => 'equipment',
                                             '器材追加申請'  => 'equipment-request',
                                         ];
+                                        $apply_ts = !empty($ev['created_at']) ? strtotime($ev['created_at']) : 0;
+                                        $event_ts = !empty($ev['start_time'])  ? strtotime($ev['start_time'])  : 0;
                                     ?>
-                                        <tr>
+                                        <tr data-apply-ts="<?= $apply_ts ?>" data-event-ts="<?= $event_ts ?>">
                                             <td>
                                                 <span class="case-tag <?= $ct_class_map[$ev['case_type']] ?? '' ?>">
                                                     <?= htmlspecialchars($ev['case_type']) ?>
@@ -1379,11 +1379,30 @@ if ($event_id === 0 && $request_id === 0) {
         filterReviewTable();
     }
 
-    function applySortParams() {
-        const url = new URL(window.location.href);
-        url.searchParams.set('sort_by',  document.getElementById('sortBy').value);
-        url.searchParams.set('sort_dir', document.getElementById('sortDir').value);
-        window.location = url.toString();
+    var reviewSortKey = 'apply';
+    var reviewSortDir = 'desc';
+    function sortReviewTable(key, toggle) {
+        if (toggle === undefined) toggle = true;
+        if (reviewSortKey === key) {
+            if (toggle) reviewSortDir = reviewSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            reviewSortKey = key;
+            reviewSortDir = 'desc';
+        }
+        document.querySelectorAll('#reviewSortBar .sort-btn').forEach(function(b) { b.classList.remove('sort-active'); });
+        document.getElementById(key === 'apply' ? 'sortApplyBtn' : 'sortEventBtn').classList.add('sort-active');
+        document.getElementById('sortApplyDir').textContent = reviewSortKey === 'apply' ? (reviewSortDir === 'desc' ? '↓' : '↑') : '↓';
+        document.getElementById('sortEventDir').textContent = reviewSortKey === 'event' ? (reviewSortDir === 'desc' ? '↓' : '↑') : '↓';
+        var tbody = document.querySelector('table tbody');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr[data-apply-ts]'));
+        var attr = reviewSortKey === 'apply' ? 'applyTs' : 'eventTs';
+        rows.sort(function(a, b) {
+            var av = parseInt(a.dataset[attr]) || 0;
+            var bv = parseInt(b.dataset[attr]) || 0;
+            return reviewSortDir === 'desc' ? bv - av : av - bv;
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
     }
 
     document.addEventListener('DOMContentLoaded', function () {
