@@ -620,11 +620,9 @@ foreach ($venues as $v) {
                             <label class="form-label fw-semibold">活動負責人 <span class="text-danger">*</span></label>
                             <input type="text" name="responsible_person" class="form-control" value="<?= $fv['responsible_person'] ?>" required placeholder="例：社長 王小明">
                         </div>
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-12">
+                        <div class="col-md-6">
                             <label class="form-label fw-semibold">活動類型</label>
-                            <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:center;">
+                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; min-height:calc(1.5em + 0.75rem + 2px);">
                                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                                     <label id="lbl_scale_normal" style="display:inline-flex; align-items:center; gap:0.3rem; border:1.5px solid #cbd5e1; border-radius:7px; padding:0.35rem 0.85rem; cursor:pointer; font-size:0.85rem; font-weight:600; background:white; transition:all 0.15s; user-select:none;">
                                         <input type="radio" name="activity_scale" value="一般活動" id="scale_normal" <?= ($fv['activity_scale']??'一般活動')!=='大型活動'?'checked':'' ?> onchange="updateDeadlineReminder()" style="display:none;">
@@ -1310,6 +1308,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
         </div>`;
     document.getElementById('sessions_container').insertAdjacentHTML('beforeend', html);
     renumberSessions();
+    document.querySelectorAll('#sessions_container .time-selects').forEach(applyMinuteRestriction);
 }
 
 function removeSession(btn) {
@@ -1335,6 +1334,21 @@ function renumberSessions() {
 
 
 
+// ── 依時段限制可選分鐘（08:30–21:30，08時只能選30/40/50，21時只能選00/10/20/30）──
+function applyMinuteRestriction(timeSelectsDiv) {
+    const hourSel = timeSelectsDiv.querySelector('.time-hour');
+    const minSel  = timeSelectsDiv.querySelector('.time-minute');
+    if (!hourSel || !minSel) return;
+    let disabledMins = [];
+    if (hourSel.value === '08') disabledMins = ['00','10','20'];
+    else if (hourSel.value === '21') disabledMins = ['40','50'];
+    Array.from(minSel.options).forEach(opt => {
+        if (opt.value === '') return;
+        opt.disabled = disabledMins.includes(opt.value);
+    });
+    if (minSel.value && disabledMins.includes(minSel.value)) minSel.value = '';
+}
+
 // ── 時間選單同步 hidden input ────────────────────────────
 function syncTimeValue(selectEl) {
     const sf = selectEl.closest('.session-field');
@@ -1359,6 +1373,9 @@ function setSessionTimeField(row, fieldKey, value) {
 }
 
 document.getElementById('sessions_container').addEventListener('change', function(e) {
+    if (e.target && e.target.classList.contains('time-hour')) {
+        applyMinuteRestriction(e.target.closest('.time-selects'));
+    }
     if (e.target && (e.target.classList.contains('time-hour') || e.target.classList.contains('time-minute'))) {
         syncTimeValue(e.target);
     }
@@ -1438,6 +1455,7 @@ document.getElementById('submitBtn').addEventListener('click', function() {
     updateDeadlineReminder();
     updateFlagWarning();
     toggleEventType();
+    document.querySelectorAll('#sessions_container .time-selects').forEach(applyMinuteRestriction);
 })();
 </script>
 </body>

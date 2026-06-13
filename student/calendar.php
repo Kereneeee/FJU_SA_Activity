@@ -426,18 +426,17 @@ if ($stmt) {
             const filterRow = document.querySelector('.filter-row');
             const searchButton = document.getElementById('searchButton');
 
-            // 如果有直接指定場地，隱藏選擇介面
-            if (selectedRoomId !== null) {
-                filterRow.style.display = 'none';
-                searchButton.style.display = 'none';
-                renderCalendar();
-                return;
+            // 月份選單
+            for (let i = 0; i < 12; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                const date = new Date(initialYear, i, 1);
+                option.textContent = `${date.getFullYear()}年${i + 1}月`;
+                if (i === initialMonth) option.selected = true;
+                monthSelector.appendChild(option);
             }
 
-            // 顯示選擇介面
-            filterRow.style.display = 'grid';
-            searchButton.style.display = 'block';
-
+            // 大樓選單
             buildings.forEach(building => {
                 const option = document.createElement('option');
                 option.value = building.id;
@@ -445,20 +444,29 @@ if ($stmt) {
                 buildingSelect.appendChild(option);
             });
 
-            fillRoomOptions(buildings[0].id);
-            buildingSelect.value = buildings[0].id;
-            selectedBuildingId = buildings[0].id;
-            selectedRoomId = buildings[0].rooms[0].id;
+            // 預設選擇：若有指定場地（例如從場協登記結果連結進來）就帶入該大樓/教室，
+            // 否則預設第一個大樓第一個教室；無論哪種情況都保留切換介面可操作
+            if (selectedBuildingId === null) selectedBuildingId = buildings[0].id;
+            if (selectedRoomId === null) selectedRoomId = buildings[0].rooms[0].id;
+
+            fillRoomOptions(selectedBuildingId);
+            buildingSelect.value = selectedBuildingId;
+            roomSelect.value = selectedRoomId;
+
+            filterRow.style.display = 'grid';
+            searchButton.style.display = 'block';
 
             buildingSelect.addEventListener('change', () => {
                 selectedBuildingId = buildingSelect.value ? parseInt(buildingSelect.value) : null;
                 if (selectedBuildingId !== null) {
                     fillRoomOptions(selectedBuildingId);
+                    selectedRoomId = roomSelect.value ? parseInt(roomSelect.value) : null;
+                    renderCalendar();
                 } else {
                     roomSelect.innerHTML = '<option value="">請先選大樓</option>';
+                    selectedRoomId = null;
+                    hideCalendar();
                 }
-                selectedRoomId = null;
-                hideCalendar();
             });
 
             roomSelect.addEventListener('change', () => {
@@ -476,20 +484,6 @@ if ($stmt) {
                 }
             });
 
-            const today = new Date();
-            for (let i = 0; i < 12; i++) {
-                const option = document.createElement('option');
-                option.value = i;
-                // 這裡年份改用後端帶過來的 initialYear 比較精準
-                const date = new Date(initialYear, i, 1); 
-                option.textContent = `${date.getFullYear()}年${i + 1}月`;
-                
-                // 👉 【修正這行】改用 initialMonth 判斷，這樣切換月份才不會跳走
-                if (i === initialMonth) option.selected = true; 
-                
-                monthSelector.appendChild(option);
-            }
-
             document.getElementById('searchButton').addEventListener('click', () => {
                 selectedRoomId = roomSelect.value ? parseInt(roomSelect.value) : null;
                 selectedBuildingId = buildingSelect.value ? parseInt(buildingSelect.value) : null;
@@ -498,7 +492,7 @@ if ($stmt) {
                 }
             });
 
-            hideCalendar();
+            renderCalendar();
         }
 
         function fillRoomOptions(buildingId) {
