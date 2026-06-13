@@ -164,6 +164,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $errors[] = "場次{$n}：開始日期不能為過往日期，請選擇今日或之後的日期";
         if (!empty($sess['end_date']) && $sess['end_date'] < $today_date)
             $errors[] = "場次{$n}：結束日期不能為過往日期，請選擇今日或之後的日期";
+        if (!empty($sess['date']) && !empty($sess['start_time'])) {
+            $sess_start_ts = strtotime($sess['date'] . ' ' . $sess['start_time'] . ':00');
+            if ($sess_start_ts !== false && $sess_start_ts <= time())
+                $errors[] = "場次{$n}：活動開始時間不能為過去時間，請選擇未來的時間";
+        }
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['end_date'] < $sess['date'])
             $errors[] = "場次{$n}：結束日期不能早於開始日期";
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['date'] === $sess['end_date'] &&
@@ -214,7 +219,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $proposal_original_name = null;
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
                 if (!validate_proposal_upload($_FILES['proposal_document'])) {
-                    throw new Exception("企劃書只允許上傳 PDF 或 Word 格式。");
+                    throw new Exception("企劃書只允許上傳 PDF或 Word 格式。");
                 }
                 $ext = strtolower(pathinfo($_FILES['proposal_document']['name'] ?? '', PATHINFO_EXTENSION));
                 $ext = in_array($ext, ['pdf', 'doc', 'docx'], true) ? $ext : 'pdf';
@@ -429,7 +434,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
                         ]);
                     }
                 }
-            } catch (\Throwable $mailEx) { /* 靜默忽略 */ }
+            } catch (\Throwable $mailEx) {
+                error_log('[apply_event mail] ' . $mailEx->getMessage());
+            }
             exit();
 
         } catch (Exception $e) {
@@ -1443,6 +1450,15 @@ document.getElementById('submitBtn').addEventListener('click', function() {
         if (edi.value===di.value && sti.value>=eti.value) { alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
         if (sti.value<'08:30'||sti.value>'21:30'||eti.value<'08:30'||eti.value>'21:30') {
             alert(`場次${n}：時間須在 08:30–21:30！`); return;
+        }
+        // 今天日期 + 已過的時間視為過去時間
+        if (di.value === todayDateString && sti.value) {
+            const now = new Date();
+            const nowHHMM = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+            if (sti.value <= nowHHMM) {
+                alert(`場次${n}：活動開始時間不能為過去時間，請選擇未來的時間！`);
+                sti.focus(); return;
+            }
         }
         if (vsl && !vsl.value) { alert(`場次${n}：請選擇場地！`); vsl.focus(); return; }
     }

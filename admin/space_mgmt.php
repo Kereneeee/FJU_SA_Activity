@@ -10,30 +10,57 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 $user_name = $_SESSION['user_name'] ?? '管理員';
 $user_id = $_SESSION['user_id'];
 
-// 取得所有場地
-$sql_spaces = "SELECT * FROM spaces ORDER BY space_id ASC";
-$result_spaces = $conn->query($sql_spaces);
-if (!$result_spaces) {
-    die("查詢錯誤: " . $conn->error);
-}
-$spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
-if (!$spaces_list) $spaces_list = [];
+// 篩選/排序參數（GET）
+$sp_status = in_array($_GET['sp_status'] ?? '', ['available', 'unavailable']) ? $_GET['sp_status'] : '';
+$sp_sort   = in_array($_GET['sp_sort'] ?? '', ['name', 'capacity_asc', 'capacity_desc']) ? $_GET['sp_sort'] : 'name';
 
-// 統計資料
-$total_spaces = count($spaces_list);
-$available_spaces = 0;
+// 取得所有場地（統計用，永遠抓全部）
+$result_spaces = $conn->query("SELECT * FROM spaces ORDER BY space_id ASC");
+if (!$result_spaces) die("查詢錯誤: " . $conn->error);
+$spaces_all = $result_spaces->fetch_all(MYSQLI_ASSOC);
+if (!$spaces_all) $spaces_all = [];
+
+// 統計資料（以全量計算，不受篩選影響）
+$total_spaces      = count($spaces_all);
+$available_spaces  = 0;
 $unavailable_spaces = 0;
-$total_capacity = 0;
-
-foreach ($spaces_list as $space) {
+$total_capacity    = 0;
+foreach ($spaces_all as $space) {
     $total_capacity += intval($space['capacity']);
-    $space_status = $space['space_status'] ?? 'available';
-    if ($space_status === 'available') {
-        $available_spaces++;
-    } else {
-        $unavailable_spaces++;
-    }
+    if (($space['space_status'] ?? 'available') === 'available') $available_spaces++;
+    else $unavailable_spaces++;
 }
+
+// 篩選
+$spaces_list = $spaces_all;
+if ($sp_status !== '') {
+    $spaces_list = array_values(array_filter($spaces_list, function ($s) use ($sp_status) {
+        return ($s['space_status'] ?? 'available') === $sp_status;
+    }));
+}
+// 排序
+usort($spaces_list, function ($a, $b) use ($sp_sort) {
+    if ($sp_sort === 'capacity_asc')  return intval($a['capacity']) - intval($b['capacity']);
+    if ($sp_sort === 'capacity_desc') return intval($b['capacity']) - intval($a['capacity']);
+    return strcmp($a['space_name'], $b['space_name']);
+});
+
+// 重新載入並套用篩選/排序（POST 成功後呼叫）
+$refresh_spaces = function() use ($conn, $sp_status, $sp_sort, &$spaces_all, &$spaces_list) {
+    $res = $conn->query("SELECT * FROM spaces ORDER BY space_id ASC");
+    $spaces_all = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+    $spaces_list = $spaces_all;
+    if ($sp_status !== '') {
+        $spaces_list = array_values(array_filter($spaces_list, function ($s) use ($sp_status) {
+            return ($s['space_status'] ?? 'available') === $sp_status;
+        }));
+    }
+    usort($spaces_list, function ($a, $b) use ($sp_sort) {
+        if ($sp_sort === 'capacity_asc')  return intval($a['capacity']) - intval($b['capacity']);
+        if ($sp_sort === 'capacity_desc') return intval($b['capacity']) - intval($a['capacity']);
+        return strcmp($a['space_name'], $b['space_name']);
+    });
+};
 
 // 處理編輯或刪除動作
 $edit_space = null;
@@ -71,9 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($stmt->execute()) {
                     $success_msg = '場地已更新';
                     $edit_space = null;
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '更新失敗: ' . $stmt->error;
                     $edit_space = [
@@ -104,9 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("i", $space_id);
                 if ($stmt->execute()) {
                     $success_msg = '場地已刪除';
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '刪除失敗: ' . $stmt->error;
                 }
@@ -126,9 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("sis", $space_name, $capacity, $space_status);
                 if ($stmt->execute()) {
                     $success_msg = '場地已新增';
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '新增失敗: ' . $stmt->error;
                 }
@@ -467,6 +488,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <!-- 場地列表 -->
             <div class="panel-row">
                 <h5><i class="bi bi-list-ul"></i> 場地列表</h5>
+                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-3">
+                    <select name="sp_status" class="form-select form-select-sm" style="width:auto">
+                        <option value="">所有狀態</option>
+                        <option value="available"   <?= $sp_status==='available'  ?'selected':'' ?>>可用</option>
+                        <option value="unavailable" <?= $sp_status==='unavailable'?'selected':'' ?>>不可用</option>
+                    </select>
+                    <select name="sp_sort" class="form-select form-select-sm" style="width:auto">
+                        <option value="name"         <?= $sp_sort==='name'        ?'selected':'' ?>>名稱排序</option>
+                        <option value="capacity_asc" <?= $sp_sort==='capacity_asc'?'selected':'' ?>>容量 小→大</option>
+                        <option value="capacity_desc"<?= $sp_sort==='capacity_desc'?'selected':''?>>容量 大→小</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 套用</button>
+                    <?php if ($sp_status !== '' || $sp_sort !== 'name'): ?>
+                    <a href="space_mgmt.php" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> 清除</a>
+                    <?php endif; ?>
+                    <small class="text-muted ms-auto">顯示 <?= count($spaces_list) ?> / <?= $total_spaces ?> 個場地</small>
+                </form>
                 <div style="overflow-x: auto;">
                     <table>
                         <thead>

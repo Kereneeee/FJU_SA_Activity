@@ -9,6 +9,12 @@
 [2026-06-13 19:23:55] COMMIT success event_id=53 user_id=7 club_name=嘻哈文化社 session_count=2
 [2026-06-13 19:40:57] POST received, token_ok=1, user_id=7
 [2026-06-13 19:40:57] COMMIT success event_id=54 user_id=7 club_name=繪本服務學習社 session_count=2
+[2026-06-13 19:52:35] POST received, token_ok=1, user_id=7
+[2026-06-13 19:52:35] COMMIT success event_id=55 user_id=7 club_name=繪本服務學習社 session_count=1
+[2026-06-13 19:58:56] POST received, token_ok=1, user_id=7
+[2026-06-13 19:58:56] COMMIT success event_id=48 user_id=7 club_name=嘻哈文化社 session_count=2
+[2026-06-13 20:35:16] POST received, token_ok=1, user_id=7
+[2026-06-13 20:35:16] COMMIT success event_id=49 user_id=7 club_name=嘻哈文化社 session_count=1
 [2026-06-13 19:46:01] POST received, token_ok=1, user_id=3
 [2026-06-13 19:46:01] COMMIT success event_id=48 user_id=3 club_name=民謠吉他社 session_count=1
 [2026-06-13 20:48:16] POST received, token_ok=1, user_id=3
