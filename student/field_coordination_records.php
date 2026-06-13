@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
     if (!$vr || !in_array($vr['club_id'], $my_club_ids)) {
         echo json_encode(['ok'=>false,'msg'=>'無權限']); exit;
     }
-    if (!$is_in_registration_period) {
+    if (!$fc_manager->isInRegistrationPeriod($vr['setting_id'])) {
         echo json_encode(['ok'=>false,'msg'=>'目前不在場地協調登記期間，無法修改場次']); exit;
     }
     $eid = $vr['event_id'];
@@ -115,20 +115,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
             if (!$res_id || !$date || !$st || !$et) {
                 throw new Exception("場次 $idx 資料不完整：res_id=$res_id, date=$date, st=$st, et=$et");
             }
+            if ($st < '08:30' || $st > '21:30' || $et < '08:30' || $et > '21:30') {
+                throw new Exception("場次 $idx 時間須在 08:30–21:30 之間");
+            }
             $start_dt = $date     . ' ' . $st . ':00';
             $end_dt   = $end_date . ' ' . $et . ':00';
             if (strtotime($start_dt) < time()) {
                 throw new Exception("場次 $idx 開始時間不能早於現在");
             }
+            if (strtotime($end_dt) <= strtotime($start_dt)) {
+                throw new Exception("場次 $idx 結束時間必須晚於開始時間");
+            }
+            $chk_own = $conn->prepare("SELECT 1 FROM reservations WHERE reservation_id=? AND event_id=?");
+            $chk_own->bind_param("ii", $res_id, $eid);
+            $chk_own->execute();
+            $owns = $chk_own->get_result()->num_rows > 0;
+            $chk_own->close();
+            if (!$owns) {
+                throw new Exception("場次 $idx 無法更新：reservation_id=$res_id, event_id=$eid");
+            }
+
             $us = $conn->prepare("UPDATE reservations SET space_id=?, start_time=?, end_time=? WHERE reservation_id=? AND event_id=?");
             if (!$us) throw new Exception('prepare 失敗：' . $conn->error);
             $us->bind_param("issii", $space_id, $start_dt, $end_dt, $res_id, $eid);
             if (!$us->execute()) throw new Exception('更新場次失敗：' . $us->error);
-            $affected = $us->affected_rows;
             $us->close();
-            if ($affected <= 0) {
-                throw new Exception("場次 $idx 無法更新：reservation_id=$res_id, event_id=$eid");
-            }
             $updated_count++;
 
             $session_conflicts = $fc_manager->detectFieldCoordinationConflicts($setting_id, [$space_id], $start_dt, $end_dt, $reg_id);
@@ -250,7 +261,10 @@ foreach ($records as $rec) {
         .record-card.pending  { background:#fef9ec; border-color:#fcd34d; }
         .record-card.approved { background:#f0fdf4; border-color:#86efac; }
         .record-card.rejected { background:#fff1f2; border-color:#fca5a5; }
-        .record-card.conflict { border-color:#f97316; background:#fff7ed; }
+        .record-card.conflict { border-color:#fdba74; }
+        .btn-conflict-toggle { background:#fed7aa; color:#7c2d12; }
+        .btn-conflict-toggle:hover { background:#fdba74; }
+        .btn-conflict-toggle .bi-chevron-down, .btn-conflict-toggle .bi-chevron-up { transition:transform .2s; }
         .badge-status { display:inline-block; padding:.2rem .6rem; border-radius:6px; font-size:.75rem; font-weight:600; }
         .badge-pending  { background:#fde68a; color:#78350f; }
         .badge-approved { background:#bbf7d0; color:#14532d; }
@@ -350,19 +364,38 @@ foreach ($records as $rec) {
                     ?>
                     <div class="record-card <?= $statusKey ?><?= $is_conflict ? ' conflict' : '' ?>" id="rec_<?= $rid ?>">
                         <?php if ($is_conflict): ?>
-                        <div class="conflict-alert mb-2" style="margin-bottom:.5rem!important; flex-direction:column; align-items:stretch;">
-                            <div><i class="bi bi-exclamation-triangle-fill"></i> 此登記與其他社團的場地申請有衝突，請編輯修改時間或刪除：</div>
-                            <ul class="mb-0 mt-1" style="padding-left:1.4rem;">
-                                <?php foreach ($conflicted_sessions[$eid] ?? [] as $si => $confs): ?>
-                                    <?php foreach ($confs as $c): ?>
-                                    <li>
-                                        場次<?= $si + 1 ?>：與
-                                        <strong><?= htmlspecialchars($c['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></strong> 的「<?= htmlspecialchars($c['conflicting_event'], ENT_QUOTES, 'UTF-8') ?>」
-                                        (<?= htmlspecialchars($c['conflicting_time'], ENT_QUOTES, 'UTF-8') ?>) 有場地衝突
-                                    </li>
+                        <div class="mb-2">
+                            <button type="button" class="btn-action btn-conflict-toggle" onclick="toggleConflict(<?= $rid ?>)">
+                                <i class="bi bi-exclamation-triangle-fill"></i> 場地衝突，點此查看詳情
+                                <i class="bi bi-chevron-down" id="conflict_chev_<?= $rid ?>"></i>
+                            </button>
+                            <div class="conflict-alert" id="conflict_<?= $rid ?>" style="display:none; margin-top:.4rem; flex-direction:column; align-items:stretch;">
+                                <div><i class="bi bi-exclamation-triangle-fill"></i> 此登記與下列場地申請有衝突，請編輯修改時間或刪除：</div>
+                                <ul class="mb-0 mt-1" style="padding-left:1.4rem;">
+                                    <?php foreach ($conflicted_sessions[$eid] ?? [] as $si => $confs): ?>
+                                        <?php
+                                        $sess_date = isset($sessions[$si]['start_time']) ? date('Y-m-d', strtotime($sessions[$si]['start_time'])) : '';
+                                        ?>
+                                        <?php foreach ($confs as $c): ?>
+                                        <?php $is_self_club = ($c['conflicting_club'] === $rec['club_name']); ?>
+                                        <li>
+                                            場次<?= $si + 1 ?>：
+                                            <?php if ($is_self_club): ?>
+                                            與您自己另一筆登記「<?= htmlspecialchars($c['conflicting_event'], ENT_QUOTES, 'UTF-8') ?>」
+                                            <?php else: ?>
+                                            與 <strong><?= htmlspecialchars($c['conflicting_club'], ENT_QUOTES, 'UTF-8') ?></strong> 的「<?= htmlspecialchars($c['conflicting_event'], ENT_QUOTES, 'UTF-8') ?>」
+                                            <?php endif; ?>
+                                            (<?= htmlspecialchars($c['conflicting_time'], ENT_QUOTES, 'UTF-8') ?>) 時間重疊
+                                            <?php if ($sess_date): ?>
+                                            <a href="calendar.php?year=<?= date('Y', strtotime($sess_date)) ?>&month=<?= date('n', strtotime($sess_date)) ?>&space_id=<?= intval($c['space_id']) ?>&date=<?= $sess_date ?>" target="_blank" class="ms-1" style="font-size:.78rem; white-space:nowrap;">
+                                                <i class="bi bi-calendar3"></i> 查看行事曆
+                                            </a>
+                                            <?php endif; ?>
+                                        </li>
+                                        <?php endforeach; ?>
                                     <?php endforeach; ?>
-                                <?php endforeach; ?>
-                            </ul>
+                                </ul>
+                            </div>
                         </div>
                         <?php endif; ?>
 
@@ -498,6 +531,20 @@ foreach ($records as $rec) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+    // 依時段限制可選分鐘（08:30–21:30，08時只能選30/40/50，21時只能選00/10/20/30）
+    function applyEditMinuteRestriction(hourSel, minSel) {
+        if (!hourSel || !minSel) return;
+        var disabledMins = [];
+        if (hourSel.value === '08') disabledMins = ['00','10','20'];
+        else if (hourSel.value === '21') disabledMins = ['40','50'];
+        Array.prototype.forEach.call(minSel.options, function(opt) {
+            opt.disabled = disabledMins.indexOf(opt.value) !== -1;
+        });
+        if (disabledMins.indexOf(minSel.value) !== -1) {
+            minSel.value = hourSel.value === '08' ? '30' : '00';
+        }
+    }
+
     // 同步 hour/min → hidden time value
     document.addEventListener('change', function(e) {
         var el = e.target;
@@ -506,19 +553,37 @@ foreach ($records as $rec) {
         var row = el.closest('.edit-sess-row');
         if (!row) return;
         if (el.classList.contains('er-sh') || el.classList.contains('er-sm')) {
-            var h = row.querySelector('.er-sh').value;
-            var m = row.querySelector('.er-sm').value;
-            row.querySelector('.er-st').value = h + ':' + m;
+            var sh = row.querySelector('.er-sh'), sm = row.querySelector('.er-sm');
+            if (el.classList.contains('er-sh')) applyEditMinuteRestriction(sh, sm);
+            row.querySelector('.er-st').value = sh.value + ':' + sm.value;
         } else {
-            var h = row.querySelector('.er-eh').value;
-            var m = row.querySelector('.er-em').value;
-            row.querySelector('.er-et').value = h + ':' + m;
+            var eh = row.querySelector('.er-eh'), em = row.querySelector('.er-em');
+            if (el.classList.contains('er-eh')) applyEditMinuteRestriction(eh, em);
+            row.querySelector('.er-et').value = eh.value + ':' + em.value;
         }
+    });
+
+    // 初始化各編輯場次的分鐘限制
+    document.querySelectorAll('.edit-sess-row').forEach(function(row) {
+        applyEditMinuteRestriction(row.querySelector('.er-sh'), row.querySelector('.er-sm'));
+        applyEditMinuteRestriction(row.querySelector('.er-eh'), row.querySelector('.er-em'));
     });
 
     function toggleEdit(rid) {
         var ea = document.getElementById('edit_' + rid);
         if (ea) ea.style.display = ea.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function toggleConflict(rid) {
+        var box  = document.getElementById('conflict_' + rid);
+        var chev = document.getElementById('conflict_chev_' + rid);
+        if (!box) return;
+        var show = box.style.display === 'none';
+        box.style.display = show ? 'flex' : 'none';
+        if (chev) {
+            chev.classList.toggle('bi-chevron-up', show);
+            chev.classList.toggle('bi-chevron-down', !show);
+        }
     }
 
     async function deleteReg(rid, name) {

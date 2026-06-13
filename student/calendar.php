@@ -17,6 +17,12 @@ $current_page = 'calendar';
 
 $selected_year = intval($_GET['year'] ?? date('Y'));
 $selected_month = intval($_GET['month'] ?? date('m'));
+
+// 從場協登記紀錄連動跳轉至指定日期（用於直接查看衝突）
+$target_date = '';
+if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date'] ?? '')) {
+    $target_date = $_GET['date'];
+}
 // 載入整年資料，讓切換月份時每個月都能顯示正確的登記數量
 $month_start = sprintf('%04d-01-01 00:00:00', $selected_year);
 $month_end   = sprintf('%04d-12-31 23:59:59', $selected_year);
@@ -113,7 +119,6 @@ $sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_id, e.even
             JOIN reservations r2 ON e2.event_id = r2.event_id
             WHERE fcr2.setting_id = fcr.setting_id
               AND fcr2.registration_id != fcr.registration_id
-              AND fcr2.is_approved IS NULL
               AND r2.space_id = r.space_id
               AND r2.start_time < r.end_time
               AND r.start_time < r2.end_time
@@ -372,6 +377,7 @@ if ($stmt) {
         const bookings = <?php echo json_encode($bookings); ?>;
         const initialYear = <?php echo $selected_year; ?>;
         const initialMonth = <?php echo $selected_month - 1; ?>;
+        let targetDate = <?php echo json_encode($target_date); ?>;
         let selectedBuildingId = <?php echo $selectedBuildingId ? $selectedBuildingId : 'null'; ?>;
         let selectedRoomId = <?php echo $selectedRoomId ? $selectedRoomId : 'null'; ?>;
         let selectedDate = null;
@@ -543,6 +549,7 @@ if ($stmt) {
             startDay.setDate(startDay.getDate() - firstDay.getDay());
 
             calendarGrid.innerHTML = '';
+            let targetCellDate = null;
             for (let i = 0; i < 42; i++) {
                 const date = new Date(startDay);
                 date.setDate(startDay.getDate() + i);
@@ -550,6 +557,10 @@ if ($stmt) {
                 const cell = document.createElement('div');
                 cell.className = 'day-card';
                 if (date.getMonth() !== month) cell.classList.add('other-month');
+                if (targetDate && dateStr === targetDate && date.getMonth() === month) {
+                    cell.classList.add('selected');
+                    targetCellDate = new Date(date);
+                }
 
                 const dayNumber = document.createElement('div');
                 dayNumber.className = 'day-number';
@@ -581,6 +592,13 @@ if ($stmt) {
                     cell.addEventListener('click', () => selectDate(date));
                 }
                 calendarGrid.appendChild(cell);
+            }
+
+            if (targetCellDate) {
+                selectDate(targetCellDate);
+                targetDate = null; // 僅在初次載入時自動跳轉，切換月份後不再強制跳轉
+                const cells = calendarGrid.querySelectorAll('.day-card.selected');
+                if (cells.length) cells[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
 
