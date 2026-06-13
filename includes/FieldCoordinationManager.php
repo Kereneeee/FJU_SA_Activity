@@ -232,17 +232,17 @@ class FieldCoordinationManager {
         
         // 查找同一設定下、相同場地、時間重疊的其他場協登記
         foreach ($space_ids as $space_id) {
-            $sql = "SELECT DISTINCT fr.registration_id, fr.club_name, e.event_name, 
-                           e.start_time, e.end_time, e.user_id, r.space_id
+            $sql = "SELECT DISTINCT fr.registration_id, fr.club_name, e.event_name,
+                           r.start_time, r.end_time, e.user_id, r.space_id
                     FROM field_coordination_registrations fr
                     JOIN events e ON fr.event_id = e.event_id
                     JOIN reservations r ON e.event_id = r.event_id
                     WHERE fr.setting_id = ?
                     AND r.space_id = ?
                     AND (
-                        (e.start_time < ? AND e.end_time > ?)
-                        OR (e.start_time >= ? AND e.start_time < ?)
-                        OR (e.end_time > ? AND e.end_time <= ?)
+                        (r.start_time < ? AND r.end_time > ?)
+                        OR (r.start_time >= ? AND r.start_time < ?)
+                        OR (r.end_time > ? AND r.end_time <= ?)
                     )";
             
             if ($exclude_registration_id) {
@@ -377,6 +377,41 @@ class FieldCoordinationManager {
     }
 
     /**
+     * 撤銷已核准的場協登記，改回待審核（is_approved = NULL）
+     * 僅適用於目前狀態為「核准／調整核准」的登記，因為拒絕的登記其暫定預約已被刪除，無法還原。
+     */
+    public function revertFieldCoordinationRegistration($registration_id) {
+        $stmt = $this->conn->prepare(
+            "SELECT event_id FROM field_coordination_registrations WHERE registration_id = ? AND is_approved = 1");
+        $stmt->bind_param("i", $registration_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) return false;
+        $event_id = $row['event_id'];
+
+        $stmt = $this->conn->prepare(
+            "UPDATE field_coordination_registrations SET is_approved = NULL, approval_note = NULL, updated_at = NOW() WHERE registration_id = ?");
+        $stmt->bind_param("i", $registration_id);
+        $stmt->execute();
+        $stmt->close();
+
+        // 改回暫定預約，待重新審核
+        $stmt = $this->conn->prepare(
+            "UPDATE reservations SET is_field_coordination_preliminary = 1 WHERE event_id = ?");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        $stmt = $this->conn->prepare("UPDATE events SET status = 'pending' WHERE event_id = ?");
+        $stmt->bind_param("i", $event_id);
+        $stmt->execute();
+        $stmt->close();
+
+        return true;
+    }
+
+    /**
      * 取得所有場協設定（管理員用）
      */
     public function getAllFieldCoordinationSettings($limit = null) {
@@ -444,6 +479,14 @@ class FieldCoordinationManager {
         $result     = $stmt->execute();
         $setting_id = $stmt->insert_id;
         $stmt->close();
+
+        if ($result) {
+            // 新設定建立後，將其他舊的「啟用中」設定改為「關閉」，避免同時有多筆 active 造成判斷錯亂
+            $stmt2 = $this->conn->prepare("UPDATE field_coordination_settings SET status = 'inactive' WHERE setting_id != ? AND status = 'active'");
+            $stmt2->bind_param("i", $setting_id);
+            $stmt2->execute();
+            $stmt2->close();
+        }
 
         return $result ? $setting_id : false;
     }

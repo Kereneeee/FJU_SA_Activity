@@ -555,11 +555,14 @@ foreach ($buildings as $building) {
             <div style="margin-bottom:1rem; background:white; border-radius:14px; padding:.75rem 1.1rem; box-shadow:0 2px 8px rgba(15,23,42,.06);">
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;">
                     <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
-                        <?php if (!$active_setting): ?>
-                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-clock"></i> 登記未開放</span>
-                        <?php elseif ($has_meeting_passed): ?>
+                        <?php if ($has_meeting_passed): ?>
                             <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#6b7280;background:#f3f4f6;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check2-all"></i> 場協已結束</span>
-                            <span style="font-size:.82rem;color:#9ca3af;">大會：<?= date('Y-m-d', strtotime($active_setting['coordination_meeting_date'])) ?></span>
+                            <span style="font-size:.82rem;color:#9ca3af;">大會：<?= date('Y-m-d', strtotime($latest_setting['coordination_meeting_date'])) ?></span>
+                        <?php elseif ($is_closed): ?>
+                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#6b7280;background:#f3f4f6;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-hourglass-split"></i> 場協結果整理中</span>
+                            <span style="font-size:.82rem;color:#9ca3af;">大會：<?= date('Y-m-d', strtotime($latest_setting['coordination_meeting_date'])) ?></span>
+                        <?php elseif (!$active_setting): ?>
+                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-clock"></i> 登記未開放</span>
                         <?php else: ?>
                             <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#065f46;background:#d1fae5;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check-circle-fill"></i> 登記開放中</span>
                             <span style="font-size:.82rem;color:#6b7280;">開放登記時間 <?= date('m/d', strtotime($active_setting['registration_start_date'])) ?> ~ <?= date('m/d', strtotime($active_setting['registration_end_date'])) ?></span>
@@ -635,10 +638,10 @@ foreach ($buildings as $building) {
                     <i class="bi bi-info-circle"></i>
                     <?php if ($is_closed): ?>
                     場協結果整理中，請等待 <?= date('n月j日', strtotime($latest_setting['coordination_meeting_date'])) ?> 的場協大會。如有問題可聯絡課指組老師。
+                    <?php elseif ($has_meeting_passed): ?>
+                    場地協調大會已結束，場地申請已恢復至先到先得制，請改用常規場地申請功能。
                     <?php elseif (!$active_setting): ?>
                     目前不在場協登記期間，表單已禁用。
-                    <?php else: ?>
-                    場地協調大會已結束，場地申請已恢復至先到先得制。
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
