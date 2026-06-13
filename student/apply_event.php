@@ -218,7 +218,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $proposal_filename = null;
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
                 if (!validate_proposal_upload($_FILES['proposal_document'])) {
-                    throw new Exception("企劃書只允許上傳 PDF 格式。");
+                    throw new Exception("企劃書只允許上傳 PDF或 Word 格式。");
                 }
                 $ext = strtolower(pathinfo($_FILES['proposal_document']['name'] ?? '', PATHINFO_EXTENSION));
                 $ext = in_array($ext, ['pdf', 'doc', 'docx'], true) ? $ext : 'pdf';
