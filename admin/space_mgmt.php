@@ -45,6 +45,23 @@ usort($spaces_list, function ($a, $b) use ($sp_sort) {
     return strcmp($a['space_name'], $b['space_name']);
 });
 
+// 重新載入並套用篩選/排序（POST 成功後呼叫）
+$refresh_spaces = function() use ($conn, $sp_status, $sp_sort, &$spaces_all, &$spaces_list) {
+    $res = $conn->query("SELECT * FROM spaces ORDER BY space_id ASC");
+    $spaces_all = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+    $spaces_list = $spaces_all;
+    if ($sp_status !== '') {
+        $spaces_list = array_values(array_filter($spaces_list, function ($s) use ($sp_status) {
+            return ($s['space_status'] ?? 'available') === $sp_status;
+        }));
+    }
+    usort($spaces_list, function ($a, $b) use ($sp_sort) {
+        if ($sp_sort === 'capacity_asc')  return intval($a['capacity']) - intval($b['capacity']);
+        if ($sp_sort === 'capacity_desc') return intval($b['capacity']) - intval($a['capacity']);
+        return strcmp($a['space_name'], $b['space_name']);
+    });
+};
+
 // 處理編輯或刪除動作
 $edit_space = null;
 $edit_error = '';
@@ -81,9 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($stmt->execute()) {
                     $success_msg = '場地已更新';
                     $edit_space = null;
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '更新失敗: ' . $stmt->error;
                     $edit_space = [
@@ -114,9 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("i", $space_id);
                 if ($stmt->execute()) {
                     $success_msg = '場地已刪除';
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '刪除失敗: ' . $stmt->error;
                 }
@@ -136,9 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt->bind_param("sis", $space_name, $capacity, $space_status);
                 if ($stmt->execute()) {
                     $success_msg = '場地已新增';
-                    // 刷新列表
-                    $result_spaces = $conn->query($sql_spaces);
-                    $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
+                    $refresh_spaces();
                 } else {
                     $edit_error = '新增失敗: ' . $stmt->error;
                 }
