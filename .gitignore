@@ -8,6 +8,7 @@ document/*.docx
 
 # 執行期產生的 log（各機器自行維護，不入版本控制）
 document/mail_send.log
+document/apply_event_debug.log
 
 # 系統檔
 .DS_Store
