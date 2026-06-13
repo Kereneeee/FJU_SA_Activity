@@ -506,19 +506,16 @@ if ($event_id === 0 && $request_id === 0) {
         th, td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
         th { background: #f3f4f6; color: #374151; font-weight: 600; }
         tbody tr:hover { background: #f9fafb; }
-        #reviewTable { table-layout: fixed; width: 100%; }
+        #reviewTable { min-width: 960px; }
         #reviewTable th, #reviewTable td { white-space: normal; word-break: break-word; vertical-align: top; }
-        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1)  { width: 11%; }
-        #reviewTable th:nth-child(2),  #reviewTable td:nth-child(2)  { width: 13%; }
-        #reviewTable th:nth-child(3),  #reviewTable td:nth-child(3)  { width: 10%; }
-        #reviewTable th:nth-child(4),  #reviewTable td:nth-child(4)  { width: 9%; }
-        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5)  { width: 7%; }
-        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6)  { width: 10%; }
-        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7)  { width: 11%; }
-        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8)  { width: 10%; }
-        #reviewTable th:nth-child(9),  #reviewTable td:nth-child(9)  { width: 8%; }
-        #reviewTable th:nth-child(10), #reviewTable td:nth-child(10) { width: 11%; }
-        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5) { white-space: nowrap; }
+        /* 案件類型、活動類型、申請時間、活動時間、審核時間、狀態、操作 不換行 */
+        #reviewTable th:nth-child(1),  #reviewTable td:nth-child(1),
+        #reviewTable th:nth-child(5),  #reviewTable td:nth-child(5),
+        #reviewTable th:nth-child(6),  #reviewTable td:nth-child(6),
+        #reviewTable th:nth-child(7),  #reviewTable td:nth-child(7),
+        #reviewTable th:nth-child(8),  #reviewTable td:nth-child(8),
+        #reviewTable th:nth-child(9),  #reviewTable td:nth-child(9),
+        #reviewTable th:nth-child(10), #reviewTable td:nth-child(10) { white-space: nowrap; }
         .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.85rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
         .status-pending   { background: #f0e8c0; color: #6b5a20; }
         .status-approved  { background: #70a3a7; color: #1a3f42; }
@@ -994,7 +991,7 @@ if ($event_id === 0 && $request_id === 0) {
                             <p>此分類目前沒有申請</p>
                         </div>
                     <?php else: ?>
-                        <div>
+                        <div style="overflow-x:auto;">
                             <table id="reviewTable">
                                 <thead>
                                     <tr>
