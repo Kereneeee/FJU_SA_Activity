@@ -1,11 +1,9 @@
 <?php
 // API 端點：處理取消申請
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once '../DB/db_config.php';
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => '未登入']);
     exit;

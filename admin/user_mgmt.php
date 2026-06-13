@@ -1,10 +1,8 @@
 <?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
     exit();
 }
@@ -141,6 +139,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $upn->execute();
             $upn->close();
 
+            // 寄信通知提名人（社長）
+            try {
+                require_once __DIR__ . '/../includes/mailer.php';
+                $nominator_q = $conn->prepare("SELECT u.email, u.name, c.club_name, nu.name AS nominee_name FROM users u JOIN clubs c ON c.club_id=? JOIN users nu ON nu.user_id=? WHERE u.user_id=?");
+                $nominator_q->bind_param("sii", $nom['club_id'], $nom['nominated_user_id'], $nom['nominator_user_id']);
+                $nominator_q->execute();
+                $nrow = $nominator_q->get_result()->fetch_assoc();
+                $nominator_q->close();
+                if ($nrow && $nrow['email']) {
+                    sendNominationReviewedMail($nrow['email'], $nrow['name'], [
+                        'action'        => 'approved',
+                        'nominee_name'  => $nrow['nominee_name'],
+                        'officer_title' => $nom['officer_title'],
+                        'club_name'     => $nrow['club_name'],
+                        'review_note'   => '',
+                    ]);
+                }
+            } catch (\Throwable $e) {}
+
             $message      = '已核准，幹部身分生效。';
             $message_type = 'success';
             $back_club    = $nom['club_id'];
@@ -162,10 +179,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $ns->close();
 
         if ($nom_row) {
+            // 先取得完整提名資料（駁回前）
+            $full_nom = $conn->prepare("SELECT n.*, u.email AS nominator_email, u.name AS nominator_name, nu.name AS nominee_name, c.club_name FROM officer_nominations n JOIN users u ON u.user_id=n.nominator_user_id JOIN users nu ON nu.user_id=n.nominated_user_id JOIN clubs c ON c.club_id=n.club_id WHERE n.nomination_id=?");
+            $full_nom->bind_param("i", $nomination_id);
+            $full_nom->execute();
+            $full_row = $full_nom->get_result()->fetch_assoc();
+            $full_nom->close();
+
             $upn = $conn->prepare("UPDATE officer_nominations SET status='rejected', review_note=?, reviewed_at=NOW() WHERE nomination_id=?");
             $upn->bind_param("si", $review_note, $nomination_id);
             $upn->execute();
             $upn->close();
+
+            // 寄信通知提名人（社長）
+            try {
+                require_once __DIR__ . '/../includes/mailer.php';
+                if ($full_row && $full_row['nominator_email']) {
+                    sendNominationReviewedMail($full_row['nominator_email'], $full_row['nominator_name'], [
+                        'action'        => 'rejected',
+                        'nominee_name'  => $full_row['nominee_name'],
+                        'officer_title' => $full_row['officer_title'],
+                        'club_name'     => $full_row['club_name'],
+                        'review_note'   => $review_note,
+                    ]);
+                }
+            } catch (\Throwable $e) {}
+
             $message      = '已駁回提名。';
             $message_type = 'success';
             $back_club    = $nom_row['club_id'];

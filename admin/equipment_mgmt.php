@@ -1,10 +1,8 @@
 ﻿<?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
     exit();
 }
@@ -35,15 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $total_quantity = intval($_POST['total_quantity'] ?? 0);
         $equipment_status = trim($_POST['equipment_status'] ?? 'available');
         $borrowing_limit = intval($_POST['borrowing_limit'] ?? 0);
-        $status_value = intval($_POST['status'] ?? 0);
-        
+
         // 驗證
         if ($name === '') {
             $edit_error = '請填寫器材名稱';
         } else {
-            $stmt = $conn->prepare("UPDATE equipment SET code = ?, name = ?, description = ?, borrowing_limit = ?, total_quantity = ?, equipment_status = ?, status = ? WHERE equipment_id = ?");
+            $stmt = $conn->prepare("UPDATE equipment SET code = ?, name = ?, description = ?, borrowing_limit = ?, total_quantity = ?, equipment_status = ? WHERE equipment_id = ?");
             if ($stmt) {
-                $stmt->bind_param("sssiisii", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status, $status_value, $equipment_id);
+                $stmt->bind_param("sssiisi", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status, $equipment_id);
                 if ($stmt->execute()) {
                     $success_msg = '器材已更新';
                     $edit_equipment = null;
@@ -84,15 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $total_quantity = intval($_POST['total_quantity'] ?? 0);
         $equipment_status = trim($_POST['equipment_status'] ?? 'available');
         $borrowing_limit = intval($_POST['borrowing_limit'] ?? 0);
-        $status_value = 0;
-        
+
         // 驗證
         if ($name === '') {
             $edit_error = '請填寫器材名稱';
         } else {
-            $stmt = $conn->prepare("INSERT INTO equipment (code, name, description, borrowing_limit, total_quantity, equipment_status, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO equipment (code, name, description, borrowing_limit, total_quantity, equipment_status) VALUES (?, ?, ?, ?, ?, ?)");
             if ($stmt) {
-                $stmt->bind_param("sssiisi", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status, $status_value);
+                $stmt->bind_param("sssiis", $code, $name, $description, $borrowing_limit, $total_quantity, $equipment_status);
                 if ($stmt->execute()) {
                     $success_msg = '器材已新增';
                 } else {
@@ -644,7 +640,6 @@ foreach ($borrowing_details as $borrow) {
                         <form method="POST" class="mb-0">
                             <input type="hidden" name="action" value="save">
                             <input type="hidden" name="equipment_id" value="<?php echo intval($edit_equipment['equipment_id']); ?>">
-                            <input type="hidden" name="status" value="<?php echo intval($edit_equipment['status'] ?? 0); ?>">
                             <div class="modal-header">
                                 <h5 class="modal-title"><i class="bi bi-pencil-square"></i> 編輯器材</h5>
                                 <a href="equipment_mgmt.php" class="btn-close" aria-label="關閉"></a>
