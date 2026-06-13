@@ -421,7 +421,7 @@ if ($noti_result) {
                 <?php if ($is_officer): ?>
                 <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/apply_event.php'">
                     <div class="action-top">
-                        <span>活動申請</span>
+                        <span>場地器材申請</span>
                         <div class="action-icon"><i class="bi bi-plus-lg"></i></div>
                     </div>
                     <h6>立即新增活動</h6>
@@ -429,7 +429,7 @@ if ($noti_result) {
                 </div>
                 <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/calendar.php'">
                     <div class="action-top">
-                        <span>場地申請</span>
+                        <span>空間日曆</span>
                         <div class="action-icon"><i class="bi bi-building"></i></div>
                     </div>
                     <h6>預約可用場地</h6>

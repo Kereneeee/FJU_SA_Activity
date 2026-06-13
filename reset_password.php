@@ -81,7 +81,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $step === "form") {
 body {
     height: 100vh;
     margin: 0;
-    background: linear-gradient(135deg, #74ebd5, #9face6);
+    background: #d5e3ea;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -91,22 +91,22 @@ body {
     width: 420px;
     padding: 35px;
     border-radius: 20px;
-    background: rgba(255,255,255,0.92);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    background: #ffffff;
+    box-shadow: 0 10px 30px rgba(15,23,42,0.09);
 }
 .title { text-align: center; margin-bottom: 25px; }
-.title i { font-size: 40px; color: #4a6cf7; }
-.title h4 { margin-top: 10px; font-weight: bold; }
+.title i { font-size: 40px; color: #1e4d6b; }
+.title h4 { margin-top: 10px; font-weight: bold; color: #1e4d6b; }
 .btn-primary-custom {
     border-radius: 10px;
-    background: linear-gradient(135deg, #4a6cf7, #6a8dff);
+    background: #1e4d6b;
     border: none;
     color: white;
     transition: 0.3s;
 }
-.btn-primary-custom:hover { transform: scale(1.03); color: white; }
-.form-control { border-radius: 10px; }
+.btn-primary-custom:hover { background: #14394f; transform: scale(1.02); color: white; }
+.form-control { border-radius: 10px; border-color: #d5e3ea; }
+.form-control:focus { border-color: #1e4d6b; box-shadow: 0 0 0 0.2rem rgba(30,77,107,0.15); }
 .password-wrapper { position: relative; }
 .password-wrapper i.toggle-eye {
     position: absolute;

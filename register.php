@@ -78,7 +78,7 @@ function fe($k, $errors) { return isset($errors[$k]) ? 'is-invalid' : ''; }
 body {
     font-family: 'Nunito', 'Segoe UI', sans-serif;
     min-height: 100vh;
-    background: #f0f4ff;
+    background: #d5e3ea;
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -101,11 +101,11 @@ body {
     justify-content: center;
     width: 56px; height: 56px;
     border-radius: 16px;
-    background: linear-gradient(135deg, #6366f1, #a855f7);
+    background: #1e4d6b;
     color: white;
     font-size: 26px;
     margin-bottom: 12px;
-    box-shadow: 0 8px 20px rgba(99,102,241,.3);
+    box-shadow: 0 8px 20px rgba(30,77,107,.3);
 }
 .page-header h1 {
     font-size: 24px;
@@ -148,7 +148,7 @@ body {
 }
 .step.active {
     background: white;
-    color: #6366f1;
+    color: #1e4d6b;
     box-shadow: 0 2px 8px rgba(0,0,0,.08);
 }
 .step span {
@@ -186,8 +186,8 @@ body {
     transition: border-color .2s, box-shadow .2s;
 }
 .form-control:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+    border-color: #1e4d6b;
+    box-shadow: 0 0 0 3px rgba(30,77,107,.12);
     background: #fff;
     outline: none;
 }
@@ -207,7 +207,7 @@ body {
     background: none; border: none; padding: 0;
     color: #94a3b8; cursor: pointer; font-size: 15px;
 }
-.pwd-wrap .eye-btn:hover { color: #6366f1; }
+.pwd-wrap .eye-btn:hover { color: #1e4d6b; }
 
 /* 強度條 */
 .strength-wrap { margin-top: 6px; }
@@ -230,7 +230,7 @@ body {
 .btn-submit {
     width: 100%; padding: 13px;
     border-radius: 12px;
-    background: linear-gradient(135deg, #6366f1, #a855f7);
+    background: #1e4d6b;
     border: none; color: white;
     font-size: 15px; font-weight: 700;
     letter-spacing: .3px;
@@ -240,8 +240,9 @@ body {
     cursor: pointer;
 }
 .btn-submit:hover {
+    background: #14394f;
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(99,102,241,.35);
+    box-shadow: 0 8px 20px rgba(30,77,107,.35);
 }
 
 /* 底部連結 */
@@ -252,7 +253,7 @@ body {
     color: #94a3b8;
 }
 .bottom-link a {
-    color: #6366f1; font-weight: 700;
+    color: #1e4d6b; font-weight: 700;
     text-decoration: none;
 }
 .bottom-link a:hover { text-decoration: underline; }

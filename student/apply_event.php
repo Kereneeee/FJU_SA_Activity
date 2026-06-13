@@ -94,6 +94,7 @@ if ($result_equipment) {
 // 表單送出時的場次資料（用於還原）
 $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','venue_id'=>'']];
 $today_date = date('Y-m-d');
+$semester_end_date = '2026-06-30';
 
 // ── Flash 訊息（PRG 後顯示）────────────────────────────────
 if (!empty($_SESSION['flash_message'])) {
@@ -164,6 +165,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $errors[] = "場次{$n}：開始日期不能為過往日期，請選擇今日或之後的日期";
         if (!empty($sess['end_date']) && $sess['end_date'] < $today_date)
             $errors[] = "場次{$n}：結束日期不能為過往日期，請選擇今日或之後的日期";
+        if (!empty($sess['date']) && $sess['date'] > $semester_end_date)
+            $errors[] = "場次{$n}：開始日期不能超過本學期最後一天（{$semester_end_date}）";
+        if (!empty($sess['end_date']) && $sess['end_date'] > $semester_end_date)
+            $errors[] = "場次{$n}：結束日期不能超過本學期最後一天（{$semester_end_date}）";
         if (!empty($sess['date']) && !empty($sess['start_time'])) {
             $sess_start_ts = strtotime($sess['date'] . ' ' . $sess['start_time'] . ':00');
             if ($sess_start_ts !== false && $sess_start_ts <= time())
@@ -519,7 +524,33 @@ foreach ($venues as $v) {
         .btn-remove-session:hover { background:#fee2e2; }
         .session-fields { display:grid; grid-template-columns:1.2fr 1fr 1.2fr 1fr 2fr; gap:0.65rem; align-items:end; }
         .session-field label { display:block; font-size:0.8rem; color:#6b7280; margin-bottom:0.25rem; font-weight:500; }
+        .session-field .form-control { width:100%; }
+        .session-field .form-control,
+        .session-field .form-select { height:calc(2.25rem + 2px); padding-top:0.4rem; padding-bottom:0.4rem; box-sizing:border-box; }
+        .time-selects .time-hour, .time-selects .time-minute {
+            width:62px !important; flex:none;
+            padding-left:0.5rem; padding-right:1.3rem;
+            background-position:right 0.35rem center;
+            background-size:14px 11px;
+        }
         .btn-add-session { display:flex; align-items:center; justify-content:center; gap:0.5rem; width:100%; border:2px dashed #c8d6df; border-radius:12px; padding:0.75rem; background:white; color:var(--primary); font-weight:600; font-size:0.92rem; cursor:pointer; transition:all 0.2s; margin-top:0.25rem; }
+        /* 場次內「選擇器材借用時段」欄位高度一致 */
+        .session-equip-panel .form-control,
+        .session-equip-panel .form-select,
+        .session-equip-panel .query-equip-btn { height:2.2rem; box-sizing:border-box; }
+        .session-equip-panel .form-control,
+        .session-equip-panel .form-select { padding-top:0.3rem; padding-bottom:0.3rem; }
+        .session-equip-panel .sess-borrow-h, .session-equip-panel .sess-borrow-m,
+        .session-equip-panel .sess-return-h, .session-equip-panel .sess-return-m {
+            width:54px !important;
+            padding-left:0.4rem; padding-right:1.15rem;
+            background-position:right 0.3rem center;
+            background-size:13px 10px;
+        }
+        .session-equip-panel .query-equip-btn {
+            display:inline-flex; align-items:center; justify-content:center;
+            min-width:9.5rem;
+        }
         .btn-add-session:hover { border-color:var(--primary); background:rgba(30,77,107,0.04); }
         /* 特殊旗標 */
         .flag-options { display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:0.6rem; }
@@ -678,7 +709,7 @@ foreach ($venues as $v) {
                         </div>
                         <div class="col-md-6">
                             <h5 class="fw-bold mb-1"><i class="bi bi-upload me-1"></i>活動企劃書上傳</h5>
-                            <p class="text-muted small mb-3">可上傳活動企劃書供審核參考（選填，PDF / Word）。</p>
+                            <p class="text-muted small mb-3">可上傳活動企劃書供審核參考（選填，PDF / Docx）。</p>
                             <input type="file" name="proposal_document" class="form-control" accept=".pdf,.doc,.docx">
                             <div class="alert alert-info mt-2" style="border-radius:8px; font-size:0.85rem; margin-bottom:0;">
                                 <i class="bi bi-info-circle me-1"></i>三單仍需紙本繳交，<strong>無須電子上傳</strong>。
@@ -708,7 +739,7 @@ foreach ($venues as $v) {
                             <div class="session-fields">
                                 <div class="session-field">
                                     <label>開始日期 *</label>
-                                    <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" required>
+                                    <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" max="<?= $semester_end_date ?>" required>
                                 </div>
                                 <div class="session-field">
                                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -718,7 +749,6 @@ foreach ($venues as $v) {
                                             <option value="">時</option>
                                             <?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);echo "<option value=\"$hh\"".($sh===$hh?' selected':'').">$hh</option>";}?>
                                         </select>
-                                        <span style="padding:0 4px;font-weight:600">:</span>
                                         <select class="form-select time-minute" style="width:auto">
                                             <option value="">分</option>
                                             <?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);echo "<option value=\"$mm\"".($sm===$mm?' selected':'').">$mm</option>";}?>
@@ -728,7 +758,7 @@ foreach ($venues as $v) {
                                 </div>
                                 <div class="session-field">
                                     <label>結束日期 *</label>
-                                    <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date']??$sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" required>
+                                    <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date']??$sess['date']??'',ENT_QUOTES,'UTF-8') ?>" min="<?= $today_date ?>" max="<?= $semester_end_date ?>" required>
                                 </div>
                                 <div class="session-field">
                                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -738,7 +768,6 @@ foreach ($venues as $v) {
                                             <option value="">時</option>
                                             <?php for($h=8;$h<=21;$h++){$hh=sprintf('%02d',$h);echo "<option value=\"$hh\"".($eh===$hh?' selected':'').">$hh</option>";}?>
                                         </select>
-                                        <span style="padding:0 4px;font-weight:600">:</span>
                                         <select class="form-select time-minute" style="width:auto">
                                             <option value="">分</option>
                                             <?php foreach([0,10,20,30,40,50] as $m){$mm=sprintf('%02d',$m);echo "<option value=\"$mm\"".($em===$mm?' selected':'').">$mm</option>";}?>
@@ -810,7 +839,7 @@ foreach ($venues as $v) {
                                                     </select>
                                                 </div>
                                             </div>
-                                            <button type="button" onclick="querySessionEquip(this)"
+                                            <button type="button" class="query-equip-btn" onclick="querySessionEquip(this)"
                                                 style="background:#1e4d6b;color:white;border:none;border-radius:8px;padding:0.55rem 0.9rem;font-weight:600;cursor:pointer;white-space:nowrap;font-size:0.85rem;transition:background 0.2s;"
                                                 onmouseover="this.style.background='#14394f'" onmouseout="this.style.background='#1e4d6b'">
                                                 <i class="bi bi-search me-1"></i>查詢可用數量
@@ -1042,11 +1071,13 @@ function updateFlagWarning() {
 // ── 場次管理 ─────────────────────────────────────────────
 const venueOptions = <?= json_encode($venues_for_js) ?>;
 const todayDateString = <?= json_encode($today_date) ?>;
+const semesterEndDateString = <?= json_encode($semester_end_date) ?>;
 let sessionCount   = <?= count($sessions_data) ?>;
 
 function applySessionDateLimits() {
     document.querySelectorAll('.session-row input[type="date"]').forEach(input => {
         input.min = todayDateString;
+        input.max = semesterEndDateString;
     });
 }
 
@@ -1054,6 +1085,11 @@ function validateSessionDateInput(input) {
     if (!input || !input.value) return true;
     if (input.value < todayDateString) {
         alert('不能申請過往日期，請選擇今日或之後的日期。');
+        input.value = '';
+        return false;
+    }
+    if (input.value > semesterEndDateString) {
+        alert('日期不能超過本學期最後一天（' + semesterEndDateString + '）。');
         input.value = '';
         return false;
     }
@@ -1075,7 +1111,6 @@ function buildTimeSelects(fieldName, value) {
     });
     return `<div class="time-selects d-flex align-items-center gap-1">` +
         `<select class="form-select time-hour" style="width:auto">${hoursOpts}</select>` +
-        `<span style="padding:0 4px;font-weight:600">:</span>` +
         `<select class="form-select time-minute" style="width:auto">${minsOpts}</select>` +
         `</div>` +
         `<input type="hidden" name="${fieldName}" class="time-value" value="${value||''}">`;
@@ -1135,7 +1170,7 @@ function buildSessEquipTimePicker(idx, initDate) {
                     <select class="form-select sess-return-m" style="width:auto;font-size:0.85rem;">${mOpts(30)}</select>
                 </div>
             </div>
-            <button type="button" onclick="querySessionEquip(this)"
+            <button type="button" class="query-equip-btn" onclick="querySessionEquip(this)"
                 style="background:#1e4d6b;color:white;border:none;border-radius:8px;padding:0.55rem 0.9rem;font-weight:600;cursor:pointer;white-space:nowrap;font-size:0.85rem;transition:background 0.2s;"
                 onmouseover="this.style.background='#14394f'" onmouseout="this.style.background='#1e4d6b'">
                 <i class="bi bi-search me-1"></i>查詢可用數量
@@ -1171,8 +1206,7 @@ async function querySessionEquip(btn) {
     if (tm(bt)<9*60+30||tm(bt)>16*60+30||tm(rt)<9*60+30||tm(rt)>16*60+30) {
         alert('器材借還時間須在 09:30–16:30 之間。'); return;
     }
-    const origTxt = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '<span class="submit-spinner"></span>查詢中…';
+    btn.style.pointerEvents = 'none'; btn.style.opacity = '0.7';
     try {
         const res  = await fetch(`get_equipment_availability.php?borrow_time=${encodeURIComponent(bt)}&return_time=${encodeURIComponent(rt)}`);
         const data = await res.json();
@@ -1194,7 +1228,7 @@ async function querySessionEquip(btn) {
             if (plus) plus.disabled = avail<=0;
         });
     } catch(e) { alert('查詢失敗，請稍後再試。'); }
-    finally { btn.disabled = false; btn.innerHTML = origTxt; }
+    finally { btn.style.pointerEvents = ''; btn.style.opacity = ''; }
 }
 
 function sessClamped(inp) {
@@ -1256,7 +1290,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
             <div class="session-fields">
                 <div class="session-field">
                     <label>開始日期 *</label>
-                    <input type="date" name="sessions[${idx}][date]" class="form-control" value="${date||''}" min="${todayDateString}" required>
+                    <input type="date" name="sessions[${idx}][date]" class="form-control" value="${date||''}" min="${todayDateString}" max="${semesterEndDateString}" required>
                 </div>
                 <div class="session-field">
                     <label>開始時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -1264,7 +1298,7 @@ function addSession(date, startTime, endDate, endTime, venueId) {
                 </div>
                 <div class="session-field">
                     <label>結束日期 *</label>
-                    <input type="date" name="sessions[${idx}][end_date]" class="form-control" value="${endDate||date||''}" min="${todayDateString}" required>
+                    <input type="date" name="sessions[${idx}][end_date]" class="form-control" value="${endDate||date||''}" min="${todayDateString}" max="${semesterEndDateString}" required>
                 </div>
                 <div class="session-field">
                     <label>結束時間 * <small style="color:#9ca3af;">(08:30–21:30)</small></label>
@@ -1378,6 +1412,14 @@ function setSessionTimeField(row, fieldKey, value) {
         if (minSel)  minSel.value  = value.substring(3, 5);
     }
 }
+
+// 時/分選單展開時，確保欄位附近有足夠空間，避免選項被畫面邊緣或上方內容遮住
+document.getElementById('sessions_container').addEventListener('focusin', function(e) {
+    const sel = e.target;
+    if (sel.matches && sel.matches('.time-hour, .time-minute')) {
+        sel.scrollIntoView({ block: 'center' });
+    }
+});
 
 document.getElementById('sessions_container').addEventListener('change', function(e) {
     if (e.target && e.target.classList.contains('time-hour')) {
