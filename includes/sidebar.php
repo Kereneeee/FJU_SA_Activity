@@ -28,7 +28,7 @@ $appRoot = '/' . basename(dirname(__DIR__));
             <i class="bi bi-house-door"></i> 儀表板
         </a>
         <a class="nav-link <?php echo ($current_page === 'apply_event') ? 'active' : ''; ?>" href="apply_event.php">
-            <i class="bi bi-calendar-plus"></i> 活動申請
+            <i class="bi bi-calendar-plus"></i> 場地和器材申請
         </a>
         <a class="nav-link <?php echo ($current_page === 'calendar') ? 'active' : ''; ?>" href="calendar.php">
             <i class="bi bi-calendar-check"></i> 空間日曆

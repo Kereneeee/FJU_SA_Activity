@@ -174,7 +174,11 @@ $current_page = 'equipment';
             padding: 1.25rem;
             transition: box-shadow 0.25s ease, transform 0.15s ease;
             position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
+        .eq-bottom { margin-top: auto; }
         .equipment-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09); transform: translateY(-2px); }
         .eq-header { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 0.85rem; }
         .eq-icon {
@@ -186,11 +190,12 @@ $current_page = 'equipment';
         .eq-name { font-weight: 600; font-size: 1rem; margin: 0 0 0.15rem; }
         .eq-code { color: #9ca3af; font-size: 0.78rem; }
         .eq-desc { font-size: 0.85rem; color: #6b7280; margin-bottom: 0.8rem; min-height: 1.5rem; }
-        .eq-meta { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+        .eq-meta { display: flex; gap: 0.6rem; }
         .meta-tag {
-            display: flex; align-items: center; gap: 0.25rem;
+            display: flex; align-items: center; justify-content: center; gap: 0.25rem;
             background: #f3f4f6; border-radius: 6px;
             padding: 0.28rem 0.6rem; font-size: 0.82rem; color: #374151;
+            flex: 1 1 auto; white-space: nowrap;
         }
         .meta-tag i { color: var(--primary); font-size: 0.85rem; }
 
@@ -241,6 +246,17 @@ $current_page = 'equipment';
         ?>
 
         <section class="content-wrapper">
+
+            <!-- 借用提示 -->
+            <div class="apply-banner">
+                <span>
+                    <i class="bi bi-lightbulb-fill me-1" style="color:#1e4d6b;"></i>
+                    確認器材可用後，請至<strong>活動申請頁面</strong>同步填寫器材借用需求。
+                </span>
+                <a href="apply_event.php" class="btn-apply">
+                    <i class="bi bi-send me-1"></i> 前往活動申請
+                </a>
+            </div>
 
             <!-- 時段查詢 -->
             <div class="card">
@@ -305,18 +321,6 @@ $current_page = 'equipment';
                 </div>
             </div>
 
-            <!-- 借用提示 -->
-            <div class="apply-banner">
-                <span>
-                    <i class="bi bi-lightbulb-fill me-1" style="color:#1e4d6b;"></i>
-                    確認器材可用後，請至<strong>活動申請頁面</strong>同步填寫器材借用需求。
-                </span>
-                <a href="apply_event.php" class="btn-apply">
-                    <i class="bi bi-send me-1"></i> 前往活動申請
-                </a>
-            </div>
-
-
             <!-- 器材清單 -->
             <div class="card">
                 <div class="card-title">
@@ -348,23 +352,25 @@ $current_page = 'equipment';
                             <?= $item['description'] ? htmlspecialchars($item['description']) : '<span style="color:#d1d5db;">－</span>' ?>
                         </div>
 
-                        <div class="eq-meta">
-                            <span class="meta-tag">
-                                <i class="bi bi-boxes"></i> 庫存總量：<?= (int)$item['total_quantity'] ?>
-                            </span>
-                            <span class="meta-tag">
-                                <i class="bi bi-clipboard-check"></i>
-                                <?php if ($item['borrowing_limit'] > 0): ?>
-                                    每次建議上限：<?= (int)$item['borrowing_limit'] ?>
-                                <?php else: ?>
-                                    每次建議上限：不限
-                                <?php endif; ?>
-                            </span>
-                        </div>
+                        <div class="eq-bottom">
+                            <div class="eq-meta">
+                                <span class="meta-tag">
+                                    <i class="bi bi-boxes"></i> 庫存總量：<?= (int)$item['total_quantity'] ?>
+                                </span>
+                                <span class="meta-tag">
+                                    <i class="bi bi-clipboard-check"></i>
+                                    <?php if ($item['borrowing_limit'] > 0): ?>
+                                        每次建議上限：<?= (int)$item['borrowing_limit'] ?>
+                                    <?php else: ?>
+                                        每次建議上限：不限
+                                    <?php endif; ?>
+                                </span>
+                            </div>
 
-                        <!-- 時段可用量（查詢後顯示） -->
-                        <div class="avail-badge" id="avail_<?= $item['equipment_id'] ?>">
-                            查詢中…
+                            <!-- 時段可用量（查詢後顯示） -->
+                            <div class="avail-badge" id="avail_<?= $item['equipment_id'] ?>">
+                                查詢中…
+                            </div>
                         </div>
 
                     </div>
@@ -486,12 +492,39 @@ $current_page = 'equipment';
         }
     }
 
+    // 9點只能選30/40/50分，16點只能選00/10/20/30分（對應 09:30–16:30 開放時段）
+    function updateMinuteOptions(prefix) {
+        const hourEl = document.getElementById(prefix + '_hour');
+        const minuteEl = document.getElementById(prefix + '_minute');
+        const hour = hourEl.value;
+        let disabledMinutes = [];
+        if (hour === '09') disabledMinutes = ['00', '10', '20'];
+        else if (hour === '16') disabledMinutes = ['40', '50'];
+
+        let needReselect = false;
+        Array.from(minuteEl.options).forEach(opt => {
+            if (!opt.value) return;
+            const disable = disabledMinutes.includes(opt.value);
+            opt.disabled = disable;
+            opt.hidden = disable;
+            if (disable && opt.selected) needReselect = true;
+        });
+        if (needReselect) {
+            const firstValid = Array.from(minuteEl.options).find(opt => opt.value && !opt.disabled);
+            if (firstValid) minuteEl.value = firstValid.value;
+        }
+    }
+
     ['borrow', 'return'].forEach(prefix => {
         ['_date', '_hour', '_minute'].forEach(suffix => {
             const el = document.getElementById(prefix + suffix);
             if (!el) return;
-            el.addEventListener('change', () => syncEquipmentTime(prefix));
+            el.addEventListener('change', () => {
+                if (suffix === '_hour') updateMinuteOptions(prefix);
+                syncEquipmentTime(prefix);
+            });
         });
+        updateMinuteOptions(prefix);
         syncEquipmentTime(prefix);
     });
 

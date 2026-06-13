@@ -360,15 +360,17 @@ function getEquipmentStatusText($equipment_list) {
         .status-boxes {
             display: flex;
             gap: 0.5rem;
-            align-items: flex-start;
+            align-items: stretch;
         }
         .status-box {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            gap: 0.35rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
             min-width: 120px;
-            padding: 0.5rem;
+            padding: 0.5rem 0.75rem;
             background: #f9fafb;
             border-radius: 8px;
             border: 1px solid #e5e7eb;

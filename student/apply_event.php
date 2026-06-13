@@ -478,7 +478,7 @@ foreach ($venues as $v) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>活動申請 - 輔仁大學課外活動指導組</title>
+    <title>場地和器材申請 - 輔仁大學課外活動指導組</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <style>
@@ -564,15 +564,11 @@ foreach ($venues as $v) {
 <?php include(__DIR__ . "/../includes/sidebar.php"); ?>
 
 <main class="main-content">
-    <header class="top-navbar">
-        <div>
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item"><a href="dashboard.php">首頁</a></li>
-                <li class="breadcrumb-item active">活動申請</li>
-            </ol>
-            <h4 class="mt-2 mb-0">新增活動申請</h4>
-        </div>
-    </header>
+    <?php
+    $nav_breadcrumbs = [['label'=>'首頁','url'=>'dashboard.php'],['label'=>'場地和器材申請']];
+    $nav_title = '場地和器材申請';
+    include __DIR__ . '/../includes/student_navbar.php';
+    ?>
 
     <section class="content-wrapper">
 
@@ -675,7 +671,7 @@ foreach ($venues as $v) {
                             <h5 class="fw-bold mb-1"><i class="bi bi-download me-1"></i>紙本三單下載</h5>
                             <p class="text-muted small mb-3">請下載後填寫並親自繳交至課指組（紙本流程）。</p>
                             <div class="d-flex flex-column gap-2">
-                                <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載活動申請表（黃單）</a>
+                                <a href="../document/活動申請表(黃單)1141120.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載活動申請表</a>
                                 <a href="../document/例行活動場地核定登記表.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載場地核定登記表</a>
                                 <a href="../document/課指組 器材借用申請表115.02.01.docx" class="btn btn-outline-secondary btn-sm" download><i class="bi bi-file-earmark-word me-1"></i>下載器材借用申請表</a>
                             </div>
