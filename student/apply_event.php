@@ -166,6 +166,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $errors[] = "場次{$n}：時間須在 08:30–21:30";
         if ($event_type === '校內' && empty($sess['venue_id']))
             $errors[] = "場次{$n}：校內活動請選擇場地";
+        // 器材借用開始時間不能是過去（防止繞過前端 min 限制）
+        if (!empty($sess['borrow_start'])) {
+            $bs_raw = trim($sess['borrow_start']);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $bs_raw)) {
+                $bs_ts = strtotime(str_replace('T', ' ', $bs_raw) . ':00');
+                if ($bs_ts !== false && $bs_ts < time()) {
+                    $errors[] = "場次{$n}：器材借用開始時間不能早於現在";
+                }
+            }
+        }
     }
 
     // 後端防重複：10秒內同帳號同活動名稱同社團視為重複送出

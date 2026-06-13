@@ -160,6 +160,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
 
     if (!$has_equipment) {
         $error = "請至少選擇一項器材";
+    } elseif (strtotime($borrow_start_final) < time()) {
+        $error = "借用開始時間不能早於現在，請選擇未來的時間段";
     } else {
         try {
             // ===== 庫存與上限驗證（使用選定借用時段 + COALESCE）=====
