@@ -544,7 +544,9 @@ foreach ($borrowing_details as $borrow) {
         }
         .borrowing-table {
             font-size: 0.9rem;
+            min-width: 700px;
         }
+        .borrowing-table td { white-space: nowrap; }
         .borrow-status {
             display: inline-flex;
             align-items: center;

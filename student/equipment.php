@@ -118,8 +118,8 @@ $current_page = 'equipment';
         /* ── 時段選擇 ── */
         .time-picker-row {
             display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 1rem;
+            grid-template-columns: 1fr 1.5fr 1fr 1.5fr auto;
+            gap: 0.75rem;
             align-items: flex-end;
         }
         .time-picker-row label { font-weight: 600; font-size: 0.9rem; color: #374151; display: block; margin-bottom: 0.4rem; }
@@ -232,6 +232,7 @@ $current_page = 'equipment';
             .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
             .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
             .time-picker-row { grid-template-columns: 1fr; }
+            .time-picker-row .btn-query { grid-column: 1; }
         }
     </style>
 </head>
@@ -263,7 +264,7 @@ $current_page = 'equipment';
                 <div class="card-title">
                     <i class="bi bi-calendar-range"></i> 查詢時段可用庫存
                 </div>
-                <div class="time-picker-row" style="display:grid; grid-template-columns:1fr 1.5fr 1fr 1.5fr auto; gap:0.75rem; align-items:flex-end;">
+                <div class="time-picker-row">
                     <div>
                         <label>借用日期</label>
                         <input type="date" id="borrow_date" class="form-control" value="<?= date('Y-m-d') ?>" required>
