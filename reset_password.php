@@ -56,8 +56,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $step === "form") {
         $message_type = "danger";
     } else {
         // 更新密碼
+        $hashed = password_hash($new_password, PASSWORD_DEFAULT);
         $upd = $conn->prepare("UPDATE users SET password = ? WHERE email = ?");
-        $upd->bind_param("ss", $new_password, $row['email']);
+        $upd->bind_param("ss", $hashed, $row['email']);
         $upd->execute();
 
         // 標記 token 已使用

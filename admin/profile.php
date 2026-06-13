@@ -42,18 +42,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $error_msg = "請填寫所有欄位";
         } elseif ($new_password !== $confirm_password) {
             $error_msg = "新密碼不相符";
-        } elseif ($user['password'] !== $old_password) {
+        } elseif (!password_verify($old_password, $user['password']) && $old_password !== $user['password']) {
             $error_msg = "原密碼不正確";
         } else {
+            $hashed = password_hash($new_password, PASSWORD_DEFAULT);
             $update_sql = "UPDATE users SET password = ? WHERE user_id = ?";
             $update_stmt = $conn->prepare($update_sql);
             if ($update_stmt) {
-                $update_stmt->bind_param("si", $new_password, $user_id);
-                
+                $update_stmt->bind_param("si", $hashed, $user_id);
+
                 if ($update_stmt->execute()) {
                     $success_msg = "密碼已更新";
                     // 更新本地記錄
-                    $user['password'] = $new_password;
+                    $user['password'] = $hashed;
                 } else {
                     $error_msg = "密碼更新失敗";
                 }
