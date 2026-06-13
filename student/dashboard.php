@@ -201,6 +201,7 @@ if ($noti_result) {
             display: grid;
             place-items: center;
             font-weight: 700;
+            font-size: 1.1rem;
         }
         .dashboard-grid {
             padding: 1.5rem 2rem 2rem;

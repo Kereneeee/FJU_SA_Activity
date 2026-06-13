@@ -243,8 +243,12 @@ if ($stmt) {
         .content-wrapper { padding: 1.5rem 2rem 2rem; }
         .card { background: var(--card); border-radius: 18px; box-shadow: 0 10px 30px rgba(15,23,42,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
         .card h3 { margin-bottom: 1rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
-        .filter-row { display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap: 1rem; align-items: end; margin-bottom: 1rem; }
+        .filter-row { display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)) auto; gap: 1rem; align-items: end; margin-bottom: 0; }
         .filter-row .form-label { font-weight: 600; color: #374151; margin-bottom: 0.4rem; }
+        .query-card { padding: 1rem 1.5rem; }
+        .query-card h3 { margin-bottom: 0.5rem; flex-wrap: wrap; }
+        .query-card .text-muted { margin-bottom: 0.6rem; font-size: 0.85rem; }
+        .query-card .alert-warning { padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 1rem; }
         .day-card { min-height: 98px; border: 2px solid #e5e7eb; border-radius: 14px; padding: 10px; background: white; cursor: pointer; transition: all 0.25s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .day-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(30,77,107,0.1); }
@@ -320,13 +324,15 @@ if ($stmt) {
         ?>
 
         <section class="content-wrapper">
-            <div class="card">
-                <h3><i class="bi bi-search"></i> 查詢教室</h3>
-                <p class="text-muted">此行事曆包含場地申請與場協登記結果。若場協大會已過，已核准的場協結果會在此顯示為正式借用記錄。</p>
+            <div class="card query-card">
+                <h3 style="display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap;">
+                    <span><i class="bi bi-search"></i> 查詢教室</span>
+                    <small class="text-muted" style="font-size:0.8rem; font-weight:400;">此行事曆包含場地申請與場協登記結果。若場協大會已過，已核准的場協結果會在此顯示為正式借用記錄。</small>
+                </h3>
                 <?php if ($is_in_field_coordination_registration && $active_field_coordination_setting): ?>
                 <div class="alert alert-warning" style="border-radius: 12px;">
                     <strong>目前為場協登記期間</strong>，系統允許同一時段的場協登記衝突，但最終場地分配仍以協調結果為準。
-                    <br>登記期限：<?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_start_date'])) ?> ～ <?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_end_date'])) ?>
+                    登記期限：<?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_start_date'])) ?> ～ <?= date('Y-m-d', strtotime($active_field_coordination_setting['registration_end_date'])) ?>
                 </div>
                 <?php endif; ?>
                 <div class="filter-row">
@@ -346,8 +352,10 @@ if ($stmt) {
                         <label class="form-label" for="monthSelector">月份</label>
                         <select id="monthSelector" class="form-control"></select>
                     </div>
+                    <div>
+                        <button id="searchButton" class="btn btn-primary" style="white-space:nowrap;">顯示選擇教室行事曆</button>
+                    </div>
                 </div>
-                <button id="searchButton" class="btn btn-primary" style="margin-top: 0.5rem;">顯示選擇教室行事曆</button>
             </div>
 
             <div id="calendarSection" class="card" style="display: none;">
