@@ -361,12 +361,18 @@ if ($stmt) {
                 </div>
             </div>
 
-            <div id="scheduleSection" class="card schedule-panel">
-                <h3><i class="bi bi-clock"></i> <span id="scheduleTitle">請先選擇日期</span></h3>
-                <div id="slotList"></div>
-                <div id="bookingDetails" class="booked-list"></div>
-            </div>
         </section>
+
+        <!-- 日期預約詳情 popup -->
+        <div id="scheduleMdl" class="modal-backdrop" onclick="closeScheduleModal(event)">
+            <div class="modal-dialog" style="width:min(900px,95vw);max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="scheduleMdlTitle">預約時段</h5>
+                    <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
+                </div>
+                <div id="scheduleMdlBody"></div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -536,11 +542,8 @@ if ($stmt) {
 
             calendarTitle.textContent = `${selectedRoomName} ${monthLabel}行事曆`;
             calendarSection.style.display = 'block';
-            document.getElementById('scheduleSection').classList.add('active');
             selectedDate = null;
-            document.getElementById('scheduleTitle').textContent = '請選擇日期查看時段';
-            document.getElementById('slotList').innerHTML = '';
-            document.getElementById('bookingDetails').innerHTML = '';
+            document.getElementById('scheduleMdl').classList.remove('show');
 
             const year = initialYear;
             const month = parseInt(monthSelector.value);
@@ -608,15 +611,38 @@ if ($stmt) {
 
         function hideCalendar() {
             document.getElementById('calendarSection').style.display = 'none';
-            document.getElementById('scheduleSection').classList.remove('active');
-            document.getElementById('scheduleTitle').textContent = '請先選擇教室查看行事曆';
-            document.getElementById('slotList').innerHTML = '';
-            document.getElementById('bookingDetails').innerHTML = '';
+            document.getElementById('scheduleMdl').classList.remove('show');
         }
 
+        // 9 個固定時段的起/止（分鐘），用於判斷某預約佔了幾個時段
+        const SLOT_RANGES = [
+            [8*60,      9*60     ],  // 08:00-09:00
+            [9*60,      10*60    ],  // 09:00-10:00
+            [10*60,     11*60    ],  // 10:00-11:00
+            [11*60,     12*60    ],  // 11:00-12:00
+            [12*60,     13*60+30 ],  // 12:00-13:30
+            [13*60+40,  14*60+30 ],  // 13:40-14:30
+            [14*60+40,  15*60+40 ],  // 14:40-15:40
+            [15*60+50,  16*60+50 ],  // 15:50-16:50
+            [17*60,     18*60    ],  // 17:00-18:00
+        ];
+        function dateTimeToMins(dtStr) {
+            const d = new Date(dtStr);
+            return d.getHours() * 60 + d.getMinutes();
+        }
         function getBookingCount(roomId, dateStr) {
             const key = `${roomId}_${dateStr}`;
-            return bookings[key] ? bookings[key].length : 0;
+            const items = bookings[key];
+            if (!items || items.length === 0) return 0;
+            const occupied = new Set();
+            items.forEach(item => {
+                const rs = dateTimeToMins(item.start_time);
+                const re = dateTimeToMins(item.end_time);
+                SLOT_RANGES.forEach((slot, idx) => {
+                    if (rs < slot[1] && re > slot[0]) occupied.add(idx);
+                });
+            });
+            return occupied.size;
         }
 
         function getRoomBookings(roomId, dateStr) {
@@ -628,20 +654,24 @@ if ($stmt) {
             selectedDate = date;
             const dateStr = formatDateKey(date);
             const selectedRoomName = getRoomName(selectedRoomId);
-            document.getElementById('scheduleTitle').textContent = `${selectedRoomName} ${dateStr} 預約時段`;
+            document.getElementById('scheduleMdlTitle').textContent = `${selectedRoomName} ${dateStr} 預約時段`;
             renderSchedule(dateStr);
+            document.getElementById('scheduleMdl').classList.add('show');
+        }
+
+        function closeScheduleModal(e) {
+            if (e && e.target !== document.getElementById('scheduleMdl')) return;
+            document.getElementById('scheduleMdl').classList.remove('show');
         }
 
         function renderSchedule(dateStr) {
-            const slotList = document.getElementById('slotList');
-            const bookingDetails = document.getElementById('bookingDetails');
+            const body = document.getElementById('scheduleMdlBody');
             const roomBookings = getRoomBookings(selectedRoomId, dateStr);
 
-            slotList.innerHTML = '';
-            bookingDetails.innerHTML = '';
+            body.innerHTML = '';
 
             if (roomBookings.length === 0) {
-                bookingDetails.innerHTML = '<p class="text-muted" style="padding:1rem 0;">該日期尚未有場地登記，代表目前可用。</p>';
+                body.innerHTML = '<p class="text-muted" style="padding:1rem 0;">該日期尚未有場地登記，代表目前可用。</p>';
                 return;
             }
 
@@ -667,7 +697,7 @@ if ($stmt) {
                 </tr>`;
             });
 
-            bookingDetails.innerHTML = `
+            body.innerHTML = `
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.6rem;">
                     <span style="font-weight:600; color:#374151;">共 ${roomBookings.length} 筆登記</span>
                 </div>
@@ -690,6 +720,9 @@ if ($stmt) {
 
         window.addEventListener('DOMContentLoaded', () => {
             initPage();
+        });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') document.getElementById('scheduleMdl').classList.remove('show');
         });
     </script>
 </body>
