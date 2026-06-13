@@ -705,6 +705,75 @@ foreach ($borrowing_details as $borrow) {
                 <?php endif; ?>
             </div>
 
+            <!-- 器材庫存列表 -->
+            <div class="panel-row">
+                <h5><i class="bi bi-list-ul"></i> 器材庫存列表</h5>
+                <div style="overflow-x:auto;">
+                    <table class="inventory-table">
+                        <thead>
+                            <tr>
+                                <th class="col-code">器材代碼</th>
+                                <th class="col-name">器材名稱</th>
+                                <th class="col-total">總數量</th>
+                                <th class="col-available">可借數量</th>
+                                <th class="col-borrowed">借出數量</th>
+                                <th class="col-limit">借用限制</th>
+                                <th class="col-status">狀態</th>
+                                <th class="col-stock">庫存</th>
+                                <th class="col-action">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($equipment_list as $eq):
+                                $eid      = intval($eq['equipment_id']);
+                                $total_q  = intval($eq['total_quantity'] ?? 0);
+                                $borrowed = intval($borrowed_by_equipment[$eid] ?? 0);
+                                $avail_q  = max(0, $total_q - $borrowed);
+                                $stock_pct = $total_q > 0 ? round(($avail_q / $total_q) * 100) : 0;
+                                $equip_status = $eq['equipment_status'] ?? 'available';
+                            ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($eq['code'] ?? ''); ?></td>
+                                <td><strong><?php echo htmlspecialchars($eq['name']); ?></strong></td>
+                                <td><?php echo $total_q; ?></td>
+                                <td><?php echo $avail_q; ?></td>
+                                <td><?php echo $borrowed; ?></td>
+                                <td><?php echo intval($eq['borrowing_limit'] ?? 0); ?></td>
+                                <td>
+                                    <span class="status-badge status-<?php echo htmlspecialchars($equip_status); ?>">
+                                        <i class="bi bi-<?php echo $equip_status === 'available' ? 'check-lg' : 'x-lg'; ?>"></i>
+                                        <?php echo $equip_status === 'available' ? '可借用' : '維修中'; ?>
+                                    </span>
+                                </td>
+                                <td><span class="stock-text"><?php echo $stock_pct; ?>%</span></td>
+                                <td>
+                                    <div class="action-cell">
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="edit">
+                                            <input type="hidden" name="equipment_id" value="<?php echo $eid; ?>">
+                                            <button type="submit" class="btn btn-edit btn-sm"><i class="bi bi-pencil"></i> 編輯</button>
+                                        </form>
+                                        <form method="POST" style="display:inline;" onsubmit="return confirm('確定要刪除此器材？');">
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="equipment_id" value="<?php echo $eid; ?>">
+                                            <button type="submit" class="btn btn-delete btn-sm"><i class="bi bi-trash"></i> 刪除</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                            <?php if (empty($equipment_list)): ?>
+                            <tr>
+                                <td colspan="9" style="text-align:center;color:#999;padding:30px;">
+                                    <i class="bi bi-inbox"></i> 目前沒有器材記錄
+                                </td>
+                            </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <?php if (!empty($edit_equipment)): ?>
             <div class="modal fade show" tabindex="-1" role="dialog" style="display: block; background: rgba(0, 0, 0, 0.5);">
                 <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
