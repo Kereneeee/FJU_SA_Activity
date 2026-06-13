@@ -21,6 +21,8 @@
 [2026-06-13 20:48:16] COMMIT success event_id=49 user_id=3 club_name=民謠吉他社 session_count=1
 [2026-06-13 21:04:19] POST received, token_ok=1, user_id=3
 [2026-06-13 21:04:19] COMMIT success event_id=50 user_id=3 club_name=民謠吉他社 session_count=1
+[2026-06-13 21:57:11] POST received, token_ok=1, user_id=8
+[2026-06-13 21:57:11] COMMIT success event_id=51 user_id=8 club_name=淨仁社 session_count=1
 [2026-06-13 22:21:22] POST received, token_ok=1, user_id=3
 [2026-06-13 22:21:22] COMMIT success event_id=51 user_id=3 club_name=民謠吉他社 session_count=1
 [2026-06-13 22:30:10] POST received, token_ok=1, user_id=3
