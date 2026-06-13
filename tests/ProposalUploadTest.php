@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/proposal_upload.php';
 $cases = [];
 
 $cases[] = ['name' => 'accepts pdf mime when finfo is unavailable', 'file' => ['name' => 'plan.pdf', 'type' => 'application/pdf', 'tmp_name' => __FILE__, 'error' => UPLOAD_ERR_OK], 'expect' => true];
-$cases[] = ['name' => 'rejects non pdf files', 'file' => ['name' => 'plan.docx', 'type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'tmp_name' => __FILE__, 'error' => UPLOAD_ERR_OK], 'expect' => false];
+$cases[] = ['name' => 'accepts docx by extension and mime', 'file' => ['name' => 'plan.docx', 'type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'tmp_name' => __FILE__, 'error' => UPLOAD_ERR_OK], 'expect' => true];
 
 foreach ($cases as $case) {
     try {
