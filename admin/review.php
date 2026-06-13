@@ -136,6 +136,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
     }
 }
 
+// 處理器材追加申請刪除
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST['request_id'])) {
+    $del_req_id = intval($_POST['request_id']);
+    if ($_POST['mgmt_action'] === 'delete_request' && $del_req_id > 0) {
+        $conn->begin_transaction();
+        $ok = true;
+        $s = $conn->prepare("DELETE FROM equipment_borrow WHERE request_id = ?");
+        $s->bind_param('i', $del_req_id); $ok = $ok && $s->execute(); $s->close();
+        $s = $conn->prepare("DELETE FROM equipment_requests WHERE request_id = ?");
+        $s->bind_param('i', $del_req_id); $ok = $ok && $s->execute(); $s->close();
+        if ($ok) { $conn->commit(); $flash = '器材追加申請已刪除。'; $flash_type = 'success'; }
+        else     { $conn->rollback(); $flash = '刪除失敗，請稍後再試。'; $flash_type = 'danger'; }
+        $rs_raw = $_POST['redirect_status'] ?? '';
+        $redirect_status = in_array($rs_raw, ['all','pending','approved','rejected','cancelled']) ? $rs_raw : 'all';
+        header("Location: review.php?status={$redirect_status}&flash=" . urlencode($flash) . "&flash_type={$flash_type}");
+        exit;
+    }
+}
+
 // Flash 訊息（GET 帶入）
 $flash      = $_GET['flash']      ?? '';
 $flash_type = $_GET['flash_type'] ?? 'info';
@@ -274,6 +293,10 @@ if ($request_id > 0) {
 $allowed_statuses = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
 $status_filter = in_array($_GET['status'] ?? '', $allowed_statuses) ? $_GET['status'] : 'all';
 
+// 排序參數
+$sort_by  = in_array($_GET['sort_by'] ?? '', ['event_date', 'apply_date']) ? $_GET['sort_by'] : 'apply_date';
+$sort_dir = ($_GET['sort_dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+
 $pending_events = [];
 if ($event_id === 0 && $request_id === 0) {
     // ── 活動申請 ─────────────────────────────────────────────────────────
@@ -351,10 +374,13 @@ if ($event_id === 0 && $request_id === 0) {
         }
     }
 
-    // 合併並依 created_at 降序排列
+    // 合併並依選定欄位排序
     $pending_events = array_merge($event_rows, $request_rows);
-    usort($pending_events, function ($a, $b) {
-        return strtotime($b['created_at']) - strtotime($a['created_at']);
+    $sort_col = ($sort_by === 'event_date') ? 'start_time' : 'created_at';
+    usort($pending_events, function ($a, $b) use ($sort_col, $sort_dir) {
+        $ta = strtotime($a[$sort_col] ?? '0');
+        $tb = strtotime($b[$sort_col] ?? '0');
+        return $sort_dir === 'asc' ? ($ta - $tb) : ($tb - $ta);
     });
 }
 ?>
@@ -710,6 +736,12 @@ if ($event_id === 0 && $request_id === 0) {
                                 <?php else: ?>
                                 <div class="alert alert-info mb-0 py-2">此申請已完成審核（<?= $detail_request['status'] === 'approved' ? '已核准' : '已駁回' ?>）</div>
                                 <?php endif; ?>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('確定要刪除此器材追加申請？此操作無法復原。');">
+                                    <input type="hidden" name="mgmt_action" value="delete_request">
+                                    <input type="hidden" name="request_id" value="<?= $request_id ?>">
+                                    <input type="hidden" name="redirect_status" value="all">
+                                    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> 刪除</button>
+                                </form>
                                 <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
                             </div>
                         </div>
@@ -914,6 +946,9 @@ if ($event_id === 0 && $request_id === 0) {
                 </div>
             <?php else: ?>
                 <div class="panel-row">
+                    <?php
+                    $sort_qs = http_build_query(['sort_by' => $sort_by, 'sort_dir' => $sort_dir]);
+                    ?>
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
                         <h5 style="margin:0; align-self:center;"><i class="bi bi-list-ul"></i> 申請管理列表</h5>
                         <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
@@ -926,22 +961,31 @@ if ($event_id === 0 && $request_id === 0) {
                                 <input type="date" id="searchDate" class="form-control" style="border-color:#d1d5db;" onchange="filterReviewTable()">
                             </div>
                             <button onclick="clearSearch()" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;"><i class="bi bi-x-lg"></i> 清除</button>
+                            <div style="width:1px; height:1.5rem; background:#d1d5db;"></div>
+                            <select id="sortBy" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
+                                <option value="apply_date" <?= $sort_by==='apply_date'?'selected':'' ?>>申請日期</option>
+                                <option value="event_date" <?= $sort_by==='event_date'?'selected':'' ?>>活動日期</option>
+                            </select>
+                            <select id="sortDir" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
+                                <option value="desc" <?= $sort_dir==='desc'?'selected':'' ?>>降冪</option>
+                                <option value="asc"  <?= $sort_dir==='asc' ?'selected':'' ?>>升冪</option>
+                            </select>
                         </div>
                     </div>
                     <div style="margin-bottom: 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap;">
-                            <a href="review.php?status=all" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
+                            <a href="review.php?status=all&<?= $sort_qs ?>" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
                                 <i class="bi bi-grid"></i> 全部
                                 <span class="ftab-count"><?= $total_count ?></span>
                             </a>
-                            <a href="review.php?status=pending" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
+                            <a href="review.php?status=pending&<?= $sort_qs ?>" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
                                 <i class="bi bi-clock"></i> 待審核
                                 <span class="ftab-count"><?= $status_counts['pending'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=approved" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
+                            <a href="review.php?status=approved&<?= $sort_qs ?>" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
                                 <i class="bi bi-check-circle"></i> 已通過
                                 <span class="ftab-count"><?= $status_counts['approved'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=rejected" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
+                            <a href="review.php?status=rejected&<?= $sort_qs ?>" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
                                 <i class="bi bi-x-circle"></i> 已駁回
                                 <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
@@ -1058,7 +1102,14 @@ if ($event_id === 0 && $request_id === 0) {
                                             <td>
                                                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
                                                     <a href="<?= $row_link ?>" class="btn btn-sm btn-outline-primary m-0"><i class="bi bi-eye"></i> 查看</a>
-                                                    <?php if (!$is_req): ?>
+                                                    <?php if ($is_req): ?>
+                                                    <form method="POST" onsubmit="return confirm('確定要刪除此器材追加申請？此操作無法復原。');">
+                                                        <input type="hidden" name="mgmt_action" value="delete_request">
+                                                        <input type="hidden" name="request_id" value="<?= intval($ev['request_id']) ?>">
+                                                        <input type="hidden" name="redirect_status" value="<?= htmlspecialchars($status_filter) ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger m-0"><i class="bi bi-trash"></i> 刪除</button>
+                                                    </form>
+                                                    <?php else: ?>
                                                     <form method="POST" onsubmit="return confirm('確定要刪除此申請？此操作無法復原。');">
                                                         <input type="hidden" name="mgmt_action" value="delete">
                                                         <input type="hidden" name="event_id" value="<?= intval($ev['event_id']) ?>">
@@ -1326,6 +1377,13 @@ if ($event_id === 0 && $request_id === 0) {
         document.getElementById('searchClub').value = '';
         document.getElementById('searchDate').value = '';
         filterReviewTable();
+    }
+
+    function applySortParams() {
+        const url = new URL(window.location.href);
+        url.searchParams.set('sort_by',  document.getElementById('sortBy').value);
+        url.searchParams.set('sort_dir', document.getElementById('sortDir').value);
+        window.location = url.toString();
     }
 
     document.addEventListener('DOMContentLoaded', function () {

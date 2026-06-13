@@ -164,6 +164,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $errors[] = "場次{$n}：開始日期不能為過往日期，請選擇今日或之後的日期";
         if (!empty($sess['end_date']) && $sess['end_date'] < $today_date)
             $errors[] = "場次{$n}：結束日期不能為過往日期，請選擇今日或之後的日期";
+        if (!empty($sess['date']) && !empty($sess['start_time'])) {
+            $sess_start_ts = strtotime($sess['date'] . ' ' . $sess['start_time'] . ':00');
+            if ($sess_start_ts !== false && $sess_start_ts <= time())
+                $errors[] = "場次{$n}：活動開始時間不能為過去時間，請選擇未來的時間";
+        }
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['end_date'] < $sess['date'])
             $errors[] = "場次{$n}：結束日期不能早於開始日期";
         if (!empty($sess['date']) && !empty($sess['end_date']) && $sess['date'] === $sess['end_date'] &&
@@ -213,7 +218,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $proposal_filename = null;
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
                 if (!validate_proposal_upload($_FILES['proposal_document'])) {
-                    throw new Exception("企劃書只允許上傳 PDF 或 Word 格式。");
+                    throw new Exception("企劃書只允許上傳 PDF 格式。");
                 }
                 $ext = strtolower(pathinfo($_FILES['proposal_document']['name'] ?? '', PATHINFO_EXTENSION));
                 $ext = in_array($ext, ['pdf', 'doc', 'docx'], true) ? $ext : 'pdf';
@@ -427,7 +432,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
                         ]);
                     }
                 }
-            } catch (\Throwable $mailEx) { /* 靜默忽略 */ }
+            } catch (\Throwable $mailEx) {
+                error_log('[apply_event mail] ' . $mailEx->getMessage());
+            }
             exit();
 
         } catch (Exception $e) {
@@ -607,16 +614,8 @@ foreach ($venues as $v) {
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">社團名稱 <span class="text-danger">*</span></label>
-                            <?php if (count($my_clubs) > 1): ?>
-                            <select class="form-control" id="club_id_select" onchange="location.href='apply_event.php?club_id='+encodeURIComponent(this.value)">
-                                <?php foreach ($my_clubs as $c): ?>
-                                <option value="<?= htmlspecialchars($c['club_id'], ENT_QUOTES, 'UTF-8') ?>" <?= $c['club_id']===$selected_club_id?'selected':'' ?>><?= htmlspecialchars($c['club_name'], ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small class="text-muted">您隸屬多個社團，請選擇本次申請的主辦社團</small>
-                            <?php else: ?>
-                            <input type="text" class="form-control" value="<?= $fv['club_name'] ?>" readonly>
-                            <?php endif; ?>
+                            <input type="text" class="form-control" value="<?= htmlspecialchars($current_user_club ?: ($my_clubs[0]['club_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" readonly>
+                            <small class="text-muted">目前將以您目前所屬的社團身份提交申請</small>
                             <input type="hidden" name="club_id" value="<?= htmlspecialchars($selected_club_id, ENT_QUOTES, 'UTF-8') ?>">
                         </div>
                         <div class="col-md-6">
@@ -667,7 +666,7 @@ foreach ($venues as $v) {
 
             <!-- ② 企畫書上傳 -->
             <div class="card">
-                <h3><i class="bi bi-file-earmark-arrow-up"></i> 企畫書上傳</h3>
+                <h3><i class="bi bi-file-earmark-arrow-up"></i> 企劃書上傳</h3>
                 <div class="form-section">
                     <div class="row g-4">
                         <div class="col-md-6">
@@ -1449,6 +1448,15 @@ document.getElementById('submitBtn').addEventListener('click', function() {
         if (edi.value===di.value && sti.value>=eti.value) { alert(`場次${n}：同日結束時間必須晚於開始時間！`); return; }
         if (sti.value<'08:30'||sti.value>'21:30'||eti.value<'08:30'||eti.value>'21:30') {
             alert(`場次${n}：時間須在 08:30–21:30！`); return;
+        }
+        // 今天日期 + 已過的時間視為過去時間
+        if (di.value === todayDateString && sti.value) {
+            const now = new Date();
+            const nowHHMM = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+            if (sti.value <= nowHHMM) {
+                alert(`場次${n}：活動開始時間不能為過去時間，請選擇未來的時間！`);
+                sti.focus(); return;
+            }
         }
         if (vsl && !vsl.value) { alert(`場次${n}：請選擇場地！`); vsl.focus(); return; }
     }

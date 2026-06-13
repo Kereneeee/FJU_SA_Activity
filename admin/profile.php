@@ -9,7 +9,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     
 }
 
-$user_name = $_SESSION['user_name'] ?? '管理員';
 $user_id = $_SESSION['user_id'];
 
 $success_msg = "";
@@ -30,6 +29,8 @@ $user = $result->fetch_assoc();
 if (!$user) {
     die("找不到用戶資訊");
 }
+
+$user_name = $user['name'] ?? $_SESSION['user_name'] ?? '管理員';
 
 // 處理密碼修改
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {

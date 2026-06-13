@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'batch
                     }
                 }
             } catch (\Throwable $e) {
-                // 寄信失敗不影響提名結果
+                error_log('[nominate_officers mail] ' . $e->getMessage());
             }
         }
         if (!empty($submit_errors)) {

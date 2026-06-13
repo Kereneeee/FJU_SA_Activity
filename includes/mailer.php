@@ -24,15 +24,7 @@ function sendPasswordResetMail(string $to_email, string $to_name, string $reset_
     $mail = new PHPMailer(true); // true = 開啟 exception
 
     try {
-        // ── SMTP 設定 ──────────────────────────────────────────
-        $mail->isSMTP();
-        $mail->Host       = SMTP_HOST;
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USERNAME;
-        $mail->Password   = SMTP_PASSWORD;
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = SMTP_PORT;
-        $mail->CharSet    = 'UTF-8';
+        _configureMailer($mail);
 
         // ── 寄件人 / 收件人 ────────────────────────────────────
         $mail->setFrom(MAIL_FROM_ADDRESS, MAIL_FROM_NAME);
@@ -127,10 +119,19 @@ function buildResetEmailText(string $name, string $link): string
          . "— 課指組管理系統";
 }
 
-// ── 共用：建立已設定好 SMTP 的 PHPMailer 實例 ─────────────────
-function _newMailer(): PHPMailer
+// ── 郵件發送日誌 ──────────────────────────────────────────────
+function _mailLog(string $level, string $to, string $subject, string $detail = ''): void
 {
-    $mail = new PHPMailer(true);
+    $log_file = __DIR__ . '/../document/mail_send.log';
+    $ts       = date('Y-m-d H:i:s');
+    $line     = "[{$ts}] [{$level}] to={$to} subject={$subject}";
+    if ($detail !== '') $line .= " | {$detail}";
+    @file_put_contents($log_file, $line . "\n", FILE_APPEND | LOCK_EX);
+}
+
+// ── 共用：建立已設定好 SMTP 的 PHPMailer 實例 ─────────────────
+function _configureMailer(PHPMailer $mail): void
+{
     $mail->isSMTP();
     $mail->Host       = SMTP_HOST;
     $mail->SMTPAuth   = true;
@@ -139,6 +140,19 @@ function _newMailer(): PHPMailer
     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port       = SMTP_PORT;
     $mail->CharSet    = 'UTF-8';
+    $mail->SMTPOptions = [
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => true,
+        ],
+    ];
+}
+
+function _newMailer(): PHPMailer
+{
+    $mail = new PHPMailer(true);
+    _configureMailer($mail);
     $mail->setFrom(MAIL_FROM_ADDRESS, MAIL_FROM_NAME);
     return $mail;
 }
@@ -189,8 +203,10 @@ HTML;
             $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
         }
         $mail->send();
+        _mailLog('OK', $admin_email, $mail->Subject);
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
+        _mailLog('FAIL', $admin_email, '新活動申請通知', $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];
     }
 }
@@ -292,8 +308,10 @@ HTML;
             $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
         }
         $mail->send();
+        _mailLog('OK', $admin_email, $mail->Subject);
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
+        _mailLog('FAIL', $admin_email, '幹部提名申請通知', $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];
     }
 }
