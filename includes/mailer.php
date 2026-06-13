@@ -119,6 +119,16 @@ function buildResetEmailText(string $name, string $link): string
          . "— 課指組管理系統";
 }
 
+// ── 郵件發送日誌 ──────────────────────────────────────────────
+function _mailLog(string $level, string $to, string $subject, string $detail = ''): void
+{
+    $log_file = __DIR__ . '/../document/mail_send.log';
+    $ts       = date('Y-m-d H:i:s');
+    $line     = "[{$ts}] [{$level}] to={$to} subject={$subject}";
+    if ($detail !== '') $line .= " | {$detail}";
+    @file_put_contents($log_file, $line . "\n", FILE_APPEND | LOCK_EX);
+}
+
 // ── 共用：建立已設定好 SMTP 的 PHPMailer 實例 ─────────────────
 function _configureMailer(PHPMailer $mail): void
 {
@@ -193,8 +203,10 @@ HTML;
             $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
         }
         $mail->send();
+        _mailLog('OK', $admin_email, $mail->Subject);
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
+        _mailLog('FAIL', $admin_email, '新活動申請通知', $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];
     }
 }
@@ -296,8 +308,10 @@ HTML;
             $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
         }
         $mail->send();
+        _mailLog('OK', $admin_email, $mail->Subject);
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
+        _mailLog('FAIL', $admin_email, '幹部提名申請通知', $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];
     }
 }

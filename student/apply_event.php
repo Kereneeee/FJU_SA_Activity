@@ -427,7 +427,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
                         ]);
                     }
                 }
-            } catch (\Throwable $mailEx) { /* 靜默忽略 */ }
+            } catch (\Throwable $mailEx) {
+                error_log('[apply_event mail] ' . $mailEx->getMessage());
+            }
             exit();
 
         } catch (Exception $e) {

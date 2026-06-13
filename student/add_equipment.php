@@ -304,7 +304,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                     }
                 }
             } catch (\Throwable $e) {
-                // 寄信失敗不影響申請結果
+                error_log('[add_equipment mail] ' . $e->getMessage());
             }
 
             header("Location: my_applications.php?success=true");
