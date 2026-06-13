@@ -101,7 +101,7 @@ foreach ($applications as &$app) {
         $child_stmt->close();
         foreach ($children as &$child) {
             $ceq = $conn->prepare(
-                "SELECT eb.equipment_id, eq.name, eq.code, eb.quantity
+                "SELECT eb.equipment_id, eq.name, eq.code, eb.quantity, eb.reservation_id
                  FROM equipment_borrow eb
                  LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                  WHERE eb.request_id = ?"
@@ -745,6 +745,13 @@ function getEquipmentStatusText($equipment_list) {
                                         $eq_no_sess[] = $_eq;
                                     }
                                 }
+                                // 建立 reservation_id → session 對照表（供追加申請查找）
+                                $sess_by_rid = [];
+                                foreach ($app['sessions'] as $_s) {
+                                    if (!empty($_s['reservation_id'])) {
+                                        $sess_by_rid[$_s['reservation_id']] = $_s;
+                                    }
+                                }
                                 ?>
 
                                 <!-- 場次明細（含對應器材） -->
@@ -856,18 +863,31 @@ function getEquipmentStatusText($equipment_list) {
                                         $cc = $status_class_map[$child['status']] ?? 'status-pending';
                                         $_cbs = $child['borrow_start'] ?? null;
                                         $_cbe = $child['borrow_end']   ?? null;
+                                        // 找對應場次（以第一筆器材的 reservation_id 查找）
+                                        $_child_rid = $child['equipment'][0]['reservation_id'] ?? null;
+                                        $_child_sess = $_child_rid && isset($sess_by_rid[$_child_rid]) ? $sess_by_rid[$_child_rid] : null;
                                     ?>
-                                        <div class="equipment-title" style="margin-top:0.6rem;">
+                                        <div class="equipment-title" style="margin-top:0.75rem;">
+                                            <i class="bi bi-plus-circle" style="color:#1e4d6b;font-size:.85rem;"></i>
                                             追加器材申請
                                             <span class="status-badge <?= $cc ?>" style="font-size:.75rem;padding:.1rem .5rem;vertical-align:middle;"><?= $cl ?></span>
+                                        </div>
+                                        <?php if ($_child_sess): ?>
+                                        <div style="font-size:0.82rem;color:#1e4d6b;background:#f0f4f8;border-radius:6px;padding:0.3rem 0.7rem;margin:0.3rem 0 0.4rem;display:inline-block;">
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            場次：<?= date('Y/m/d H:i', strtotime($_child_sess['start_time'])) ?>－<?= date('H:i', strtotime($_child_sess['end_time'])) ?>
+                                            <?php if (!empty($_child_sess['space_name'])): ?>
+                                            ｜<?= htmlspecialchars($_child_sess['space_name']) ?>
+                                            <?php endif; ?>
                                             <?php if ($_cbs && $_cbe): ?>
-                                            <small style="color:#374151;font-size:.8rem;margin-left:.4rem;">
-                                                借用：<?= date('Y/m/d H:i', strtotime($_cbs)) ?>－<?= date('m/d H:i', strtotime($_cbe)) ?>
-                                            </small>
-                                            <?php else: ?>
-                                            <small style="color:#9ca3af;font-size:.78rem;margin-left:.3rem;"><?= date('Y/m/d', strtotime($child['created_at'])) ?></small>
+                                            <span style="color:#6b7280;margin-left:0.4rem;">（借用 <?= date('m/d H:i', strtotime($_cbs)) ?>－<?= date('m/d H:i', strtotime($_cbe)) ?>）</span>
                                             <?php endif; ?>
                                         </div>
+                                        <?php elseif ($_cbs && $_cbe): ?>
+                                        <div style="font-size:0.82rem;color:#6b7280;margin:0.2rem 0 0.4rem;">
+                                            借用：<?= date('Y/m/d H:i', strtotime($_cbs)) ?>－<?= date('m/d H:i', strtotime($_cbe)) ?>
+                                        </div>
+                                        <?php endif; ?>
                                         <div class="equipment-list">
                                             <?php foreach ($child['equipment'] as $ceq): ?>
                                             <div class="equipment-item">
