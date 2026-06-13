@@ -69,12 +69,12 @@ $stmt->close();
 
 // 為每個申請獲取器材詳情與場次資料
 foreach ($applications as &$app) {
-    // 器材清單
+    // 器材清單（只取主申請的器材，排除追加申請的 equipment_borrow）
     $eq_stmt = $conn->prepare(
-        "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity
+        "SELECT eb.borrow_id, eb.equipment_id, eq.name, eb.quantity, eb.reservation_id, eb.borrow_start, eb.borrow_end
          FROM equipment_borrow eb
          LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
-         WHERE eb.event_id = ?"
+         WHERE eb.event_id = ? AND eb.request_id IS NULL"
     );
     if ($eq_stmt) {
         $eq_stmt->bind_param("i", $app['event_id']);
@@ -88,7 +88,7 @@ foreach ($applications as &$app) {
 
     // 追加器材申請（equipment_requests WHERE parent_event_id = 本活動）
     $child_stmt = $conn->prepare(
-        "SELECT er.request_id, er.status, er.created_at, er.review_note
+        "SELECT er.request_id, er.status, er.created_at, er.review_note, er.borrow_start, er.borrow_end
          FROM equipment_requests er
          WHERE er.parent_event_id = ?
          ORDER BY er.created_at DESC"
@@ -120,7 +120,7 @@ foreach ($applications as &$app) {
 
     // 場次清單（含場地）
     $sess_stmt = $conn->prepare(
-        "SELECT r.start_time, r.end_time, s.space_name
+        "SELECT r.reservation_id, r.start_time, r.end_time, s.space_name
          FROM reservations r
          LEFT JOIN spaces s ON r.space_id = s.space_id
          WHERE r.event_id = ?
@@ -733,7 +733,21 @@ function getEquipmentStatusText($equipment_list) {
                                     </div>
                                 </div>
 
-                                <!-- 場次明細 -->
+                                <?php
+                                // 依 reservation_id 分組器材（主申請）
+                                $eq_by_sess = [];
+                                $eq_no_sess = [];
+                                foreach ($app['equipment_list'] as $_eq) {
+                                    $_rid = $_eq['reservation_id'] ?? null;
+                                    if ($_rid) {
+                                        $eq_by_sess[$_rid][] = $_eq;
+                                    } else {
+                                        $eq_no_sess[] = $_eq;
+                                    }
+                                }
+                                ?>
+
+                                <!-- 場次明細（含對應器材） -->
                                 <?php if (!empty($app['sessions'])): ?>
                                 <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; margin-bottom:0.85rem;">
                                     <div style="background:#f0f4f8; padding:0.45rem 0.85rem; font-size:0.8rem; font-weight:700; color:#1e4d6b; display:flex; align-items:center; gap:0.4rem;">
@@ -749,13 +763,38 @@ function getEquipmentStatusText($equipment_list) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <?php foreach ($app['sessions'] as $si => $sess): ?>
-                                            <tr style="border-bottom:1px solid #f0f2f5;">
+                                            <?php foreach ($app['sessions'] as $si => $sess):
+                                                $_sess_rid = $sess['reservation_id'] ?? null;
+                                                $_sess_eq  = $_sess_rid && isset($eq_by_sess[$_sess_rid]) ? $eq_by_sess[$_sess_rid] : [];
+                                                $_has_sess_eq = !empty($_sess_eq);
+                                            ?>
+                                            <tr style="<?= $_has_sess_eq ? '' : 'border-bottom:1px solid #f0f2f5;' ?>">
                                                 <td style="padding:0.4rem 0.85rem; color:#9ca3af;"><?php echo $si+1; ?></td>
                                                 <td style="padding:0.4rem 0.85rem;"><?php echo htmlspecialchars(date('Y/m/d H:i', strtotime($sess['start_time']))); ?></td>
                                                 <td style="padding:0.4rem 0.85rem;"><?php echo htmlspecialchars(date('Y/m/d H:i', strtotime($sess['end_time']))); ?></td>
                                                 <td style="padding:0.4rem 0.85rem; color:#6b7280;"><?php echo htmlspecialchars($sess['space_name'] ?? '（校外）'); ?></td>
                                             </tr>
+                                            <?php if ($_has_sess_eq):
+                                                $_bs = $_sess_eq[0]['borrow_start'] ?? null;
+                                                $_be = $_sess_eq[0]['borrow_end']   ?? null;
+                                                $_eq_labels = [];
+                                                foreach ($_sess_eq as $_e) {
+                                                    $_eq_labels[] = htmlspecialchars($_e['name'] ?? '未知') . ' ×' . intval($_e['quantity']);
+                                                }
+                                            ?>
+                                            <tr style="background:#f5f8fc; border-bottom:1px solid #f0f2f5;">
+                                                <td style="padding:0.25rem 0.85rem;"></td>
+                                                <td colspan="3" style="padding:0.3rem 0.85rem 0.5rem; font-size:0.82rem; color:#374151;">
+                                                    <i class="bi bi-tools" style="color:#1e4d6b; margin-right:0.3rem;"></i>
+                                                    <?= implode('、', $_eq_labels) ?>
+                                                    <?php if ($_bs && $_be): ?>
+                                                    <span style="color:#9ca3af; margin-left:0.5rem;">
+                                                        （借用 <?= date('m/d H:i', strtotime($_bs)) ?>－<?= date('m/d H:i', strtotime($_be)) ?>）
+                                                    </span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                            <?php endif; ?>
                                             <?php endforeach; ?>
                                         </tbody>
                                     </table>
@@ -794,15 +833,19 @@ function getEquipmentStatusText($equipment_list) {
                                 </div>
                                 <?php endif; ?>
 
-                                <?php if ($has_equipment || !empty($app['child_requests'])): ?>
+                                <?php
+                                $has_orphan_eq = !empty($eq_no_sess);
+                                $has_child_req = !empty($app['child_requests']);
+                                if ($has_orphan_eq || $has_child_req):
+                                ?>
                                 <div class="equipment-details">
-                                    <?php if ($has_equipment): ?>
+                                    <?php if ($has_orphan_eq): ?>
                                         <div class="equipment-title">申請器材：</div>
                                         <div class="equipment-list">
-                                            <?php foreach ($app['equipment_list'] as $eq): ?>
+                                            <?php foreach ($eq_no_sess as $_eq): ?>
                                             <div class="equipment-item">
-                                                <span class="equipment-name"><?= htmlspecialchars($eq['name'] ?? '未知器材') ?></span>
-                                                <span class="equipment-quantity">× <?= intval($eq['quantity']) ?></span>
+                                                <span class="equipment-name"><?= htmlspecialchars($_eq['name'] ?? '未知器材') ?></span>
+                                                <span class="equipment-quantity">× <?= intval($_eq['quantity']) ?></span>
                                             </div>
                                             <?php endforeach; ?>
                                         </div>
@@ -811,11 +854,19 @@ function getEquipmentStatusText($equipment_list) {
                                         if (empty($child['equipment'])) continue;
                                         $cl = $status_map[$child['status']] ?? '未知';
                                         $cc = $status_class_map[$child['status']] ?? 'status-pending';
+                                        $_cbs = $child['borrow_start'] ?? null;
+                                        $_cbe = $child['borrow_end']   ?? null;
                                     ?>
                                         <div class="equipment-title" style="margin-top:0.6rem;">
                                             追加器材申請
                                             <span class="status-badge <?= $cc ?>" style="font-size:.75rem;padding:.1rem .5rem;vertical-align:middle;"><?= $cl ?></span>
+                                            <?php if ($_cbs && $_cbe): ?>
+                                            <small style="color:#374151;font-size:.8rem;margin-left:.4rem;">
+                                                借用：<?= date('Y/m/d H:i', strtotime($_cbs)) ?>－<?= date('m/d H:i', strtotime($_cbe)) ?>
+                                            </small>
+                                            <?php else: ?>
                                             <small style="color:#9ca3af;font-size:.78rem;margin-left:.3rem;"><?= date('Y/m/d', strtotime($child['created_at'])) ?></small>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="equipment-list">
                                             <?php foreach ($child['equipment'] as $ceq): ?>
