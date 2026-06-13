@@ -136,6 +136,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST
     }
 }
 
+// 處理器材追加申請刪除
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mgmt_action'], $_POST['request_id'])) {
+    $del_req_id = intval($_POST['request_id']);
+    if ($_POST['mgmt_action'] === 'delete_request' && $del_req_id > 0) {
+        $conn->begin_transaction();
+        $ok = true;
+        $s = $conn->prepare("DELETE FROM equipment_borrow WHERE request_id = ?");
+        $s->bind_param('i', $del_req_id); $ok = $ok && $s->execute(); $s->close();
+        $s = $conn->prepare("DELETE FROM equipment_requests WHERE request_id = ?");
+        $s->bind_param('i', $del_req_id); $ok = $ok && $s->execute(); $s->close();
+        if ($ok) { $conn->commit(); $flash = '器材追加申請已刪除。'; $flash_type = 'success'; }
+        else     { $conn->rollback(); $flash = '刪除失敗，請稍後再試。'; $flash_type = 'danger'; }
+        $rs_raw = $_POST['redirect_status'] ?? '';
+        $redirect_status = in_array($rs_raw, ['all','pending','approved','rejected','cancelled']) ? $rs_raw : 'all';
+        header("Location: review.php?status={$redirect_status}&flash=" . urlencode($flash) . "&flash_type={$flash_type}");
+        exit;
+    }
+}
+
 // Flash 訊息（GET 帶入）
 $flash      = $_GET['flash']      ?? '';
 $flash_type = $_GET['flash_type'] ?? 'info';
@@ -710,6 +729,12 @@ if ($event_id === 0 && $request_id === 0) {
                                 <?php else: ?>
                                 <div class="alert alert-info mb-0 py-2">此申請已完成審核（<?= $detail_request['status'] === 'approved' ? '已核准' : '已駁回' ?>）</div>
                                 <?php endif; ?>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('確定要刪除此器材追加申請？此操作無法復原。');">
+                                    <input type="hidden" name="mgmt_action" value="delete_request">
+                                    <input type="hidden" name="request_id" value="<?= $request_id ?>">
+                                    <input type="hidden" name="redirect_status" value="all">
+                                    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> 刪除</button>
+                                </form>
                                 <a href="review.php" class="btn btn-primary"><i class="bi bi-arrow-left"></i> 返回列表</a>
                             </div>
                         </div>
@@ -1058,7 +1083,14 @@ if ($event_id === 0 && $request_id === 0) {
                                             <td>
                                                 <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
                                                     <a href="<?= $row_link ?>" class="btn btn-sm btn-outline-primary m-0"><i class="bi bi-eye"></i> 查看</a>
-                                                    <?php if (!$is_req): ?>
+                                                    <?php if ($is_req): ?>
+                                                    <form method="POST" onsubmit="return confirm('確定要刪除此器材追加申請？此操作無法復原。');">
+                                                        <input type="hidden" name="mgmt_action" value="delete_request">
+                                                        <input type="hidden" name="request_id" value="<?= intval($ev['request_id']) ?>">
+                                                        <input type="hidden" name="redirect_status" value="<?= htmlspecialchars($status_filter) ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger m-0"><i class="bi bi-trash"></i> 刪除</button>
+                                                    </form>
+                                                    <?php else: ?>
                                                     <form method="POST" onsubmit="return confirm('確定要刪除此申請？此操作無法復原。');">
                                                         <input type="hidden" name="mgmt_action" value="delete">
                                                         <input type="hidden" name="event_id" value="<?= intval($ev['event_id']) ?>">

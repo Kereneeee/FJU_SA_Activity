@@ -1,3 +1,5 @@
 [2026-06-13 19:16:28] POST received, token_ok=0, user_id=8
 [2026-06-13 19:18:37] POST received, token_ok=1, user_id=8
 [2026-06-13 19:18:37] COMMIT success event_id=46 user_id=8 club_name=淨仁社 session_count=2
+[2026-06-13 19:24:20] POST received, token_ok=1, user_id=5
+[2026-06-13 19:24:20] COMMIT success event_id=47 user_id=5 club_name=繪本服務學習社 session_count=2
