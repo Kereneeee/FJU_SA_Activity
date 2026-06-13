@@ -60,6 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         if ($space_name === '') {
             $edit_error = '請填寫場地名稱';
+            $edit_space = [
+                'space_id' => $space_id,
+                'space_name' => $space_name,
+                'capacity' => $capacity,
+                'space_status' => $space_status,
+            ];
         } else {
             $stmt = $conn->prepare("UPDATE spaces SET space_name = ?, capacity = ?, space_status = ? WHERE space_id = ?");
             if ($stmt) {
@@ -72,6 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $spaces_list = $result_spaces->fetch_all(MYSQLI_ASSOC);
                 } else {
                     $edit_error = '更新失敗: ' . $stmt->error;
+                    $edit_space = [
+                        'space_id' => $space_id,
+                        'space_name' => $space_name,
+                        'capacity' => $capacity,
+                        'space_status' => $space_status,
+                    ];
                 }
                 $stmt->close();
             }
@@ -169,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             padding: 1.5rem 0.8rem;
             overflow-y: hidden;
             box-shadow: 3px 0 15px rgba(0,0,0,0.12);
-            z-index: 1200;
+            z-index: 1100;
         }
         .sidebar .brand {
             text-align: center;
@@ -415,6 +427,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .alert-warning { background: #ede4e5; border-color: #deb8b9; color: #6b2d2d; }
         .alert-danger  { background: #deb8b9; border-color: #c9979a; color: #5c1f22; }
         .alert-info    { background: #ede4e5; border-color: #c8c0c2; color: #5a3f42; }
+
+        .modal {
+            z-index: 1350;
+        }
+        .modal-backdrop {
+            z-index: 1340;
+        }
     </style>
 </head>
 <body>
@@ -444,70 +463,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <?php if ($success_msg): ?>
             <div class="alert alert-success">
                 <i class="bi bi-check-circle"></i> <?php echo htmlspecialchars($success_msg); ?>
-            </div>
-            <?php endif; ?>
-
-            <?php if (!empty($edit_space)): ?>
-            <div class="panel-row">
-                <h5><i class="bi bi-pencil-square"></i> 編輯場地</h5>
-                <?php if ($edit_error): ?>
-                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
-                <?php endif; ?>
-                <form method="POST" class="mb-4">
-                    <input type="hidden" name="action" value="save">
-                    <input type="hidden" name="space_id" value="<?php echo intval($edit_space['space_id']); ?>">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">場地名稱</label>
-                            <input type="text" name="space_name" class="form-control" value="<?php echo htmlspecialchars($edit_space['space_name']); ?>" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">容納人數</label>
-                            <input type="number" name="capacity" class="form-control" value="<?php echo intval($edit_space['capacity']); ?>" min="0" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">狀態</label>
-                            <select name="space_status" class="form-select" required>
-                                <option value="available" <?php echo $edit_space['space_status'] === 'available' ? 'selected' : ''; ?>>可用</option>
-                                <option value="unavailable" <?php echo $edit_space['space_status'] === 'unavailable' ? 'selected' : ''; ?>>不可用</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
-                        <a href="space_mgmt.php" class="btn btn-outline-primary btn-sm"><i class="bi bi-x-circle"></i> 取消</a>
-                    </div>
-                </form>
-            </div>
-            <?php else: ?>
-            <div class="panel-row">
-                <h5><i class="bi bi-plus-circle"></i> 新增場地</h5>
-                <?php if ($edit_error): ?>
-                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
-                <?php endif; ?>
-                <form method="POST" class="mb-4">
-                    <input type="hidden" name="action" value="add">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">場地名稱</label>
-                            <input type="text" name="space_name" class="form-control" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">容納人數</label>
-                            <input type="number" name="capacity" class="form-control" value="0" min="0" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">狀態</label>
-                            <select name="space_status" class="form-select" required>
-                                <option value="available">可用</option>
-                                <option value="unavailable">不可用</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mt-3 d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新增場地</button>
-                    </div>
-                </form>
             </div>
             <?php endif; ?>
 
@@ -563,9 +518,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </table>
                 </div>
             </div>
+
+            <div class="panel-row">
+                <h5><i class="bi bi-plus-circle"></i> 新增場地</h5>
+                <?php if ($edit_error && empty($edit_space)): ?>
+                    <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
+                <?php endif; ?>
+                <form method="POST" class="mb-4">
+                    <input type="hidden" name="action" value="add">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">場地名稱</label>
+                            <input type="text" name="space_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">容納人數</label>
+                            <input type="number" name="capacity" class="form-control" value="0" min="0" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">狀態</label>
+                            <select name="space_status" class="form-select" required>
+                                <option value="available">可用</option>
+                                <option value="unavailable">不可用</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> 新增場地</button>
+                    </div>
+                </form>
+            </div>
+
+            <?php if (!empty($edit_space)): ?>
+            <div class="modal fade" id="editSpaceModal" tabindex="-1" aria-labelledby="editSpaceModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="editSpaceModalLabel"><i class="bi bi-pencil-square"></i> 編輯場地</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="關閉"></button>
+                        </div>
+                        <div class="modal-body">
+                            <?php if ($edit_error): ?>
+                                <div class="alert alert-danger"><?php echo htmlspecialchars($edit_error); ?></div>
+                            <?php endif; ?>
+                            <form method="POST" id="editSpaceForm">
+                                <input type="hidden" name="action" value="save">
+                                <input type="hidden" name="space_id" value="<?php echo intval($edit_space['space_id']); ?>">
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label">場地名稱</label>
+                                        <input type="text" name="space_name" class="form-control" value="<?php echo htmlspecialchars($edit_space['space_name']); ?>" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">容納人數</label>
+                                        <input type="number" name="capacity" class="form-control" value="<?php echo intval($edit_space['capacity']); ?>" min="0" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">狀態</label>
+                                        <select name="space_status" class="form-select" required>
+                                            <option value="available" <?php echo ($edit_space['space_status'] ?? 'available') === 'available' ? 'selected' : ''; ?>>可用</option>
+                                            <option value="unavailable" <?php echo ($edit_space['space_status'] ?? 'available') === 'unavailable' ? 'selected' : ''; ?>>不可用</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-primary btn-sm" data-bs-dismiss="modal"><i class="bi bi-x-circle"></i> 取消</button>
+                            <button type="submit" form="editSpaceForm" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> 儲存變更</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    const editModal = new bootstrap.Modal(document.getElementById('editSpaceModal'));
+                    editModal.show();
+                });
+            </script>
+            <?php endif; ?>
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // 設置菜單活動狀態
         document.addEventListener('DOMContentLoaded', function() {
