@@ -285,7 +285,8 @@ CREATE TABLE `events` (
   `event_type` varchar(10) DEFAULT '校內',
   `activity_location` varchar(255) DEFAULT NULL,
   `activity_scale` varchar(200) DEFAULT '一般活動',
-  `proposal_doc_path` varchar(255) DEFAULT NULL
+  `proposal_doc_path` varchar(255) DEFAULT NULL,
+  `proposal_doc_original_name` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --

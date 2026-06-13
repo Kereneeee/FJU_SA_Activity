@@ -871,7 +871,7 @@ if ($event_id === 0 && $request_id === 0) {
                         <?php
                         // 定義所有可能的檔案欄位與對應顯示的名稱
                         $files_to_display = [
-                            ['path' => $detail_event['proposal_doc_path'] ?? null, 'label' => '活動企劃書'],
+                            ['path' => $detail_event['proposal_doc_path'] ?? null, 'label' => '活動企劃書', 'name' => $detail_event['proposal_doc_original_name'] ?? null],
                         ];
                         // 篩選出真正有路徑、有上傳的檔案
                         $active_files = array_filter($files_to_display, function($f) {
@@ -889,7 +889,7 @@ if ($event_id === 0 && $request_id === 0) {
                                             <tr style="border-bottom: 1px dashed #e5e7eb;">
                                                 <td style="padding: 0.6rem 0;">
                                                     <span class="badge bg-secondary me-2" style="font-size: 0.8rem;"><?= htmlspecialchars($file['label']) ?></span>
-                                                    <span style="font-size: 0.9rem; color: #475569;"><?= htmlspecialchars(basename($file['path'])) ?></span>
+                                                    <span style="font-size: 0.9rem; color: #475569;"><?= htmlspecialchars($file['name'] ?: basename($file['path'])) ?></span>
                                                 </td>
                                                 <td style="text-align: right; padding: 0.6rem 0;">
                                                     <div class="d-inline-flex gap-2">
@@ -898,7 +898,7 @@ if ($event_id === 0 && $request_id === 0) {
                                                            class="btn btn-outline-primary btn-sm m-0">
                                                             <i class="bi bi-box-arrow-up-right"></i> 檢視
                                                         </a>
-                                                        <a href="../document/<?= htmlspecialchars($file['path']) ?>" download class="btn btn-outline-success btn-sm m-0">
+                                                        <a href="../document/<?= htmlspecialchars($file['path']) ?>" download="<?= htmlspecialchars($file['name'] ?: basename($file['path'])) ?>" class="btn btn-outline-success btn-sm m-0">
                                                             <i class="bi bi-download"></i> 下載
                                                         </a>
                                                     </div>

@@ -211,6 +211,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
             $proposal_filename = null;
+            $proposal_original_name = null;
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
                 if (!validate_proposal_upload($_FILES['proposal_document'])) {
                     throw new Exception("企劃書只允許上傳 PDF 或 Word 格式。");
@@ -220,6 +221,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
                 $fn = 'proposal_' . time() . '_' . uniqid() . '.' . $ext;
                 if (move_uploaded_file($_FILES['proposal_document']['tmp_name'], $upload_dir . $fn)) {
                     $proposal_filename = $fn;
+                    $proposal_original_name = basename($_FILES['proposal_document']['name'] ?? '');
                 } else {
                     throw new Exception("企劃書上傳失敗，請重試。");
                 }
@@ -290,8 +292,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
 
             // INSERT 活動記錄
             $sql_ev = "INSERT INTO events (user_id,event_name,club_name,description,start_time,end_time,
-                        responsible_person,event_type,activity_location,activity_scale,proposal_doc_path,status)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending')";
+                        responsible_person,event_type,activity_location,activity_scale,proposal_doc_path,proposal_doc_original_name,status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending')";
             $stmt_ev = $conn->prepare($sql_ev);
             if (!$stmt_ev) {
                 // 降級（欄位不存在時）
@@ -304,9 +306,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
                 if (!$stmt_ev) throw new Exception("SQL 準備失敗: " . $conn->error);
                 $stmt_ev->bind_param("isssss", $user_id,$event_name,$club_name,$desc_ex,$event_start,$event_end);
             } else {
-                $stmt_ev->bind_param("issssssssss",
+                $stmt_ev->bind_param("isssssssssss",
                     $user_id,$event_name,$club_name,$description,$event_start,$event_end,
-                    $responsible_person,$event_type,$activity_location,$activity_scale_str,$proposal_filename
+                    $responsible_person,$event_type,$activity_location,$activity_scale_str,$proposal_filename,$proposal_original_name
                 );
             }
             if (!$stmt_ev->execute()) throw new Exception("活動記錄插入失敗: " . $stmt_ev->error);

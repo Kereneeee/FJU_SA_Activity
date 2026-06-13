@@ -1085,7 +1085,7 @@ function updateConflictOption(radio) {
 function toggleAdjustArea(checkbox) {
     const editArea = checkbox.closest('.conflict-option').querySelector('.conflict-edit-area');
     if (!editArea) return;
-    editArea.style.display = checkbox.checked ? '' : 'none';
+    editArea.style.display = checkbox.checked ? 'block' : 'none';
     setEditAreaDisabled(editArea, !checkbox.checked);
 }
 

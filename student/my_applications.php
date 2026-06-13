@@ -32,7 +32,7 @@ $user_stmt->close();
 $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time,
                e.status, e.review_note, e.user_id,
                e.responsible_person, e.event_type, e.activity_location,
-               e.activity_scale, e.proposal_doc_path,
+               e.activity_scale, e.proposal_doc_path, e.proposal_doc_original_name,
                COALESCE(e.created_at, NOW()) as created_at,
                COALESCE(rc.session_count, 0) AS session_count
         FROM events e
@@ -774,7 +774,7 @@ function getEquipmentStatusText($equipment_list) {
 
                                 <?php
                                 $docs = [
-                                    'proposal_doc_path'  => ['label' => '活動企劃書',   'icon' => 'bi-file-earmark-text-fill'],
+                                    'proposal_doc_path'  => ['label' => '活動企劃書',   'icon' => 'bi-file-earmark-text-fill', 'name_col' => 'proposal_doc_original_name'],
                                 ];
                                 $has_docs = false;
                                 foreach ($docs as $col => $_) { if (!empty($app[$col])) { $has_docs = true; break; } }
@@ -783,8 +783,9 @@ function getEquipmentStatusText($equipment_list) {
                                 <div class="doc-links">
                                     <?php foreach ($docs as $col => $info): ?>
                                         <?php if (!empty($app[$col])): ?>
-                                        <a href="../document/<?php echo htmlspecialchars($app[$col]); ?>" target="_blank" class="doc-link">
-                                            <i class="bi <?php echo $info['icon']; ?>"></i> <?php echo $info['label']; ?>
+                                        <?php $doc_name = $app[$info['name_col']] ?? '' ?: basename($app[$col]); ?>
+                                        <a href="../document/<?php echo htmlspecialchars($app[$col]); ?>" download="<?php echo htmlspecialchars($doc_name); ?>" target="_blank" class="doc-link">
+                                            <i class="bi <?php echo $info['icon']; ?>"></i> <?php echo $info['label']; ?>：<?php echo htmlspecialchars($doc_name); ?>
                                         </a>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
