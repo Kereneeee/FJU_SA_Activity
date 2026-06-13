@@ -293,6 +293,10 @@ if ($request_id > 0) {
 $allowed_statuses = ['all', 'pending', 'approved', 'rejected', 'cancelled'];
 $status_filter = in_array($_GET['status'] ?? '', $allowed_statuses) ? $_GET['status'] : 'all';
 
+// 排序參數
+$sort_by  = in_array($_GET['sort_by'] ?? '', ['event_date', 'apply_date']) ? $_GET['sort_by'] : 'apply_date';
+$sort_dir = ($_GET['sort_dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+
 $pending_events = [];
 if ($event_id === 0 && $request_id === 0) {
     // ── 活動申請 ─────────────────────────────────────────────────────────
@@ -370,10 +374,13 @@ if ($event_id === 0 && $request_id === 0) {
         }
     }
 
-    // 合併並依 created_at 降序排列
+    // 合併並依選定欄位排序
     $pending_events = array_merge($event_rows, $request_rows);
-    usort($pending_events, function ($a, $b) {
-        return strtotime($b['created_at']) - strtotime($a['created_at']);
+    $sort_col = ($sort_by === 'event_date') ? 'start_time' : 'created_at';
+    usort($pending_events, function ($a, $b) use ($sort_col, $sort_dir) {
+        $ta = strtotime($a[$sort_col] ?? '0');
+        $tb = strtotime($b[$sort_col] ?? '0');
+        return $sort_dir === 'asc' ? ($ta - $tb) : ($tb - $ta);
     });
 }
 ?>
@@ -939,6 +946,9 @@ if ($event_id === 0 && $request_id === 0) {
                 </div>
             <?php else: ?>
                 <div class="panel-row">
+                    <?php
+                    $sort_qs = http_build_query(['sort_by' => $sort_by, 'sort_dir' => $sort_dir]);
+                    ?>
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:1rem;">
                         <h5 style="margin:0; align-self:center;"><i class="bi bi-list-ul"></i> 申請管理列表</h5>
                         <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
@@ -951,22 +961,31 @@ if ($event_id === 0 && $request_id === 0) {
                                 <input type="date" id="searchDate" class="form-control" style="border-color:#d1d5db;" onchange="filterReviewTable()">
                             </div>
                             <button onclick="clearSearch()" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;"><i class="bi bi-x-lg"></i> 清除</button>
+                            <div style="width:1px; height:1.5rem; background:#d1d5db;"></div>
+                            <select id="sortBy" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
+                                <option value="apply_date" <?= $sort_by==='apply_date'?'selected':'' ?>>申請日期</option>
+                                <option value="event_date" <?= $sort_by==='event_date'?'selected':'' ?>>活動日期</option>
+                            </select>
+                            <select id="sortDir" class="form-select form-select-sm" style="width:auto" onchange="applySortParams()">
+                                <option value="desc" <?= $sort_dir==='desc'?'selected':'' ?>>降冪</option>
+                                <option value="asc"  <?= $sort_dir==='asc' ?'selected':'' ?>>升冪</option>
+                            </select>
                         </div>
                     </div>
                     <div style="margin-bottom: 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap;">
-                            <a href="review.php?status=all" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
+                            <a href="review.php?status=all&<?= $sort_qs ?>" class="filter-tab tab-all <?= $status_filter === 'all' ? 'active' : '' ?>">
                                 <i class="bi bi-grid"></i> 全部
                                 <span class="ftab-count"><?= $total_count ?></span>
                             </a>
-                            <a href="review.php?status=pending" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
+                            <a href="review.php?status=pending&<?= $sort_qs ?>" class="filter-tab tab-pending <?= $status_filter === 'pending' ? 'active' : '' ?>">
                                 <i class="bi bi-clock"></i> 待審核
                                 <span class="ftab-count"><?= $status_counts['pending'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=approved" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
+                            <a href="review.php?status=approved&<?= $sort_qs ?>" class="filter-tab tab-approved <?= $status_filter === 'approved' ? 'active' : '' ?>">
                                 <i class="bi bi-check-circle"></i> 已通過
                                 <span class="ftab-count"><?= $status_counts['approved'] ?? 0 ?></span>
                             </a>
-                            <a href="review.php?status=rejected" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
+                            <a href="review.php?status=rejected&<?= $sort_qs ?>" class="filter-tab tab-rejected <?= $status_filter === 'rejected' ? 'active' : '' ?>">
                                 <i class="bi bi-x-circle"></i> 已駁回
                                 <span class="ftab-count"><?= $status_counts['rejected'] ?? 0 ?></span>
                             </a>
@@ -1358,6 +1377,13 @@ if ($event_id === 0 && $request_id === 0) {
         document.getElementById('searchClub').value = '';
         document.getElementById('searchDate').value = '';
         filterReviewTable();
+    }
+
+    function applySortParams() {
+        const url = new URL(window.location.href);
+        url.searchParams.set('sort_by',  document.getElementById('sortBy').value);
+        url.searchParams.set('sort_dir', document.getElementById('sortDir').value);
+        window.location = url.toString();
     }
 
     document.addEventListener('DOMContentLoaded', function () {

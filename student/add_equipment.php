@@ -95,7 +95,7 @@ if ($event_info) {
         LEFT JOIN equipment_requests er ON eb.request_id = er.request_id
         WHERE e.equipment_status = 'available'
         GROUP BY e.equipment_id
-        ORDER BY e.name";
+        ORDER BY e.code";
 
     $stmt_eq = $conn->prepare($sql_equipment);
     $stmt_eq->bind_param("ss", $return_time, $borrow_time);
