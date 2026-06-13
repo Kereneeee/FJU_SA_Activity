@@ -95,7 +95,7 @@ if ($event_info) {
         LEFT JOIN equipment_requests er ON eb.request_id = er.request_id
         WHERE e.equipment_status = 'available'
         GROUP BY e.equipment_id
-        ORDER BY e.name";
+        ORDER BY e.code";
 
     $stmt_eq = $conn->prepare($sql_equipment);
     $stmt_eq->bind_param("ss", $return_time, $borrow_time);
@@ -304,7 +304,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
                     }
                 }
             } catch (\Throwable $e) {
-                // 寄信失敗不影響申請結果
+                error_log('[add_equipment mail] ' . $e->getMessage());
             }
 
             header("Location: my_applications.php?success=true");

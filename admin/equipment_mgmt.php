@@ -100,6 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+// 篩選／排序參數（GET）
+$sort_by     = in_array($_GET['sort_by'] ?? '', ['event_date', 'apply_date']) ? $_GET['sort_by'] : 'event_date';
+$sort_dir    = ($_GET['sort_dir'] ?? 'desc') === 'asc' ? 'ASC' : 'DESC';
+$club_filter = trim($_GET['club_filter'] ?? '');
+$order_col   = ($sort_by === 'apply_date') ? 'e.created_at' : 'e.start_time';
+
 // 取得器材列表
 $sql = "SELECT * FROM equipment ORDER BY equipment_id ASC";
 $result = $conn->query($sql);
@@ -135,20 +141,43 @@ foreach ($equipment_list as $eq) {
     $borrowed_quantity += $borrowed;
 }
 
-// 取得借用中的器材詳情（連結學生端）
+// 取得借用中的器材詳情（連結學生端），支援排序與社團篩選
 $borrowing_details = [];
 $sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity,
                       COALESCE(e.status, 'pending') AS event_status, eq.name as equipment_name,
-                      e.event_name, e.club_name, e.start_time, e.end_time, u.name as student_name, u.email
+                      e.event_name, e.club_name, e.start_time, e.end_time, e.created_at,
+                      u.name as student_name, u.email
                FROM equipment_borrow eb
                LEFT JOIN equipment eq ON eb.equipment_id = eq.equipment_id
                LEFT JOIN events e ON eb.event_id = e.event_id
                LEFT JOIN users u ON e.user_id = u.user_id
-               WHERE e.event_id IS NULL OR e.status IN ('pending', 'approved')
-               ORDER BY e.start_time DESC";
-$result_borrow = $conn->query($sql_borrow);
-if ($result_borrow) {
-    $borrowing_details = $result_borrow->fetch_all(MYSQLI_ASSOC);
+               WHERE (e.event_id IS NULL OR e.status IN ('pending', 'approved'))";
+if ($club_filter !== '') {
+    $sql_borrow .= " AND e.club_name = ?";
+}
+$sql_borrow .= " ORDER BY {$order_col} {$sort_dir}";
+
+if ($club_filter !== '') {
+    $stmt_borrow = $conn->prepare($sql_borrow);
+    $stmt_borrow->bind_param('s', $club_filter);
+    $stmt_borrow->execute();
+    $result_borrow = $stmt_borrow->get_result();
+    if ($result_borrow) $borrowing_details = $result_borrow->fetch_all(MYSQLI_ASSOC);
+    $stmt_borrow->close();
+} else {
+    $result_borrow = $conn->query($sql_borrow);
+    if ($result_borrow) $borrowing_details = $result_borrow->fetch_all(MYSQLI_ASSOC);
+}
+
+// 取得有借用記錄的社團清單（供篩選下拉用）
+$all_borrow_clubs = [];
+$club_res = $conn->query(
+    "SELECT DISTINCT e.club_name FROM equipment_borrow eb
+     LEFT JOIN events e ON eb.event_id = e.event_id
+     WHERE e.club_name IS NOT NULL ORDER BY e.club_name"
+);
+if ($club_res) {
+    while ($r = $club_res->fetch_assoc()) $all_borrow_clubs[] = $r['club_name'];
 }
 
 // 統計借用信息
@@ -589,9 +618,37 @@ foreach ($borrowing_details as $borrow) {
             <?php endif; ?>
 
             <!-- 借用詳情 -->
-            <?php if (!empty($borrowing_details)): ?>
             <div class="panel-row">
                 <h5><i class="bi bi-clipboard-list"></i> 器材借用狀態</h5>
+
+                <!-- 篩選／排序列 -->
+                <form method="GET" class="d-flex gap-2 align-items-center flex-wrap mb-3">
+                    <label class="form-label mb-0" style="white-space:nowrap;">排序：</label>
+                    <select name="sort_by" class="form-select form-select-sm" style="width:auto">
+                        <option value="event_date" <?= $sort_by==='event_date'?'selected':'' ?>>活動日期</option>
+                        <option value="apply_date" <?= $sort_by==='apply_date'?'selected':'' ?>>申請日期</option>
+                    </select>
+                    <select name="sort_dir" class="form-select form-select-sm" style="width:auto">
+                        <option value="desc" <?= $sort_dir==='DESC'?'selected':'' ?>>降冪（新→舊）</option>
+                        <option value="asc"  <?= $sort_dir==='ASC' ?'selected':'' ?>>升冪（舊→新）</option>
+                    </select>
+                    <label class="form-label mb-0 ms-2" style="white-space:nowrap;">社團：</label>
+                    <select name="club_filter" class="form-select form-select-sm" style="width:auto">
+                        <option value="">所有社團</option>
+                        <?php foreach ($all_borrow_clubs as $club): ?>
+                        <option value="<?= htmlspecialchars($club) ?>" <?= $club_filter===$club?'selected':'' ?>><?= htmlspecialchars($club) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel"></i> 套用</button>
+                    <?php if ($club_filter!=='' || $sort_by!=='event_date' || $sort_dir!=='DESC'): ?>
+                    <a href="equipment_mgmt.php" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-circle"></i> 清除</a>
+                    <?php endif; ?>
+                    <?php if (!empty($borrowing_details)): ?>
+                    <small class="text-muted ms-auto">共 <?= count($borrowing_details) ?> 筆</small>
+                    <?php endif; ?>
+                </form>
+
+                <?php if (!empty($borrowing_details)): ?>
                 <div style="overflow-x: auto;">
                     <table class="borrowing-table">
                         <thead>
@@ -601,7 +658,8 @@ foreach ($borrowing_details as $borrow) {
                                 <th>器材名稱</th>
                                 <th>借用數量</th>
                                 <th>申請學生</th>
-                                <th>活動時間</th>
+                                <th>活動日期</th>
+                                <th>申請日期</th>
                                 <th>申請狀態</th>
                             </tr>
                         </thead>
@@ -617,7 +675,10 @@ foreach ($borrowing_details as $borrow) {
                                     <?php echo htmlspecialchars($borrow['email'] ?? ''); ?></small>
                                 </td>
                                 <td>
-                                    <small><?php echo $borrow['start_time'] ? date('m/d H:i', strtotime($borrow['start_time'])) : '未知'; ?></small>
+                                    <small><?php echo $borrow['start_time'] ? date('Y/m/d H:i', strtotime($borrow['start_time'])) : '—'; ?></small>
+                                </td>
+                                <td>
+                                    <small><?php echo !empty($borrow['created_at']) ? date('Y/m/d H:i', strtotime($borrow['created_at'])) : '—'; ?></small>
                                 </td>
                                 <td>
                                     <span class="borrow-status <?php echo htmlspecialchars($borrow['event_status']); ?>">
@@ -630,8 +691,10 @@ foreach ($borrowing_details as $borrow) {
                         </tbody>
                     </table>
                 </div>
+                <?php else: ?>
+                <p class="text-muted mb-0"><i class="bi bi-inbox"></i> 目前無符合條件的借用記錄</p>
+                <?php endif; ?>
             </div>
-            <?php endif; ?>
 
             <?php if (!empty($edit_equipment)): ?>
             <div class="modal fade show" tabindex="-1" role="dialog" style="display: block; background: rgba(0, 0, 0, 0.5);">
