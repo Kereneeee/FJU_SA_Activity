@@ -44,6 +44,9 @@ function sendPasswordResetMail(string $to_email, string $to_name, string $reset_
         $mail->Body    = buildResetEmailHtml($to_name, $reset_link);
         $mail->AltBody = buildResetEmailText($to_name, $reset_link);
 
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $GLOBALS['_test_last_mail'] = ['to' => $to_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
+        }
         $mail->send();
         return ['ok' => true, 'error' => ''];
 
@@ -182,6 +185,9 @@ function sendApplicationSubmittedMail(string $admin_email, string $admin_name, a
 </table></td></tr></table></body></html>
 HTML;
         $mail->AltBody = "新活動申請通知\n申請編號：{$event_no}\n活動：{$event['event_name']}\n社團：{$event['club_name']}\n申請人：{$event['student_name']}\n時間：{$event['start_time']} ～ {$event['end_time']}\n請於3個工作天內審核。";
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
+        }
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
@@ -235,6 +241,9 @@ function sendApplicationReviewedMail(string $student_email, string $student_name
 </table></td></tr></table></body></html>
 HTML;
         $mail->AltBody = "活動申請審核結果\n申請編號：{$event_no}\n活動：{$event['event_name']}\n結果：" . ($is_approved ? '核准' : '退件') . "\n備註：" . ($note ?: '無') . "\n如有疑問請洽課指組。";
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $GLOBALS['_test_last_mail'] = ['to' => $student_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
+        }
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
@@ -279,6 +288,9 @@ function sendNominationSubmittedMail(string $admin_email, string $admin_name, ar
 </table></td></tr></table></body></html>
 HTML;
         $mail->AltBody = "幹部提名申請通知\n社團：{$info['club_name']}\n提名人：{$info['nominator_name']}\n筆數：{$count} 筆\n請至身分權限管理頁面審核。";
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $GLOBALS['_test_last_mail'] = ['to' => $admin_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
+        }
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {
@@ -333,6 +345,9 @@ function sendNominationReviewedMail(string $to_email, string $to_name, array $in
 </table></td></tr></table></body></html>
 HTML;
         $mail->AltBody = "幹部提名審核結果\n被提名人：{$info['nominee_name']}\n職稱：{$safe_title}\n社團：{$info['club_name']}\n結果：" . ($is_approved ? '核准' : '駁回') . "\n備註：" . ($info['review_note'] ?: '無');
+        if (defined('PHPUNIT_RUNNING') && PHPUNIT_RUNNING) {
+            $GLOBALS['_test_last_mail'] = ['to' => $to_email, 'subject' => $mail->Subject, 'body' => $mail->Body, 'altbody' => $mail->AltBody];
+        }
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {

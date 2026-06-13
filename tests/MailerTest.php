@@ -128,11 +128,11 @@ class MailerTest extends TestCase
     public function testSendNominationReviewedMailReturnsArray(): void
     {
         $infoApproved = [
-            'action'       => 'approved',
-            'nominee_name' => '王小明',
+            'action'        => 'approved',
+            'nominee_name'  => '王小明',
             'officer_title' => '副社長',
-            'club_name'    => '黑輪社',
-            'review_note'  => '',
+            'club_name'     => '黑輪社',
+            'review_note'   => '',
         ];
 
         $result = sendNominationReviewedMail('president@example.com', '社長B', $infoApproved);
@@ -143,5 +143,120 @@ class MailerTest extends TestCase
         $result2 = sendNominationReviewedMail('president@example.com', '社長B', $infoRejected);
         $this->assertIsArray($result2);
         $this->assertArrayHasKey('ok', $result2);
+    }
+
+    // ── 以下為信件內容驗證（透過測試攔截）────────────────────────────────
+
+    /** 新活動申請通知：收件人 email 與信件主旨正確 */
+    public function testApplicationSubmittedMailContent(): void
+    {
+        $event = [
+            'event_id'     => 7,
+            'event_name'   => '羽球社迎新',
+            'club_name'    => 'D090',
+            'student_name' => '社長C',
+            'start_time'   => '2026-09-10 10:00:00',
+            'end_time'     => '2026-09-10 12:00:00',
+        ];
+
+        sendApplicationSubmittedMail('admin@test.local', '管理員', $event);
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail, '測試攔截應有資料');
+        $this->assertSame('admin@test.local', $mail['to'], '收件人應為管理員 email');
+        $this->assertStringContainsString('新活動申請通知', $mail['subject'], '主旨應含「新活動申請通知」');
+        $this->assertStringContainsString('羽球社迎新', $mail['body'],    'body 應含活動名稱');
+        $this->assertStringContainsString('EVENT000007', $mail['body'],  'body 應含格式化申請編號');
+    }
+
+    /** 活動審核核准通知：主旨含「審核通過」，body 含活動名稱 */
+    public function testApplicationReviewedApprovedMailContent(): void
+    {
+        $event = ['event_id' => 3, 'event_name' => '桌球社月賽'];
+
+        sendApplicationReviewedMail('stu@test.local', '學生甲', $event, 'approved', '');
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail);
+        $this->assertSame('stu@test.local', $mail['to']);
+        $this->assertStringContainsString('審核通過', $mail['subject'], '核准通知主旨應含「審核通過」');
+        $this->assertStringContainsString('桌球社月賽', $mail['body']);
+        $this->assertStringContainsString('EVENT000003', $mail['body']);
+    }
+
+    /** 活動審核退件通知：主旨含「審核退件」，altbody 含備註 */
+    public function testApplicationReviewedRejectedMailContent(): void
+    {
+        $event = ['event_id' => 5, 'event_name' => '射箭社週賽'];
+        $note  = '缺少場地確認文件';
+
+        sendApplicationReviewedMail('stu2@test.local', '學生乙', $event, 'rejected', $note);
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail);
+        $this->assertSame('stu2@test.local', $mail['to']);
+        $this->assertStringContainsString('審核退件', $mail['subject'], '退件通知主旨應含「審核退件」');
+        $this->assertStringContainsString($note, $mail['body'], 'body 應含備註內容');
+    }
+
+    /** 幹部提名通知寄給管理員，主旨含社團名稱 */
+    public function testNominationSubmittedMailContent(): void
+    {
+        $info = [
+            'club_name'      => '跆拳道社',
+            'nominator_name' => '社長D',
+            'count'          => 2,
+        ];
+
+        sendNominationSubmittedMail('admin2@test.local', '管理員2', $info);
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail);
+        $this->assertSame('admin2@test.local', $mail['to']);
+        $this->assertStringContainsString('幹部提名', $mail['subject']);
+        $this->assertStringContainsString('跆拳道社', $mail['body']);
+        $this->assertStringContainsString('社長D', $mail['body']);
+    }
+
+    /** 提名審核核准通知：主旨含「核准」，body 含被提名人姓名 */
+    public function testNominationReviewedApprovedMailContent(): void
+    {
+        $info = [
+            'action'        => 'approved',
+            'nominee_name'  => '陳小華',
+            'officer_title' => '器材幹部',
+            'club_name'     => '登山社',
+            'review_note'   => '',
+        ];
+
+        sendNominationReviewedMail('president2@test.local', '社長E', $info);
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail);
+        $this->assertSame('president2@test.local', $mail['to']);
+        $this->assertStringContainsString('核准', $mail['subject']);
+        $this->assertStringContainsString('陳小華', $mail['body']);
+        $this->assertStringContainsString('器材幹部', $mail['body']);
+    }
+
+    /** 提名審核駁回通知：主旨含「駁回」，altbody 含駁回備註 */
+    public function testNominationReviewedRejectedMailContent(): void
+    {
+        $note = '該成員尚未繳交入社費用';
+        $info = [
+            'action'        => 'rejected',
+            'nominee_name'  => '林大明',
+            'officer_title' => '公關幹部',
+            'club_name'     => '攝影社',
+            'review_note'   => $note,
+        ];
+
+        sendNominationReviewedMail('president3@test.local', '社長F', $info);
+
+        $mail = $GLOBALS['_test_last_mail'] ?? null;
+        $this->assertNotNull($mail);
+        $this->assertSame('president3@test.local', $mail['to']);
+        $this->assertStringContainsString('駁回', $mail['subject']);
+        $this->assertStringContainsString($note, $mail['altbody'], 'altbody 應含駁回備註');
     }
 }

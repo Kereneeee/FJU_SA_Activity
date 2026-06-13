@@ -256,4 +256,48 @@ class NominationTest extends TestCase
         $this->assertContains($row['status'], ['pending', 'approved', 'rejected'],
             'status 應為合法 enum 值');
     }
+
+    /** 核准後同步 club_members：UPDATE 路徑（被提名人已是社團成員） */
+    public function testApprovedNominationUpdatesExistingClubMember(): void
+    {
+        // 先建立一筆非幹部的社團成員記錄
+        $stmt = $this->conn->prepare(
+            "INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date)
+             VALUES (?, ?, 0, NULL, CURDATE())"
+        );
+        $stmt->bind_param('is', $this->nomineeId, $this->clubId);
+        $stmt->execute();
+        $membershipId = (int)$this->conn->insert_id;
+        $stmt->close();
+
+        $this->assertGreaterThan(0, $membershipId, '前置：新增社團成員應成功');
+
+        // 模擬核准提名：UPDATE 已存在的 club_members 記錄
+        $title = 'PHPUnit升任幹部';
+        $stmt2 = $this->conn->prepare(
+            "UPDATE club_members
+             SET is_officer = 1, officer_title = ?, officer_confirmation_date = CURDATE()
+             WHERE user_id = ? AND club_id = ?"
+        );
+        $stmt2->bind_param('sis', $title, $this->nomineeId, $this->clubId);
+        $stmt2->execute();
+        $affected = $stmt2->affected_rows;
+        $stmt2->close();
+
+        $this->assertGreaterThan(0, $affected, 'UPDATE club_members 應影響至少一筆記錄');
+
+        $row = $this->conn->query(
+            "SELECT is_officer, officer_title, officer_confirmation_date
+             FROM club_members WHERE membership_id = $membershipId"
+        )->fetch_assoc();
+
+        $this->assertSame(1, (int)$row['is_officer'],
+            '原本非幹部成員，核准提名後 is_officer 應更新為 1');
+        $this->assertSame($title, $row['officer_title'],
+            'officer_title 應更新為提名職稱');
+        $this->assertNotNull($row['officer_confirmation_date'],
+            'officer_confirmation_date 應在核准時填寫');
+
+        $this->conn->query("DELETE FROM club_members WHERE membership_id = $membershipId");
+    }
 }
