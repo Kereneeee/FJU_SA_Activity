@@ -878,9 +878,11 @@ function getEquipmentStatusText($equipment_list) {
             });
         }
 
-        function sortCards(key) {
+        function sortCards(key, toggle = true) {
             if (sortKey === key) {
-                sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                if (toggle) {
+                    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                }
             } else {
                 sortKey = key;
                 sortDir = 'desc';
@@ -903,7 +905,7 @@ function getEquipmentStatusText($equipment_list) {
         }
 
         // 預設依申請時間降序
-        document.addEventListener('DOMContentLoaded', () => sortCards('apply'));
+        document.addEventListener('DOMContentLoaded', () => sortCards('apply', false));
 
         function editApplication(eventId) {
             window.location.href = `edit_application.php?id=${eventId}`;
