@@ -7,7 +7,9 @@ use PHPMailer\PHPMailer\Exception as MailerException;
 require_once __DIR__ . '/../vendor/phpmailer/src/Exception.php';
 require_once __DIR__ . '/../vendor/phpmailer/src/PHPMailer.php';
 require_once __DIR__ . '/../vendor/phpmailer/src/SMTP.php';
-require_once __DIR__ . '/mail_config.php';
+if (file_exists(__DIR__ . '/mail_config.php')) {
+    require_once __DIR__ . '/mail_config.php';
+}
 
 /**
  * 寄送密碼重設信
