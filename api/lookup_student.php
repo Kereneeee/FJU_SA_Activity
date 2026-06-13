@@ -3,7 +3,7 @@ session_start();
 require_once '../DB/db_config.php';
 header('Content-Type: application/json; charset=utf-8');
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     echo json_encode(['success' => false, 'message' => '未登入']);
     exit;
 }

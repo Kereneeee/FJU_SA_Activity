@@ -1,6 +1,4 @@
 <?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/DB/db_config.php");
 
@@ -52,8 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $sid = (int)$student_id;
         $phone_val = $phone === '' ? null : $phone;
+        $hashed = password_hash($password, PASSWORD_DEFAULT);
         $ins = $conn->prepare("INSERT INTO users (name, student_id, email, phone, password, role) VALUES (?, ?, ?, ?, ?, 'student')");
-        $ins->bind_param("sisss", $name, $sid, $email, $phone_val, $password);
+        $ins->bind_param("sisss", $name, $sid, $email, $phone_val, $hashed);
         if ($ins->execute()) {
             $success = true;
         } else {

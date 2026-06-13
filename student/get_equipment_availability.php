@@ -12,15 +12,18 @@ if (!$borrow_time || !$return_time) {
 }
 
 $sql = "
-SELECT 
+SELECT
     e.equipment_id,
     e.total_quantity,
 
     COALESCE(SUM(
         CASE
-            WHEN ev.start_time < ?
-             AND ev.end_time > ?
-             AND ev.status IN ('approved')
+            WHEN COALESCE(eb.borrow_start, er.borrow_start) < ?
+             AND COALESCE(eb.borrow_end,   er.borrow_end)   > ?
+             AND (
+                 (eb.request_id IS NULL     AND ev.status = 'approved') OR
+                 (eb.request_id IS NOT NULL AND er.status = 'approved')
+             )
             THEN eb.quantity
             ELSE 0
         END
@@ -33,6 +36,9 @@ LEFT JOIN equipment_borrow eb
 
 LEFT JOIN events ev
     ON eb.event_id = ev.event_id
+
+LEFT JOIN equipment_requests er
+    ON eb.request_id = er.request_id
 
 WHERE e.equipment_status = 'available'
 

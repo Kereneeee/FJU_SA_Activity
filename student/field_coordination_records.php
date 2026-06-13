@@ -2,7 +2,7 @@
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
     exit();
 }
@@ -94,6 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
     if (!$vr || !in_array($vr['club_id'], $my_club_ids)) {
         echo json_encode(['ok'=>false,'msg'=>'無權限']); exit;
     }
+    if (!$is_in_registration_period) {
+        echo json_encode(['ok'=>false,'msg'=>'目前不在場地協調登記期間，無法修改場次']); exit;
+    }
     $eid = $vr['event_id'];
     $setting_id = $vr['setting_id'];
     $sessions = $_POST['sessions'] ?? [];
@@ -112,8 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
             if (!$res_id || !$date || !$st || !$et) {
                 throw new Exception("場次 $idx 資料不完整：res_id=$res_id, date=$date, st=$st, et=$et");
             }
-            $start_dt = $date    . ' ' . $st . ':00';
+            $start_dt = $date     . ' ' . $st . ':00';
             $end_dt   = $end_date . ' ' . $et . ':00';
+            if (strtotime($start_dt) < time()) {
+                throw new Exception("場次 $idx 開始時間不能早於現在");
+            }
             $us = $conn->prepare("UPDATE reservations SET space_id=?, start_time=?, end_time=? WHERE reservation_id=? AND event_id=?");
             if (!$us) throw new Exception('prepare 失敗：' . $conn->error);
             $us->bind_param("issii", $space_id, $start_dt, $end_dt, $res_id, $eid);

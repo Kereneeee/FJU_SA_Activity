@@ -9,3 +9,9 @@ document/*.docx
 # 系統檔
 .DS_Store
 Thumbs.db
+
+# PHPUnit / Composer
+vendor/
+composer.phar
+composer.lock
+.phpunit.result.cache

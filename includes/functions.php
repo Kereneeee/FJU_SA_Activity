@@ -9,11 +9,20 @@ function checkLogin() {
     }
 }
 
+// 檢查是否為一般學生（admin 不可進入學生頁面）
+function checkStudent() {
+    if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
+        header('Location: ../login.php');
+        exit;
+    }
+}
+
 // 檢查是否為 admin
 function checkAdmin() {
     checkLogin();
     if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-        die('只有管理員可以進入此頁面');
+        header('Location: ../login.php');
+        exit;
     }
 }
 

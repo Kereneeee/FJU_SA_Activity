@@ -7,7 +7,9 @@ use PHPMailer\PHPMailer\Exception as MailerException;
 require_once __DIR__ . '/../vendor/phpmailer/src/Exception.php';
 require_once __DIR__ . '/../vendor/phpmailer/src/PHPMailer.php';
 require_once __DIR__ . '/../vendor/phpmailer/src/SMTP.php';
-require_once __DIR__ . '/mail_config.php';
+if (file_exists(__DIR__ . '/mail_config.php')) {
+    require_once __DIR__ . '/mail_config.php';
+}
 
 /**
  * 寄送密碼重設信
@@ -233,6 +235,104 @@ function sendApplicationReviewedMail(string $student_email, string $student_name
 </table></td></tr></table></body></html>
 HTML;
         $mail->AltBody = "活動申請審核結果\n申請編號：{$event_no}\n活動：{$event['event_name']}\n結果：" . ($is_approved ? '核准' : '退件') . "\n備註：" . ($note ?: '無') . "\n如有疑問請洽課指組。";
+        $mail->send();
+        return ['ok' => true, 'error' => ''];
+    } catch (MailerException $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}
+
+// ── 通知管理員：社長送出幹部提名 ─────────────────────────────
+function sendNominationSubmittedMail(string $admin_email, string $admin_name, array $info): array
+{
+    try {
+        $mail = _newMailer();
+        $mail->addAddress($admin_email, $admin_name);
+
+        $safe_club      = htmlspecialchars($info['club_name']);
+        $safe_nominator = htmlspecialchars($info['nominator_name']);
+        $count          = intval($info['count']);
+
+        $mail->Subject = "【課指組系統】幹部提名申請通知 - {$safe_club}";
+        $mail->isHTML(true);
+        $mail->Body = <<<HTML
+<!DOCTYPE html><html lang="zh-TW"><body style="margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#1e4d6b,#2d6a8f);padding:28px 40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">👥 幹部提名申請通知</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px;">輔仁大學 課外活動指導組管理系統</p>
+  </td></tr>
+  <tr><td style="padding:32px 40px;">
+    <p style="font-size:15px;color:#1f2937;">親愛的 <strong>{$admin_name}</strong> 您好，</p>
+    <p style="color:#4b5563;line-height:1.7;">有新的幹部提名申請需要審核，請至「身分權限管理」處理。</p>
+    <table style="width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;width:100px;">社團名稱</td><td style="padding:6px 12px;font-weight:600;color:#1f2937;">{$safe_club}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">提名人</td><td style="padding:6px 12px;color:#1f2937;">{$safe_nominator}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">提名筆數</td><td style="padding:6px 12px;color:#1f2937;">{$count} 筆</td></tr>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">請至系統「身分權限管理」頁面進行審核。</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px 40px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;">
+    © 輔仁大學 課外活動指導組管理系統
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+        $mail->AltBody = "幹部提名申請通知\n社團：{$info['club_name']}\n提名人：{$info['nominator_name']}\n筆數：{$count} 筆\n請至身分權限管理頁面審核。";
+        $mail->send();
+        return ['ok' => true, 'error' => ''];
+    } catch (MailerException $e) {
+        return ['ok' => false, 'error' => $e->getMessage()];
+    }
+}
+
+// ── 通知社長：提名審核結果 ────────────────────────────────────
+function sendNominationReviewedMail(string $to_email, string $to_name, array $info): array
+{
+    try {
+        $mail = _newMailer();
+        $mail->addAddress($to_email, $to_name);
+
+        $is_approved  = ($info['action'] === 'approved');
+        $safe_nominee = htmlspecialchars($info['nominee_name']);
+        $safe_title   = htmlspecialchars($info['officer_title'] ?: '一般成員');
+        $safe_club    = htmlspecialchars($info['club_name']);
+        $safe_note    = htmlspecialchars($info['review_note'] ?: '（無備註）');
+        $result_text  = $is_approved ? '✅ 已核准' : '❌ 已駁回';
+        $result_color = $is_approved ? '#0f5132' : '#721c24';
+        $result_bg    = $is_approved ? '#d1e7dd'  : '#f8d7da';
+        $subject_tag  = $is_approved ? '核准' : '駁回';
+
+        $mail->Subject = "【課指組系統】幹部提名已{$subject_tag} - {$safe_nominee}";
+        $mail->isHTML(true);
+        $mail->Body = <<<HTML
+<!DOCTYPE html><html lang="zh-TW"><body style="margin:0;padding:0;background:#f4f6fb;font-family:'Segoe UI',sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;">
+<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#1e4d6b,#2d6a8f);padding:28px 40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:20px;">幹部提名審核結果通知</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,.85);font-size:13px;">輔仁大學 課外活動指導組管理系統</p>
+  </td></tr>
+  <tr><td style="padding:32px 40px;">
+    <p style="font-size:15px;color:#1f2937;">親愛的 <strong>{$to_name}</strong> 您好，</p>
+    <p style="color:#4b5563;line-height:1.7;">您提交的幹部提名已完成審核，結果如下：</p>
+    <div style="text-align:center;margin:20px 0;">
+      <span style="display:inline-block;padding:10px 28px;background:{$result_bg};color:{$result_color};border-radius:999px;font-size:16px;font-weight:700;">{$result_text}</span>
+    </div>
+    <table style="width:100%;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px;border-collapse:collapse;margin:20px 0;">
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;width:100px;">社團名稱</td><td style="padding:6px 12px;color:#1f2937;">{$safe_club}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">被提名人</td><td style="padding:6px 12px;font-weight:600;color:#1f2937;">{$safe_nominee}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">提名職稱</td><td style="padding:6px 12px;color:#1f2937;">{$safe_title}</td></tr>
+      <tr><td style="padding:6px 12px;color:#6b7280;font-size:13px;">審核備註</td><td style="padding:6px 12px;color:#1f2937;">{$safe_note}</td></tr>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">如有疑問，請至課外活動指導組洽詢。</p>
+  </td></tr>
+  <tr><td style="background:#f9fafb;padding:16px 40px;text-align:center;color:#9ca3af;font-size:12px;border-top:1px solid #e5e7eb;">
+    © 輔仁大學 課外活動指導組管理系統
+  </td></tr>
+</table></td></tr></table></body></html>
+HTML;
+        $mail->AltBody = "幹部提名審核結果\n被提名人：{$info['nominee_name']}\n職稱：{$safe_title}\n社團：{$info['club_name']}\n結果：" . ($is_approved ? '核准' : '駁回') . "\n備註：" . ($info['review_note'] ?: '無');
         $mail->send();
         return ['ok' => true, 'error' => ''];
     } catch (MailerException $e) {

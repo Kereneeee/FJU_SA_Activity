@@ -1,11 +1,9 @@
 ﻿<?php
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
 
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
 
-if (!isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
     exit();
 }
@@ -21,6 +19,10 @@ $has_meeting_passed = $fc_manager->hasCoordinationMeetingPassed();
 $latest_setting = $fc_manager->getLatestSetting();
 $is_closed = !$active_setting && $latest_setting && $latest_setting['status'] === 'inactive'
              && strtotime($latest_setting['coordination_meeting_date']) > time();
+
+// 場次日期選擇限制：只能選在可借用期間內（協調大會之後的開放期間）
+$borrow_min = ($active_setting && !empty($active_setting['borrow_start_date'])) ? date('Y-m-d', strtotime($active_setting['borrow_start_date'])) : '';
+$borrow_max = ($active_setting && !empty($active_setting['borrow_end_date']))   ? date('Y-m-d', strtotime($active_setting['borrow_end_date']))   : '';
 
 $message = '';
 $message_type = '';
@@ -120,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
         $club_id              = $selected_club_id;   // 依使用者實際所屬社團（多重身分時依表單選擇）決定，避免登記到他人社團
         $club_name            = $selected_club_name;
         $responsible_person   = trim($_POST['responsible_person'] ?? '');
-        $activity_purpose     = trim($_POST['activity_purpose'] ?? '');
         $description          = trim($_POST['description'] ?? '');
         $sessions             = isset($_POST['sessions']) && is_array($_POST['sessions']) ? $_POST['sessions'] : [];
         $acknowledged_conflicts = isset($_POST['acknowledged_conflicts']) ? intval($_POST['acknowledged_conflicts']) : 0;
@@ -224,7 +225,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 if (!$user_id) throw new Exception('尚未取得使用者識別碼，請重新登入。');
 
                 $description_lines = ['場地協調'];
-                if (!empty($activity_purpose)) $description_lines[] = "用途：{$activity_purpose}";
                 if (!empty($description))       $description_lines[] = "備註：{$description}";
                 $full_description = implode("\n", $description_lines);
 
@@ -252,16 +252,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register_spaces'])) {
                 );
 
                 $conn->commit();
-                // 取第一場次的年月，供日曆連結使用
+                // 取第一場次的年月與場地，供日曆連結直接跳轉到該大樓教室的月份
                 $first_sess_date = !empty($sessions[0]['date']) ? $sessions[0]['date'] : date('Y-m-d');
                 $cal_year  = date('Y', strtotime($first_sess_date));
                 $cal_month = date('n', strtotime($first_sess_date));
+                $cal_space_id = intval($sessions[0]['space_id']);
                 $message_type = 'success';
                 $message = '✅ 場地協調登記已送出，申請編號：#' . $event_id . '，共 ' . count($sessions) . ' 個場次。';
                 if (!empty($conflicts_detected))
                     $message .= ' 該申請包含 ' . count($conflicts_detected) . ' 個場地衝突，將於協調大會時協調。';
                 $message .= ' <a href="field_coordination_records.php" class="fw-semibold">→ 查看登記紀錄</a>'
-                          . ' <a href="calendar.php?year=' . $cal_year . '&month=' . $cal_month . '" class="fw-semibold ms-2">→ 查看行事曆</a>';
+                          . ' <a href="calendar.php?year=' . $cal_year . '&month=' . $cal_month . '&space_id=' . $cal_space_id . '" class="fw-semibold ms-2">→ 查看行事曆</a>';
                 unset($_SESSION['pending_conflicts'], $_SESSION['pending_form_data']);
                 $_POST = [];
                 $sessions_data = [['date'=>'','start_time'=>'','end_date'=>'','end_time'=>'','space_id'=>'']];
@@ -551,22 +552,31 @@ foreach ($buildings as $building) {
 
         <section class="content-wrapper">
             <!-- 狀態 + 日曆按鈕 合併為一列 -->
-            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; background:white; border-radius:14px; padding:.75rem 1.1rem; box-shadow:0 2px 8px rgba(15,23,42,.06);">
-                <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
-                    <?php if (!$active_setting): ?>
-                        <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-clock"></i> 登記未開放</span>
-                    <?php elseif ($has_meeting_passed): ?>
-                        <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#6b7280;background:#f3f4f6;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check2-all"></i> 場協已結束</span>
-                        <span style="font-size:.82rem;color:#9ca3af;">大會：<?= date('Y-m-d', strtotime($active_setting['coordination_meeting_date'])) ?></span>
-                    <?php else: ?>
-                        <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#065f46;background:#d1fae5;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check-circle-fill"></i> 登記開放中</span>
-                        <span style="font-size:.82rem;color:#6b7280;">期限 <?= date('m/d', strtotime($active_setting['registration_start_date'])) ?> ~ <?= date('m/d', strtotime($active_setting['registration_end_date'])) ?></span>
-                        <span style="font-size:.82rem;color:#6b7280;">・協調大會 <?= date('m/d H:i', strtotime($active_setting['coordination_meeting_date'])) ?></span>
-                    <?php endif; ?>
+            <div style="margin-bottom:1rem; background:white; border-radius:14px; padding:.75rem 1.1rem; box-shadow:0 2px 8px rgba(15,23,42,.06);">
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;">
+                    <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;">
+                        <?php if (!$active_setting): ?>
+                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-clock"></i> 登記未開放</span>
+                        <?php elseif ($has_meeting_passed): ?>
+                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#6b7280;background:#f3f4f6;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check2-all"></i> 場協已結束</span>
+                            <span style="font-size:.82rem;color:#9ca3af;">大會：<?= date('Y-m-d', strtotime($active_setting['coordination_meeting_date'])) ?></span>
+                        <?php else: ?>
+                            <span style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#065f46;background:#d1fae5;padding:.25rem .7rem;border-radius:20px;"><i class="bi bi-check-circle-fill"></i> 登記開放中</span>
+                            <span style="font-size:.82rem;color:#6b7280;">開放登記時間 <?= date('m/d', strtotime($active_setting['registration_start_date'])) ?> ~ <?= date('m/d', strtotime($active_setting['registration_end_date'])) ?></span>
+                            <span style="font-size:.82rem;color:#6b7280;">・協調大會 <?= date('m/d H:i', strtotime($active_setting['coordination_meeting_date'])) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <a href="calendar.php" style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#1e4d6b;background:#e8f0f5;padding:.3rem .85rem;border-radius:20px;text-decoration:none;" onmouseover="this.style.background='#d5e3ea'" onmouseout="this.style.background='#e8f0f5'">
+                        <i class="bi bi-calendar3"></i> 查看場地日曆
+                    </a>
                 </div>
-                <a href="calendar.php" style="display:inline-flex;align-items:center;gap:.35rem;font-size:.83rem;font-weight:600;color:#1e4d6b;background:#e8f0f5;padding:.3rem .85rem;border-radius:20px;text-decoration:none;" onmouseover="this.style.background='#d5e3ea'" onmouseout="this.style.background='#e8f0f5'">
-                    <i class="bi bi-calendar3"></i> 查看場地日曆
-                </a>
+                <?php if ($active_setting && !$has_meeting_passed && $borrow_min && $borrow_max): ?>
+                <div style="font-size:.82rem;color:#6b7280;margin-top:.5rem;padding-top:.5rem;border-top:1px solid #f1f5f9;line-height:1.6;">
+                    <i class="bi bi-info-circle"></i>
+                    目前場地協調是登記下學期 <?= date('m/d', strtotime($borrow_min)) ?> 到 <?= date('m/d', strtotime($borrow_max)) ?> 的場地，
+                    若有衝突，將於 <?= date('m/d', strtotime($active_setting['coordination_meeting_date'])) ?> 的場協大會現場協調，或可自行寄送 email 給衝突方事先協商。
+                </div>
+                <?php endif; ?>
             </div>
 
             <?php if (!empty($message)): ?>
@@ -619,8 +629,7 @@ foreach ($buildings as $building) {
             <?php endif; ?>
 
             <div class="card">
-                <h3><i class="bi bi-grid-1x2"></i> 批次場地協調登記</h3>
-                <p class="text-muted">一次選擇多個教室，並支援固定週次的例行練習或活動登記。</p>
+                <h3><i class="bi bi-grid-1x2"></i> 場地協調登記</h3>
                 <?php if (!$active_setting || $has_meeting_passed): ?>
                 <div class="alert alert-warning">
                     <i class="bi bi-info-circle"></i>
@@ -639,16 +648,7 @@ foreach ($buildings as $building) {
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label" for="club_name">主辦社團 *</label>
-                            <?php if (count($my_clubs) > 1): ?>
-                            <select class="form-control" id="club_id_select" onchange="location.href='field_coord.php?club_id='+encodeURIComponent(this.value)">
-                                <?php foreach ($my_clubs as $c): ?>
-                                <option value="<?= htmlspecialchars($c['club_id'], ENT_QUOTES, 'UTF-8') ?>" <?= $c['club_id']===$selected_club_id?'selected':'' ?>><?= htmlspecialchars($c['club_name'], ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small class="text-muted">您隸屬多個社團，請選擇本次登記的主辦社團</small>
-                            <?php else: ?>
                             <input id="club_name" class="form-control" value="<?= htmlspecialchars($selected_club_name, ENT_QUOTES, 'UTF-8') ?>" readonly>
-                            <?php endif; ?>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="event_name">活動名稱 *</label>
@@ -659,10 +659,6 @@ foreach ($buildings as $building) {
                         <div class="col-md-6">
                             <label class="form-label" for="responsible_person">活動負責人 *</label>
                             <input id="responsible_person" name="responsible_person" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['responsible_person'] ?? $_POST['responsible_person'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="負責人姓名（例：社長 王小明）" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label" for="activity_purpose">場地用途</label>
-                            <input id="activity_purpose" name="activity_purpose" class="form-control" value="<?= htmlspecialchars($_SESSION['pending_form_data']['activity_purpose'] ?? $_POST['activity_purpose'] ?? '', ENT_QUOTES, 'UTF-8') ?>" placeholder="例如：熱舞社練習、比賽排練、社團會議">
                         </div>
                     </div>
                     <!-- 活動場次 -->
@@ -681,7 +677,7 @@ foreach ($buildings as $building) {
                                 <div class="session-fields">
                                     <div class="session-field">
                                         <label>開始日期 *</label>
-                                        <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
+                                        <input type="date" name="sessions[<?= $si ?>][date]" class="form-control" value="<?= htmlspecialchars($sess['date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" <?= $borrow_min ? 'min="'.$borrow_min.'"' : '' ?> <?= $borrow_max ? 'max="'.$borrow_max.'"' : '' ?> required>
                                     </div>
                                     <div class="session-field">
                                         <label>開始時間 *</label>
@@ -701,7 +697,7 @@ foreach ($buildings as $building) {
                                     </div>
                                     <div class="session-field">
                                         <label>結束日期 *</label>
-                                        <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date'] ?? $sess['date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" required>
+                                        <input type="date" name="sessions[<?= $si ?>][end_date]" class="form-control" value="<?= htmlspecialchars($sess['end_date'] ?? $sess['date'] ?? '', ENT_QUOTES, 'UTF-8') ?>" <?= $borrow_min ? 'min="'.$borrow_min.'"' : '' ?> <?= $borrow_max ? 'max="'.$borrow_max.'"' : '' ?> required>
                                     </div>
                                     <div class="session-field">
                                         <label>結束時間 *</label>
@@ -792,6 +788,8 @@ foreach ($buildings as $building) {
     // ── 場地資料（按大樓分組）────────────────────────────────
     var spacesForJs = <?= json_encode($spaces_for_js, JSON_UNESCAPED_UNICODE) ?>;
     var sessionCount = <?= count($sessions_data) ?>;
+    var BORROW_MIN = <?= json_encode($borrow_min) ?>;
+    var BORROW_MAX = <?= json_encode($borrow_max) ?>;
 
     function escHtml(str) {
         return String(str)
@@ -831,11 +829,31 @@ foreach ($buildings as $building) {
         if (hidden) hidden.value = (h && m) ? h + ':' + m : '';
     }
 
+    // ── 依時段限制可選分鐘（08:30–21:30，08時只能選30/40/50，21時只能選00/10/20/30）──
+    function applyMinuteRestriction(timeSelectsDiv) {
+        var hourSel = timeSelectsDiv.querySelector('.time-hour');
+        var minSel  = timeSelectsDiv.querySelector('.time-minute');
+        if (!hourSel || !minSel) return;
+        var disabledMins = [];
+        if (hourSel.value === '08') disabledMins = ['00','10','20'];
+        else if (hourSel.value === '21') disabledMins = ['40','50'];
+        Array.prototype.forEach.call(minSel.options, function(opt) {
+            if (opt.value === '') return;
+            opt.disabled = disabledMins.indexOf(opt.value) !== -1;
+        });
+        if (minSel.value && disabledMins.indexOf(minSel.value) !== -1) minSel.value = '';
+    }
+
     document.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('time-hour')) {
+            applyMinuteRestriction(e.target.closest('.time-selects'));
+        }
         if (e.target && (e.target.classList.contains('time-hour') || e.target.classList.contains('time-minute'))) {
             syncTimeValue(e.target);
         }
     });
+
+    document.querySelectorAll('#sessions_container .time-selects').forEach(applyMinuteRestriction);
 
     function buildSpaceOptions(selectedId) {
         var html = '<option value="">-- 選擇場地 --</option>';
@@ -854,6 +872,7 @@ foreach ($buildings as $building) {
     function addSession() {
         var idx = sessionCount;
         sessionCount++;
+        var dateMinMax = (BORROW_MIN ? ' min="' + BORROW_MIN + '"' : '') + (BORROW_MAX ? ' max="' + BORROW_MAX + '"' : '');
         var html = '<div class="session-row" data-idx="' + idx + '">'
             + '<div class="session-header">'
             +   '<span class="session-label"><i class="bi bi-calendar3"></i> 場次</span>'
@@ -864,7 +883,7 @@ foreach ($buildings as $building) {
             + '<div class="session-fields">'
             +   '<div class="session-field">'
             +     '<label>開始日期 *</label>'
-            +     '<input type="date" name="sessions[' + idx + '][date]" class="form-control" required>'
+            +     '<input type="date" name="sessions[' + idx + '][date]" class="form-control"' + dateMinMax + ' required>'
             +   '</div>'
             +   '<div class="session-field">'
             +     '<label>開始時間 *</label>'
@@ -872,7 +891,7 @@ foreach ($buildings as $building) {
             +   '</div>'
             +   '<div class="session-field">'
             +     '<label>結束日期 *</label>'
-            +     '<input type="date" name="sessions[' + idx + '][end_date]" class="form-control" required>'
+            +     '<input type="date" name="sessions[' + idx + '][end_date]" class="form-control"' + dateMinMax + ' required>'
             +   '</div>'
             +   '<div class="session-field">'
             +     '<label>結束時間 *</label>'
@@ -888,6 +907,7 @@ foreach ($buildings as $building) {
             + '</div>';
         document.getElementById('sessions_container').insertAdjacentHTML('beforeend', html);
         renumberSessions();
+        document.querySelectorAll('#sessions_container .time-selects').forEach(applyMinuteRestriction);
     }
 
     function removeSession(btn) {
