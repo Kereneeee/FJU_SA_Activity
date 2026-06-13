@@ -284,12 +284,12 @@ if ($stmt) {
         .booking-table a:hover { text-decoration: underline; }
         .tag-fc { display: inline-block; font-size: .72rem; background: #dbeafe; color: #1e40af; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
         .tag-conflict { display: inline-block; font-size: .72rem; background: #fed7aa; color: #7c2d12; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
-        .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-backdrop.show { display: flex; }
-        .modal-dialog { background: white; border-radius: 16px; padding: 2rem; width: min(520px, 90%); box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
-        .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
-        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
+        .schedule-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+        .schedule-overlay.show { display: flex; }
+        .schedule-dialog { background: #fff; border-radius: 16px; padding: 2rem; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .schedule-dialog .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
+        .schedule-dialog .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+        .schedule-dialog .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
         @media (max-width: 1100px) { .main-content { margin-left: 0; } }
         @media (max-width: 768px) {
             .filter-row { grid-template-columns: 1fr; }
@@ -364,8 +364,8 @@ if ($stmt) {
         </section>
 
         <!-- 日期預約詳情 popup -->
-        <div id="scheduleMdl" class="modal-backdrop" onclick="closeScheduleModal(event)">
-            <div class="modal-dialog" style="width:min(900px,95vw);max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <div id="scheduleMdl" class="schedule-overlay" onclick="closeScheduleModal(event)">
+            <div class="schedule-dialog" style="width:min(900px,95vw);max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
                 <div class="modal-header">
                     <h5 class="modal-title" id="scheduleMdlTitle">預約時段</h5>
                     <button class="modal-close" onclick="closeScheduleModal()">&times;</button>

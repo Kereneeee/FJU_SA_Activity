@@ -296,12 +296,12 @@ if ($stmt) {
         .booking-table a:hover { text-decoration: underline; }
         .tag-fc { display: inline-block; font-size: .72rem; background: #e5e7eb; color: #374151; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
         .tag-conflict { display: inline-block; font-size: .72rem; background: #fed7aa; color: #7c2d12; padding: .1rem .4rem; border-radius: 4px; margin-left: .4rem; vertical-align: middle; }
-        .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-backdrop.show { display: flex; }
-        .modal-dialog { background: white; border-radius: 16px; padding: 2rem; width: min(520px, 90%); box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
-        .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
-        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
+        .schedule-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+        .schedule-overlay.show { display: flex; }
+        .schedule-dialog { background: #fff; border-radius: 16px; padding: 2rem; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .schedule-dialog .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
+        .schedule-dialog .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+        .schedule-dialog .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
         @media (max-width: 768px) {
             .main-content { margin-left: 0; }
             .filter-row { grid-template-columns: 1fr; }
@@ -379,13 +379,19 @@ if ($stmt) {
                 </div>
             </div>
 
-            <div id="scheduleSection" class="card schedule-panel">
-                <h3><i class="bi bi-clock"></i> <span id="scheduleTitle">請先選擇日期</span></h3>
-                <div id="slotList"></div>
-                <div id="bookingDetails" class="booked-list"></div>
-            </div>
         </section>
     </main>
+
+    <!-- 日期預約詳情 popup -->
+    <div id="scheduleMdl" class="schedule-overlay" onclick="closeScheduleModal(event)">
+        <div class="schedule-dialog" style="width:min(900px,95vw);max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h5 class="modal-title" id="scheduleMdlTitle">預約時段</h5>
+                <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
+            </div>
+            <div id="scheduleMdlBody"></div>
+        </div>
+    </div>
 
     <script>
         // 在 script 標籤最上方接收後端 JSON
@@ -561,11 +567,8 @@ if ($stmt) {
 
             calendarTitle.textContent = `${selectedRoomName} ${monthLabel}行事曆`;
             calendarSection.style.display = 'block';
-            document.getElementById('scheduleSection').classList.add('active');
             selectedDate = null;
-            document.getElementById('scheduleTitle').textContent = '請選擇日期查看時段';
-            document.getElementById('slotList').innerHTML = '';
-            document.getElementById('bookingDetails').innerHTML = '';
+            document.getElementById('scheduleMdl').classList.remove('show');
 
             const year = initialYear;
             const month = parseInt(monthSelector.value, 10);
@@ -624,15 +627,37 @@ if ($stmt) {
 
         function hideCalendar() {
             document.getElementById('calendarSection').style.display = 'none';
-            document.getElementById('scheduleSection').classList.remove('active');
-            document.getElementById('scheduleTitle').textContent = '請先選擇教室查看行事曆';
-            document.getElementById('slotList').innerHTML = '';
-            document.getElementById('bookingDetails').innerHTML = '';
+            document.getElementById('scheduleMdl').classList.remove('show');
         }
 
+        const SLOT_RANGES = [
+            [8*60,      9*60     ],
+            [9*60,      10*60    ],
+            [10*60,     11*60    ],
+            [11*60,     12*60    ],
+            [12*60,     13*60+30 ],
+            [13*60+40,  14*60+30 ],
+            [14*60+40,  15*60+40 ],
+            [15*60+50,  16*60+50 ],
+            [17*60,     18*60    ],
+        ];
+        function dateTimeToMins(dtStr) {
+            const d = new Date(dtStr);
+            return d.getHours() * 60 + d.getMinutes();
+        }
         function getBookingCount(roomId, dateStr) {
             const key = `${roomId}_${dateStr}`;
-            return bookings[key] ? bookings[key].length : 0;
+            const items = bookings[key];
+            if (!items || items.length === 0) return 0;
+            const occupied = new Set();
+            items.forEach(item => {
+                const rs = dateTimeToMins(item.start_time);
+                const re = dateTimeToMins(item.end_time);
+                SLOT_RANGES.forEach((slot, idx) => {
+                    if (rs < slot[1] && re > slot[0]) occupied.add(idx);
+                });
+            });
+            return occupied.size;
         }
 
         function getRoomBookings(roomId, dateStr) {
@@ -644,20 +669,24 @@ if ($stmt) {
             selectedDate = date;
             const dateStr = formatDateKey(date);
             const selectedRoomName = getRoomName(selectedRoomId);
-            document.getElementById('scheduleTitle').textContent = `${selectedRoomName} ${dateStr} 預約時段`;
+            document.getElementById('scheduleMdlTitle').textContent = `${selectedRoomName} ${dateStr} 預約時段`;
             renderSchedule(dateStr);
+            document.getElementById('scheduleMdl').classList.add('show');
+        }
+
+        function closeScheduleModal(e) {
+            if (e && e.target !== document.getElementById('scheduleMdl')) return;
+            document.getElementById('scheduleMdl').classList.remove('show');
         }
 
         function renderSchedule(dateStr) {
-            const slotList = document.getElementById('slotList');
-            const bookingDetails = document.getElementById('bookingDetails');
+            const body = document.getElementById('scheduleMdlBody');
             const roomBookings = getRoomBookings(selectedRoomId, dateStr);
 
-            slotList.innerHTML = '';
-            bookingDetails.innerHTML = '';
+            body.innerHTML = '';
 
             if (roomBookings.length === 0) {
-                bookingDetails.innerHTML = '<p class="text-muted" style="padding:.5rem 0;">該日期尚無登記。</p>';
+                body.innerHTML = '<p class="text-muted" style="padding:.5rem 0;">該日期尚無登記。</p>';
                 return;
             }
 
@@ -682,7 +711,7 @@ if ($stmt) {
                 </tr>`;
             });
 
-            bookingDetails.innerHTML = `
+            body.innerHTML = `
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.6rem;">
                     <span style="font-weight:600; color:#374151;">共 ${roomBookings.length} 筆登記</span>
                 </div>
@@ -704,6 +733,9 @@ if ($stmt) {
         }
 
         initPage();
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') document.getElementById('scheduleMdl').classList.remove('show');
+        });
     </script>
 </body>
 </html>
