@@ -202,11 +202,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $form_token_ok) {
             $upload_dir = $base_dir . DIRECTORY_SEPARATOR . 'document' . DIRECTORY_SEPARATOR;
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
             $proposal_filename = null;
+            require_once __DIR__ . '/../includes/proposal_upload.php';
             if (isset($_FILES['proposal_document']) && $_FILES['proposal_document']['error'] == UPLOAD_ERR_OK) {
-                $finfo    = finfo_open(FILEINFO_MIME_TYPE);
-                $realMime = finfo_file($finfo, $_FILES['proposal_document']['tmp_name']);
-                finfo_close($finfo);
-                if ($realMime !== 'application/pdf') {
+                if (!validate_proposal_upload($_FILES['proposal_document'])) {
                     throw new Exception("企劃書只允許上傳 PDF 格式。");
                 }
                 $fn = 'proposal_' . time() . '_' . uniqid() . '.pdf';
