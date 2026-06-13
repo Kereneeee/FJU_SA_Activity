@@ -714,7 +714,7 @@ $current_page = 'my_applications';
                                 <div style="display:grid; grid-template-columns:1fr 1.4fr 1fr 1.4fr auto; gap:0.75rem; align-items:flex-end;">
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用日期</label>
-                                        <input type="date" id="borrow_date" class="form-control" value="<?= date('Y-m-d', $borrow_dt) ?>" min="<?= date('Y-m-d', $borrow_dt) ?>" max="<?= date('Y-m-d', $return_dt) ?>" required>
+                                        <input type="date" id="borrow_date" class="form-control" value="<?= date('Y-m-d', $borrow_dt) ?>" min="<?= date('Y-m-d') ?>" required>
                                     </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
@@ -737,7 +737,7 @@ $current_page = 'my_applications';
                                     </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還日期</label>
-                                        <input type="date" id="return_date" class="form-control" value="<?= date('Y-m-d', $return_dt) ?>" min="<?= date('Y-m-d', $borrow_dt) ?>" max="<?= date('Y-m-d', $return_dt) ?>" required>
+                                        <input type="date" id="return_date" class="form-control" value="<?= date('Y-m-d', $return_dt) ?>" min="<?= date('Y-m-d') ?>" required>
                                     </div>
                                     <div>
                                         <label style="font-size:0.83rem; color:#374151; display:block; margin-bottom:0.3rem;">歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>

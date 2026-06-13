@@ -35,6 +35,8 @@ $message_type = '';
 $submit_errors = [];
 $submit_count  = 0;
 
+$student_name = $_SESSION['student_name'] ?? '社長';
+
 // ── 批次送出提名 ──────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'batch_nominate') {
     $nominations = $_POST['nominations'] ?? [];
@@ -131,7 +133,6 @@ $pend->execute();
 $my_nominations = $pend->get_result()->fetch_all(MYSQLI_ASSOC);
 $pend->close();
 
-$student_name = $_SESSION['student_name'] ?? '社長';
 ?>
 <!DOCTYPE html>
 <html lang="zh-TW">

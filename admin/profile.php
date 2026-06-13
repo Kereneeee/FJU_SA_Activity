@@ -32,13 +32,13 @@ if (!$user) {
 
 $user_name = $user['name'] ?? $_SESSION['user_name'] ?? '管理員';
 
-// 處理密碼修改
+// 處理表單提交
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'change_password') {
-        $old_password = $_POST['old_password'] ?? '';
-        $new_password = $_POST['new_password'] ?? '';
+        $old_password     = $_POST['old_password'] ?? '';
+        $new_password     = $_POST['new_password'] ?? '';
         $confirm_password = $_POST['confirm_password'] ?? '';
-        
+
         if (empty($old_password) || empty($new_password) || empty($confirm_password)) {
             $error_msg = "請填寫所有欄位";
         } elseif ($new_password !== $confirm_password) {
@@ -47,20 +47,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $error_msg = "原密碼不正確";
         } else {
             $hashed = password_hash($new_password, PASSWORD_DEFAULT);
-            $update_sql = "UPDATE users SET password = ? WHERE user_id = ?";
-            $update_stmt = $conn->prepare($update_sql);
+            $update_stmt = $conn->prepare("UPDATE users SET password = ? WHERE user_id = ?");
             if ($update_stmt) {
                 $update_stmt->bind_param("si", $hashed, $user_id);
-
                 if ($update_stmt->execute()) {
                     $success_msg = "密碼已更新";
-                    // 更新本地記錄
                     $user['password'] = $hashed;
                 } else {
                     $error_msg = "密碼更新失敗";
                 }
+                $update_stmt->close();
             } else {
                 $error_msg = "SQL 準備失敗: " . $conn->error;
+            }
+        }
+
+    } elseif ($_POST['action'] === 'change_email') {
+        $new_email = trim($_POST['new_email'] ?? '');
+        if (empty($new_email)) {
+            $error_msg = "請填寫新信箱";
+        } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $error_msg = "信箱格式不正確";
+        } else {
+            $upd = $conn->prepare("UPDATE users SET email = ? WHERE user_id = ?");
+            if ($upd) {
+                $upd->bind_param("si", $new_email, $user_id);
+                if ($upd->execute()) {
+                    $success_msg = "信箱已更新為 " . htmlspecialchars($new_email);
+                    $user['email'] = $new_email;
+                } else {
+                    $error_msg = "信箱更新失敗";
+                }
+                $upd->close();
             }
         }
     }
@@ -369,6 +387,30 @@ $stmt->close();
                     <div class="info-item">
                         <div class="info-label">帳號建立於</div>
                         <div class="info-value"><?php echo $user['created_at'] ? date('Y年m月d日', strtotime($user['created_at'])) : '未記錄'; ?></div>
+                    </div>
+                </div>
+
+                <!-- 信箱設定 -->
+                <div class="info-section">
+                    <h5>信箱設定</h5>
+                    <div class="form-section">
+                        <h6>更新通知信箱</h6>
+                        <p style="font-size:0.88rem;color:#6b7280;margin-bottom:1rem;">
+                            系統通知（如幹部提名、活動申請）會寄送至此信箱。目前設定：
+                            <strong><?= htmlspecialchars($user['email'] ?? '未設定') ?></strong>
+                        </p>
+                        <form method="POST">
+                            <input type="hidden" name="action" value="change_email">
+                            <div class="mb-3">
+                                <label class="form-label">新信箱</label>
+                                <input type="email" name="new_email" class="form-control"
+                                       value="<?= htmlspecialchars($user['email'] ?? '') ?>"
+                                       placeholder="請輸入 email 地址" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary-custom">
+                                <i class="bi bi-envelope-check"></i> 更新信箱
+                            </button>
+                        </form>
                     </div>
                 </div>
 

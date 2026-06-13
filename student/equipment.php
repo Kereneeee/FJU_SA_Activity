@@ -104,9 +104,10 @@ $current_page = 'equipment';
         /* ── card ── */
         .card {
             background: var(--card);
-            border-radius: 18px;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.06);
-            padding: 1.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 8px 22px rgba(15,23,42,0.05);
+            padding: 1.35rem;
             margin-bottom: 1.5rem;
         }
         .card-title {
@@ -118,21 +119,44 @@ $current_page = 'equipment';
         /* ── 時段選擇 ── */
         .time-picker-row {
             display: grid;
-            grid-template-columns: 1fr 1.5fr 1fr 1.5fr auto;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 0.75rem;
             align-items: flex-end;
         }
         .time-picker-row label { font-weight: 600; font-size: 0.9rem; color: #374151; display: block; margin-bottom: 0.4rem; }
-        .time-picker-row .form-control { border-radius: 10px; border: 1px solid #d1d5db; }
-        .time-picker-row .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(30,77,107,0.1); }
+        .time-picker-row .form-control,
+        .time-picker-row .form-select {
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            min-height: 42px;
+        }
+        .time-picker-row .form-control:focus,
+        .time-picker-row .form-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(30,77,107,0.1);
+        }
+        .time-select-group {
+            display: grid;
+            grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .time-select-group .form-select { width: 100% !important; }
+        .time-separator {
+            color: #475569;
+            font-weight: 700;
+            text-align: center;
+        }
         .btn-query {
             background: var(--primary); color: white;
-            border: none; border-radius: 10px;
+            border: none; border-radius: 8px;
             padding: 0.65rem 1.4rem;
             font-weight: 600; cursor: pointer;
             white-space: nowrap;
             transition: background 0.2s;
             display: flex; align-items: center; gap: 0.4rem;
+            min-height: 42px;
+            justify-content: center;
         }
         .btn-query:hover { background: var(--sidebar); }
         .time-hint {
@@ -166,38 +190,84 @@ $current_page = 'equipment';
         /* ── 器材卡片 ── */
         .equipment-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-            gap: 1.2rem;
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+            gap: 0.9rem;
         }
         .equipment-card {
-            background: white; border: 1px solid #e5e7eb; border-radius: 14px;
-            padding: 1.25rem;
-            transition: box-shadow 0.25s ease, transform 0.15s ease;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
             position: relative;
             display: flex;
             flex-direction: column;
+            min-width: 0;
             height: 100%;
         }
         .eq-bottom { margin-top: auto; }
-        .equipment-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.09); transform: translateY(-2px); }
-        .eq-header { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 0.85rem; }
+        .equipment-card:hover {
+            border-color: #9db7c5;
+            box-shadow: 0 8px 18px rgba(30,77,107,0.08);
+        }
+        .eq-header {
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr);
+            align-items: center;
+            gap: 0.8rem;
+            margin-bottom: 0.75rem;
+        }
+        .eq-header > div:last-child { min-width: 0; }
         .eq-icon {
-            width: 46px; height: 46px; border-radius: 12px;
-            background: var(--primary); color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 0.9rem; font-weight: 700; flex-shrink: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 8px;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.86rem;
+            font-weight: 700;
+            line-height: 1;
+            overflow: hidden;
         }
-        .eq-name { font-weight: 600; font-size: 1rem; margin: 0 0 0.15rem; }
-        .eq-code { color: #9ca3af; font-size: 0.78rem; }
-        .eq-desc { font-size: 0.85rem; color: #6b7280; margin-bottom: 0.8rem; min-height: 1.5rem; }
-        .eq-meta { display: flex; gap: 0.6rem; }
+        .eq-name {
+            font-weight: 700;
+            font-size: 1rem;
+            line-height: 1.35;
+            margin: 0 0 0.2rem;
+            overflow-wrap: anywhere;
+        }
+        .eq-code { color: #8a97a8; font-size: 0.8rem; }
+        .eq-desc {
+            font-size: 0.88rem;
+            color: #64748b;
+            line-height: 1.5;
+            margin-bottom: 0.9rem;
+            min-height: 1.35rem;
+            overflow-wrap: anywhere;
+        }
+        .eq-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
         .meta-tag {
-            display: flex; align-items: center; justify-content: center; gap: 0.25rem;
-            background: #f3f4f6; border-radius: 6px;
-            padding: 0.28rem 0.6rem; font-size: 0.82rem; color: #374151;
-            flex: 1 1 auto; white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.35rem;
+            background: #f6f8fa;
+            border: 1px solid #edf1f5;
+            border-radius: 6px;
+            padding: 0.45rem 0.55rem;
+            font-size: 0.82rem;
+            color: #334155;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
-        .meta-tag i { color: var(--primary); font-size: 0.85rem; }
+        .meta-tag i { color: var(--primary); font-size: 0.9rem; flex: 0 0 auto; }
 
         /* 可用數量徽章（時段查詢後出現） */
         .avail-badge {
@@ -223,16 +293,20 @@ $current_page = 'equipment';
         .querying .avail-badge { display: block; background: #f3f4f6; color: #9ca3af; }
 
         @media (max-width: 1100px) {
-            .equipment-grid { grid-template-columns: 1fr; }
+            .equipment-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
             .main-content { margin-left: 0; }
             .time-picker-row { grid-template-columns: 1fr 1fr; }
             .time-picker-row .btn-query { grid-column: 1/-1; justify-content: center; }
         }
         @media (max-width: 768px) {
             .top-navbar { flex-direction: column; align-items: flex-start; gap: 1rem; padding: 1rem; }
+            .content-wrapper { padding: 1rem; }
+            .card { padding: 1rem; }
             .sidebar { position: relative; width: 100%; height: auto; box-shadow: none; }
             .time-picker-row { grid-template-columns: 1fr; }
             .time-picker-row .btn-query { grid-column: 1; }
+            .equipment-grid { grid-template-columns: 1fr; }
+            .eq-meta { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -271,15 +345,15 @@ $current_page = 'equipment';
                     </div>
                     <div>
                         <label>借用時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                        <div class="d-flex align-items-center gap-1">
-                            <select id="borrow_hour" class="form-select" style="width:auto" required>
+                        <div class="time-select-group">
+                            <select id="borrow_hour" class="form-select" required>
                                 <option value="">時</option>
                                 <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
                                     <option value="<?= $hh ?>" <?= $hh === '09' ? 'selected' : '' ?>><?= $hh ?></option>
                                 <?php endfor; ?>
                             </select>
-                            <span style="padding:0 4px;font-weight:600">:</span>
-                            <select id="borrow_minute" class="form-select" style="width:auto" required>
+                            <span class="time-separator">:</span>
+                            <select id="borrow_minute" class="form-select" required>
                                 <option value="">分</option>
                                 <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
                                     <option value="<?= $mm ?>" <?= $mm === '30' ? 'selected' : '' ?>><?= $mm ?></option>
@@ -294,15 +368,15 @@ $current_page = 'equipment';
                     </div>
                     <div>
                         <label>歸還時間 <small style="color:#9ca3af;">(09:30–16:30)</small></label>
-                        <div class="d-flex align-items-center gap-1">
-                            <select id="return_hour" class="form-select" style="width:auto" required>
+                        <div class="time-select-group">
+                            <select id="return_hour" class="form-select" required>
                                 <option value="">時</option>
                                 <?php for ($h = 9; $h <= 16; $h++): $hh = sprintf('%02d', $h); ?>
                                     <option value="<?= $hh ?>" <?= $hh === '16' ? 'selected' : '' ?>><?= $hh ?></option>
                                 <?php endfor; ?>
                             </select>
-                            <span style="padding:0 4px;font-weight:600">:</span>
-                            <select id="return_minute" class="form-select" style="width:auto" required>
+                            <span class="time-separator">:</span>
+                            <select id="return_minute" class="form-select" required>
                                 <option value="">分</option>
                                 <?php foreach ([0,10,20,30,40,50] as $m): $mm = sprintf('%02d', $m); ?>
                                     <option value="<?= $mm ?>" <?= $mm === '30' ? 'selected' : '' ?>><?= $mm ?></option>
