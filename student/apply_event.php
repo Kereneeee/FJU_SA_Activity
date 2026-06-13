@@ -607,16 +607,8 @@ foreach ($venues as $v) {
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">社團名稱 <span class="text-danger">*</span></label>
-                            <?php if (count($my_clubs) > 1): ?>
-                            <select class="form-control" id="club_id_select" onchange="location.href='apply_event.php?club_id='+encodeURIComponent(this.value)">
-                                <?php foreach ($my_clubs as $c): ?>
-                                <option value="<?= htmlspecialchars($c['club_id'], ENT_QUOTES, 'UTF-8') ?>" <?= $c['club_id']===$selected_club_id?'selected':'' ?>><?= htmlspecialchars($c['club_name'], ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <small class="text-muted">您隸屬多個社團，請選擇本次申請的主辦社團</small>
-                            <?php else: ?>
-                            <input type="text" class="form-control" value="<?= $fv['club_name'] ?>" readonly>
-                            <?php endif; ?>
+                            <input type="text" class="form-control" value="<?= htmlspecialchars($current_user_club ?: ($my_clubs[0]['club_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" readonly>
+                            <small class="text-muted">目前將以您目前所屬的社團身份提交申請</small>
                             <input type="hidden" name="club_id" value="<?= htmlspecialchars($selected_club_id, ENT_QUOTES, 'UTF-8') ?>">
                         </div>
                         <div class="col-md-6">
@@ -667,7 +659,7 @@ foreach ($venues as $v) {
 
             <!-- ② 企畫書上傳 -->
             <div class="card">
-                <h3><i class="bi bi-file-earmark-arrow-up"></i> 企畫書上傳</h3>
+                <h3><i class="bi bi-file-earmark-arrow-up"></i> 企劃書上傳</h3>
                 <div class="form-section">
                     <div class="row g-4">
                         <div class="col-md-6">
