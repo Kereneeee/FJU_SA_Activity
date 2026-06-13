@@ -6,6 +6,9 @@ document/*.pdf
 document/*.doc
 document/*.docx
 
+# 執行期產生的 log（各機器自行維護，不入版本控制）
+document/mail_send.log
+
 # 系統檔
 .DS_Store
 Thumbs.db
