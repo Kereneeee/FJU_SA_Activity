@@ -246,12 +246,12 @@ if ($stmt) {
         .filter-row { display: grid; grid-template-columns: repeat(3, minmax(200px, 1fr)) auto; gap: 1rem; align-items: end; margin-bottom: 0; }
         .filter-row .form-label { font-weight: 600; color: #374151; margin-bottom: 0.4rem; }
         .query-card { padding: 1rem 1.5rem; }
-        .query-card h3 { margin-bottom: 0.5rem; flex-wrap: wrap; }
+        .query-card h3 { margin-bottom: 0.25rem; flex-wrap: wrap; }
         .query-card .text-muted { margin-bottom: 0.6rem; font-size: 0.85rem; }
         .query-card .alert-warning { padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
-        .borrow-reminder { display:flex; align-items:center; gap:.5rem; background:#fff7ed; border:1px solid #fed7aa; border-left:5px solid #f59e0b; color:#7c2d12; border-radius:10px; padding:.48rem .8rem; margin:.55rem 0 .7rem; font-size:.84rem; line-height:1.45; }
-        .borrow-reminder a { color:#1e4d6b; font-weight:800; text-decoration:none; white-space:nowrap; }
-        .borrow-reminder a:hover { text-decoration:underline; }
+        .borrow-reminder { display:flex; align-items:center; gap:.5rem; background:#fff7ed; border:1px solid #fed7aa; border-left:5px solid #f59e0b; color:#7c2d12; border-radius:10px; padding:.48rem .8rem; margin:.28rem 0 .7rem; font-size:.84rem; line-height:1.45; }
+        .borrow-reminder button { color:#1e4d6b; font-weight:800; text-decoration:none; white-space:nowrap; border:0; background:transparent; padding:0; cursor:pointer; }
+        .borrow-reminder button:hover { text-decoration:underline; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 1rem; }
         .day-card { min-height: 98px; border: 2px solid #e5e7eb; border-radius: 14px; padding: 10px; background: white; cursor: pointer; transition: all 0.25s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .day-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(30,77,107,0.1); }
@@ -297,6 +297,11 @@ if ($stmt) {
         .schedule-dialog .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
         .schedule-dialog .modal-title { margin: 0; font-size: 1.4rem; font-weight: 700; color: var(--primary); }
         .schedule-dialog .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #6b7280; }
+        .rules-dialog { max-width: 760px; width: calc(100vw - 2rem); padding: 0; overflow: hidden; }
+        .rules-dialog .modal-header { padding: 1.1rem 1.35rem; margin: 0; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
+        .rules-body { padding: 1rem 1.35rem 1.25rem; }
+        .rules-body ol { margin: 0; padding-left: 1.35rem; line-height: 1.75; color: #374151; }
+        .rules-body li + li { margin-top: .25rem; }
         @media (max-width: 1100px) { .main-content { margin-left: 0; } }
         @media (max-width: 768px) {
             .filter-row { grid-template-columns: 1fr; }
@@ -336,7 +341,7 @@ if ($stmt) {
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     <div>
                         借用場地請先完成線上預約，並依規定於平日 3 個工作天前、假日 7 天前完成活動跑單；「審核中」不會開門，「已核可」才會開門。
-                        <a href="apply_event.php">查看完整借用規範</a>
+                        <button type="button" onclick="openBorrowRules()">查看完整借用規範</button>
                     </div>
                 </div>
                 <?php if ($is_in_field_coordination_registration && $active_field_coordination_setting): ?>
@@ -389,6 +394,25 @@ if ($stmt) {
                     <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
                 </div>
                 <div id="scheduleMdlBody" style="overflow-y:auto;overflow-x:auto;"></div>
+            </div>
+        </div>
+        <div id="borrowRulesMdl" class="schedule-overlay" onclick="closeBorrowRules(event)">
+            <div class="schedule-dialog rules-dialog" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-info-circle me-1"></i>場地借用注意事項</h5>
+                    <button class="modal-close" onclick="closeBorrowRules()">&times;</button>
+                </div>
+                <div class="rules-body">
+                    <ol>
+                        <li>請各單位線上登記預約後，要在 3 個工作天前完成活動跑單，假日為 7 天前。</li>
+                        <li>記得跑單，工友和工讀生會依照黃單內容開門。</li>
+                        <li>「審核中」不會開門，「已核可」才會開門。</li>
+                        <li>焯炤館四樓音樂教室（四音）跟康樂教室（四康）為音樂性社團優先使用，如要借用請先詢問承憲助教。</li>
+                        <li>假日需要借場地請提早一週前跑單，並找秉倪助教繳交場地費。</li>
+                        <li>進修部開門請致電：李銘龍大哥（0935-825-979）。</li>
+                        <li>文開樓開門請致電：何阿姨（0912-052-811）。</li>
+                    </ol>
+                </div>
             </div>
         </div>
     </main>
@@ -682,6 +706,15 @@ if ($stmt) {
             document.getElementById('scheduleMdl').classList.remove('show');
         }
 
+        function openBorrowRules() {
+            document.getElementById('borrowRulesMdl').classList.add('show');
+        }
+
+        function closeBorrowRules(e) {
+            if (e && e.target !== document.getElementById('borrowRulesMdl')) return;
+            document.getElementById('borrowRulesMdl').classList.remove('show');
+        }
+
         function renderSchedule(dateStr) {
             const body = document.getElementById('scheduleMdlBody');
             const roomBookings = getRoomBookings(selectedRoomId, dateStr);
@@ -740,7 +773,10 @@ if ($stmt) {
             initPage();
         });
         document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') document.getElementById('scheduleMdl').classList.remove('show');
+            if (e.key === 'Escape') {
+                document.getElementById('scheduleMdl').classList.remove('show');
+                document.getElementById('borrowRulesMdl').classList.remove('show');
+            }
         });
     </script>
 </body>
