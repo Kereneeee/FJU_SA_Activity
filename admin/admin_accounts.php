@@ -133,8 +133,15 @@ if ($res) {
         * { box-sizing:border-box; }
         body { margin:0; min-height:100vh; font-family:'Segoe UI',sans-serif; background:var(--bg); color:#1f2937; }
         .main-content { margin-left:260px; min-height:100vh; }
-        .content-wrapper { padding:1.5rem 2rem 2rem; }
-        .card-panel { background:var(--card); border-radius:14px; box-shadow:0 10px 30px rgba(15,23,42,.06); padding:1.4rem; margin-bottom:1.4rem; border:1px solid rgba(148,163,184,.2); }
+        .top-navbar { background:#d5e3ea; border-bottom:1px solid #bdd0d9; padding:1rem 2rem; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:1100; }
+        .top-navbar .breadcrumb { margin:0; background:transparent; padding:0; font-size:.85rem; }
+        .top-navbar .breadcrumb-item+.breadcrumb-item::before { content:'›'; color:#6b7280; }
+        .top-navbar .breadcrumb-item a { color:var(--primary); text-decoration:none; opacity:.8; }
+        .top-navbar .breadcrumb-item a:hover { opacity:1; }
+        .top-navbar .breadcrumb-item.active { color:#6b7280; }
+        .user-avatar { width:38px; height:38px; border-radius:50%; background:var(--primary); color:white; display:inline-flex; align-items:center; justify-content:center; font-weight:800; cursor:pointer; }
+        .dashboard-grid { padding:1.5rem 2rem 2rem; }
+        .card-panel { background:var(--card); border-radius:18px; box-shadow:0 10px 30px rgba(15,23,42,.06); padding:1.5rem; margin-bottom:1.5rem; border:1px solid rgba(148,163,184,.18); }
         .section-title { display:flex; align-items:center; gap:.55rem; color:var(--primary); font-weight:800; font-size:1.12rem; margin-bottom:1rem; }
         .admin-table { width:100%; border-collapse:collapse; font-size:.9rem; }
         .admin-table th { background:#f0f4f8; color:#374151; padding:.75rem .85rem; border-bottom:2px solid #e5e7eb; white-space:nowrap; }
@@ -146,7 +153,8 @@ if ($res) {
         .form-text-note { color:#6b7280; font-size:.82rem; }
         @media (max-width:768px) {
             .main-content { margin-left:0; }
-            .content-wrapper { padding:1rem; }
+            .top-navbar { flex-direction:column; align-items:flex-start; gap:1rem; padding:1rem; }
+            .dashboard-grid { padding:1rem; }
         }
     </style>
 </head>
@@ -163,7 +171,7 @@ if ($res) {
     include __DIR__ . '/../includes/admin_navbar.php';
     ?>
 
-    <section class="content-wrapper">
+    <section class="dashboard-grid">
         <?php if ($message): ?>
         <div class="alert alert-<?= htmlspecialchars($message_type) ?> alert-dismissible fade show" role="alert">
             <?= htmlspecialchars($message) ?>
