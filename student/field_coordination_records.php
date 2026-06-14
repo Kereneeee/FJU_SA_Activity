@@ -1,6 +1,7 @@
 <?php
 require_once(__DIR__ . "/../DB/db_config.php");
 require_once(__DIR__ . "/../includes/FieldCoordinationManager.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
@@ -26,10 +27,17 @@ if ($_raw !== null) {
     }
 }
 
+$requested_access_club_id = $_POST['club_id'] ?? ($_GET['club_id'] ?? ($_SESSION['current_club_id'] ?? ($_SESSION['active_club_id'] ?? null)));
+student_require_application_access($conn, (int)$user_id, $requested_access_club_id);
+
 // 取得社團清單
 $clubs = [];
 if ($user_id) {
-    $s = $conn->prepare("SELECT cm.club_id, c.club_name FROM club_members cm JOIN clubs c ON cm.club_id=c.club_id WHERE cm.user_id=?");
+    $eligible_membership_sql = student_current_membership_sql_condition('cm');
+    $s = $conn->prepare("SELECT cm.club_id, c.club_name
+                         FROM club_members cm
+                         JOIN clubs c ON cm.club_id=c.club_id
+                         WHERE cm.user_id=? AND $eligible_membership_sql");
     $s->bind_param("i", $user_id); $s->execute();
     $cr = $s->get_result();
     while ($row = $cr->fetch_assoc()) $clubs[] = $row;

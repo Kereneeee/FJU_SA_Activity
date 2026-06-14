@@ -1,6 +1,7 @@
 <?php
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php');
@@ -12,8 +13,8 @@ $current_page = 'user_mgmt';
 $message      = '';
 $message_type = '';
 
-// 民國學年度：西元年 - 1911
-$current_academic_year = intval(date('Y')) - 1911;
+// 民國學年度：8/1 起算；5-7 月交接期仍屬前一學年度。
+$current_academic_year = student_current_academic_year();
 
 // ── 身分對應函式 ──────────────────────────────────────────────
 function role_to_fields(string $role, string $custom_title): array {
@@ -66,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $role           = trim($_POST['role'] ?? '一般成員');
         $custom_title   = trim($_POST['officer_title'] ?? '');
         $join_date      = trim($_POST['join_date'] ?? '') ?: date('Y-m-d');
+        $officer_confirmation_date = trim($_POST['officer_confirmation_date'] ?? '');
+        $confirm_date = $officer_confirmation_date ?: null;
         [$is_officer, $officer_title] = role_to_fields($role, $custom_title);
 
         $check = $conn->prepare("SELECT membership_id FROM club_members WHERE user_id=? AND club_id=?");
@@ -76,9 +79,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $message_type = 'warning';
         } else {
             $stmt = $conn->prepare(
-                "INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date) VALUES (?,?,?,?,?)"
+                "INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date, officer_confirmation_date) VALUES (?,?,?,?,?,?)"
             );
-            $stmt->bind_param("isiss", $target_user_id, $add_club_id, $is_officer, $officer_title, $join_date);
+            $stmt->bind_param("isisss", $target_user_id, $add_club_id, $is_officer, $officer_title, $join_date, $confirm_date);
             $ok           = $stmt->execute();
             $message      = $ok ? '已加入社團。' : '新增失敗：' . $stmt->error;
             $message_type = $ok ? 'success' : 'danger';
@@ -111,6 +114,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $ns->close();
 
         if ($nom) {
+            $approval_confirm_date = date('Y-m-d');
+            $nom_president_stmt = $conn->prepare(
+                "SELECT cm.club_id, c.club_name, cm.is_officer, cm.officer_title, cm.officer_confirmation_date, cm.join_date
+                 FROM club_members cm
+                 JOIN clubs c ON cm.club_id = c.club_id
+                 WHERE cm.user_id=? AND cm.club_id=? AND cm.is_officer=1 AND cm.officer_title='社長'
+                 LIMIT 1"
+            );
+            if ($nom_president_stmt) {
+                $nom_president_stmt->bind_param("is", $nom['nominator_user_id'], $nom['club_id']);
+                $nom_president_stmt->execute();
+                $nom_president_membership = $nom_president_stmt->get_result()->fetch_assoc();
+                $nom_president_stmt->close();
+                $nom_academic_year = student_membership_academic_year($nom_president_membership);
+                $nom_year_start = $nom_academic_year ? student_academic_year_start_date($nom_academic_year) : null;
+                if ($nom_year_start) {
+                    $approval_confirm_date = $nom_year_start;
+                }
+            }
+
             // 確認被提名者是社團成員，若不是先加入
             $cm_chk = $conn->prepare("SELECT membership_id FROM club_members WHERE user_id=? AND club_id=?");
             $cm_chk->bind_param("is", $nom['nominated_user_id'], $nom['club_id']);
@@ -122,13 +145,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $officer_title = $nom['officer_title'];
 
             if ($cm_row) {
-                $up = $conn->prepare("UPDATE club_members SET is_officer=?, officer_title=?, officer_confirmation_date=CURDATE() WHERE membership_id=?");
-                $up->bind_param("isi", $is_officer, $officer_title, $cm_row['membership_id']);
+                $up = $conn->prepare("UPDATE club_members SET is_officer=?, officer_title=?, officer_confirmation_date=? WHERE membership_id=?");
+                $up->bind_param("issi", $is_officer, $officer_title, $approval_confirm_date, $cm_row['membership_id']);
                 $up->execute();
                 $up->close();
             } else {
-                $ins = $conn->prepare("INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date, officer_confirmation_date) VALUES (?,?,?,?,CURDATE(),CURDATE())");
-                $ins->bind_param("isis", $nom['nominated_user_id'], $nom['club_id'], $is_officer, $officer_title);
+                $ins = $conn->prepare("INSERT INTO club_members (user_id, club_id, is_officer, officer_title, join_date, officer_confirmation_date) VALUES (?,?,?,?,CURDATE(),?)");
+                $ins->bind_param("isiss", $nom['nominated_user_id'], $nom['club_id'], $is_officer, $officer_title, $approval_confirm_date);
                 $ins->execute();
                 $ins->close();
             }
@@ -342,12 +365,22 @@ if ($club_id !== '') {
     );
     $all_users  = $res_users ? $res_users->fetch_all(MYSQLI_ASSOC) : [];
 
-    // 歷年幹部名單（依確認日期的民國年份分組）
+    // 歷年幹部名單（8/1 起算學年度；5-7 月交接期仍屬前一學年度）
     $officer_history = [];
     if ($club_info) {
         $res_hist = $conn->prepare(
             "SELECT u.name AS user_name, u.student_id, cm.officer_title, cm.officer_confirmation_date,
-                    (YEAR(COALESCE(cm.officer_confirmation_date, CURDATE())) - 1911) AS acad_year
+                    (
+                        IF(
+                            COALESCE(cm.officer_confirmation_date, cm.join_date, CURDATE()) BETWEEN '2025-05-01' AND '2026-07-31',
+                            2025,
+                            IF(
+                                MONTH(COALESCE(cm.officer_confirmation_date, cm.join_date, CURDATE())) >= 8,
+                                YEAR(COALESCE(cm.officer_confirmation_date, cm.join_date, CURDATE())),
+                                YEAR(COALESCE(cm.officer_confirmation_date, cm.join_date, CURDATE())) - 1
+                            )
+                        ) - 1911
+                    ) AS acad_year
              FROM club_members cm
              JOIN users u ON cm.user_id = u.user_id
              WHERE cm.club_id = ? AND cm.is_officer = 1
@@ -870,6 +903,7 @@ if ($club_id !== '') {
                                 <label class="form-label fw-semibold">確認日期</label>
                                 <input type="date" name="officer_confirmation_date" id="modal_confirm_date"
                                        class="form-control">
+                                <div class="form-text">此日期決定學年度：114 學年可填 2025-08-01，115 學年可填 2026-08-01。</div>
                             </div>
                         </div>
 
@@ -966,7 +1000,7 @@ if ($club_id !== '') {
                     <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
                     <input type="hidden" name="target_user_id" id="add_target_uid">
                     <div class="row g-3 align-items-end">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label fw-semibold" style="font-size:.85rem;">輸入學號搜尋</label>
                             <div style="position:relative;">
                                 <input type="text" id="add_sid_input" class="form-control form-control-sm"
@@ -985,7 +1019,7 @@ if ($club_id !== '') {
                                 <option value="社長">社長</option>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label fw-semibold" style="font-size:.85rem;">職稱</label>
                             <input type="text" name="officer_title" class="form-control form-control-sm"
                                    placeholder="例：器材幹部、活動幹部…"
@@ -996,10 +1030,15 @@ if ($club_id !== '') {
                             <input type="date" name="join_date" class="form-control form-control-sm"
                                    value="<?= date('Y-m-d') ?>">
                         </div>
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold" style="font-size:.85rem;">確認日期</label>
+                            <input type="date" name="officer_confirmation_date" class="form-control form-control-sm">
+                        </div>
                         <div class="col-md-1">
                             <button type="submit" class="btn btn-primary btn-sm w-100">加入</button>
                         </div>
                     </div>
+                    <div class="form-text" style="font-size:.72rem;">確認日期決定學年度：114 學年請填 2025-08-01，115 學年請填 2026-08-01。</div>
                 </form>
                 <?php endif; ?>
             </div>

@@ -81,7 +81,7 @@ if (isset($conn)) {
         </a>
 
         <a class="nav-link <?= $current_page === 'field_coordination_mgmt' ? 'active' : '' ?>" href="field_coordination_mgmt.php">
-            <i class="bi bi-people-fill"></i> 場協登記管理
+            <i class="bi bi-people-fill"></i> 場協設定管理
         </a>
 
         <a class="nav-link <?= $current_page === 'field_coordination_import' ? 'active' : '' ?>" href="field_coordination_import.php">

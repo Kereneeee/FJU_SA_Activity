@@ -117,7 +117,7 @@ $active_setting = $fc_manager->getActiveSettings();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>場協登記管理 - 轔仁大學課外活動指導組</title>
+    <title>場協設定管理 - 轔仁大學課外活動指導組</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
@@ -250,9 +250,9 @@ $active_setting = $fc_manager->getActiveSettings();
         <?php
         $nav_breadcrumbs = [
             ['label' => '首頁', 'url' => 'dashboard.php'],
-            ['label' => '場協登記管理'],
+            ['label' => '場協設定管理'],
         ];
-        $nav_title = '場協登記管理';
+        $nav_title = '場協設定管理';
         include __DIR__ . '/../includes/admin_navbar.php';
         ?>
 

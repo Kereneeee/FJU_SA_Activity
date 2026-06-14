@@ -1,6 +1,7 @@
 ﻿<?php
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
@@ -27,6 +28,8 @@ if ($user_result && $user_result->num_rows > 0) {
     $student_user_id = $user_row['user_id'];
 }
 $user_stmt->close();
+
+student_require_application_access($conn, (int)$student_user_id, $_SESSION['current_club_id'] ?? ($_SESSION['active_club_id'] ?? null));
 
 // 撈取使用者的活動申請（events 表不再含追加申請）
 $sql = "SELECT e.event_id, e.event_name, e.club_name, e.description, e.start_time, e.end_time,

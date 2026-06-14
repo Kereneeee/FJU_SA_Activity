@@ -2,6 +2,7 @@
 session_start();
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
@@ -18,17 +19,15 @@ if (!$user_id || !$club_id) {
     exit();
 }
 
-// 確認目前身分是社長
-$chk = $conn->prepare(
-    "SELECT membership_id FROM club_members WHERE user_id=? AND club_id=? AND is_officer=1 AND officer_title='社長' LIMIT 1"
-);
-$chk->bind_param("is", $user_id, $club_id);
-$chk->execute();
-if ($chk->get_result()->num_rows === 0) {
+// 確認目前身分是有效期內的社長；提名名單歸屬於該社長自己的學年度。
+$president_membership = student_get_active_membership($conn, (int)$user_id, $club_id);
+if (!student_can_nominate_officers($president_membership)) {
+    $_SESSION['flash_message'] = '幹部提名限有效期內的社長使用。';
+    $_SESSION['flash_message_type'] = 'warning';
     header('Location: dashboard.php');
     exit();
 }
-$chk->close();
+$nomination_academic_year = student_membership_academic_year($president_membership);
 
 $message      = $_SESSION['flash_message'] ?? '';
 $message_type = $_SESSION['flash_message_type'] ?? '';
@@ -263,6 +262,10 @@ $pend->close();
                 <div class="panel">
                     <div class="panel-header"><i class="bi bi-search"></i> 查詢學生並加入提名清單</div>
                     <div class="panel-body">
+                        <div class="alert alert-info py-2 mb-3" style="font-size:.9rem;">
+                            <i class="bi bi-info-circle me-1"></i>
+                            目前提名的是 <?= htmlspecialchars($nomination_academic_year ?: '') ?> 學年度名單。「一般成員」指非幹部的活動負責人；通過後可代表社團使用活動、場地、器材與場協申請功能。正常情況下一般社員不需要被提名。
+                        </div>
 
                         <div class="search-block">
                             <div class="sid-wrap">

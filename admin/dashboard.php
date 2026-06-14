@@ -592,11 +592,11 @@ if ($noti_result) {
                 </div>
                 <div class="action-card" onclick="location.href='field_coordination_mgmt.php'">
                     <div class="action-top">
-                        <span>場協登記管理</span>
+                        <span>場協設定管理</span>
                         <div class="action-icon"><i class="bi bi-people"></i></div>
                     </div>
-                    <h6>管理場協登記</h6>
-                    <p>查看與審核場地協調登記申請。</p>
+                    <h6>設定場協時間之基本設定</h6>
+                    <p>設定場地協調的登記期間與協調大會時間。</p>
                 </div>
                 <div class="action-card" onclick="location.href='field_coordination_import.php'">
                     <div class="action-top">

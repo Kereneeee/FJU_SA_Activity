@@ -1,6 +1,7 @@
 ﻿<?php
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
@@ -10,6 +11,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 $student_name = $_SESSION['student_name'] ?? '學生';
 $student_id = $_SESSION['student_id'];
 $user_id = $_SESSION['user_id'] ?? null;
+$flash_message = $_SESSION['flash_message'] ?? '';
+$flash_message_type = $_SESSION['flash_message_type'] ?? 'info';
+unset($_SESSION['flash_message'], $_SESSION['flash_message_type']);
+if (isset($_GET['locked'])) {
+    $flash_message = '非本學年有效社團幹部不允許使用；若為新學年幹部，需由新社長重新提名。';
+    $flash_message_type = 'warning';
+}
 
 // 設置當前頁面用於側邊欄高亮
 $current_page = 'dashboard';
@@ -17,41 +25,11 @@ $current_page = 'dashboard';
 // 應用根路徑（例如 /FJU_SA_Activity），用於生成不受包含文件位置影響的絕對連結
 $appRoot = '/' . basename(dirname(__DIR__));
 
-// 獲取用戶的社團及幹部身分（初始化變數）
-$current_club = $_SESSION['active_club_name'] ?? null;
-$officer_title = $_SESSION['active_position'] ?? null;
-
-// 【修正點 1】判斷是否為幹部：不能只看有沒有社團，必須看 active_position 是否有值
-$is_officer = !empty($_SESSION['active_position']);
-
-// 如果 Session 是空的，且 user_id 存在，則去資料庫抓取預設身分
-if (!$current_club && $user_id) {
-    // 【修正點 2】表名與欄位修正：根據前面的結構，使用者與社團關係在 club_members，而非 user_club_roles
-    $club_sql = "SELECT cm.*, c.club_name
-                 FROM club_members cm
-                 JOIN clubs c ON cm.club_id = c.club_id
-                 WHERE cm.user_id = ?
-                 LIMIT 1";
-    
-    $club_stmt = $conn->prepare($club_sql);
-    if ($club_stmt) {
-        $club_stmt->bind_param("i", $user_id);
-        $club_stmt->execute();
-        $club_result = $club_stmt->get_result();
-        
-        if ($club_row = $club_result->fetch_assoc()) {
-            // 設定變數供頁面顯示
-            $current_club = $club_row['club_name'];
-            $officer_title = $club_row['is_officer'] ? ($club_row['officer_title'] ?: '幹部') : null;
-            $is_officer = !empty($officer_title);
-
-            // 同時存入 Session，供各頁面同步狀態
-            $_SESSION['active_club_id'] = $club_row['club_id'];
-            $_SESSION['active_club_name'] = $club_row['club_name'];
-            $_SESSION['active_position'] = $officer_title;
-        }
-    }
-}
+// 獲取用戶的社團與申請權限。一般成員指已提名通過的活動負責人；一般社員僅可查詢。
+$active_membership = $user_id ? student_sync_active_membership_session($conn, (int)$user_id, $_SESSION['current_club_id'] ?? ($_SESSION['active_club_id'] ?? null)) : null;
+$current_club = $active_membership['club_name'] ?? ($_SESSION['active_club_name'] ?? null);
+$officer_title = student_membership_label($active_membership);
+$can_apply = student_can_apply_with_membership($active_membership);
 
 // 獲取近期活動資料
 $activities = [];
@@ -64,7 +42,7 @@ $activities_sql = "SELECT e.event_name, e.start_time, e.status, s.space_name
                    WHERE e.club_name = ?
                    ORDER BY e.start_time DESC LIMIT 5";
 
-$act_stmt = $conn->prepare($activities_sql);
+$act_stmt = $can_apply ? $conn->prepare($activities_sql) : null;
 if ($act_stmt) {
     // 【關鍵修正】先用一個乾淨的變數接收值，再放入 bind_param 中傳遞引用，徹底解決 Fatal error
     $search_club = $current_club ?: ''; 
@@ -477,9 +455,9 @@ if ($noti_result) {
                             今天是 <?php echo date('Y年m月d日'); ?>
                             <?php if ($current_club): ?>
                                 | <i class="bi bi-people"></i> <strong><?php echo htmlspecialchars($current_club); ?></strong>
-                                <?php if ($is_officer): ?>
+                                <?php if ($can_apply): ?>
                                     <span style="background: #70a3a7; color: white; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600;">
-                                        <?php echo htmlspecialchars($officer_title ?? '幹部'); ?>
+                                        <?php echo htmlspecialchars($officer_title); ?>
                                     </span>
                                 <?php endif; ?>
                             <?php endif; ?>
@@ -493,9 +471,15 @@ if ($noti_result) {
                 </div>
             </div>
 
+            <?php if ($flash_message): ?>
+                <div class="alert alert-<?= htmlspecialchars($flash_message_type, ENT_QUOTES, 'UTF-8') ?> alert-dismissible fade show">
+                    <?= htmlspecialchars($flash_message, ENT_QUOTES, 'UTF-8') ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
 
             <div class="quick-actions">
-                <?php if ($is_officer): ?>
+                <?php if ($can_apply): ?>
                 <div class="action-card" onclick="location.href='<?= $appRoot ?>/student/apply_event.php'">
                     <div class="action-top">
                         <span>活動場地與器材申請</span>
@@ -523,11 +507,11 @@ if ($noti_result) {
                 <?php else: ?>
                 <div class="action-card" style="opacity: 0.6; cursor: not-allowed;">
                     <div class="action-top">
-                        <span>活動申請</span>
+                        <span>場地與器材申請</span>
                         <div class="action-icon"><i class="bi bi-lock"></i></div>
                     </div>
-                    <h6>限社團幹部</h6>
-                    <p>只有社團幹部可以申請活動。</p>
+                    <h6>申請功能已鎖住</h6>
+                    <p>一般社員僅可查詢公告、空間日曆與器材狀態。</p>
                 </div>
                 <div class="action-card" onclick="location.href='calendar.php'">
                     <div class="action-top">
@@ -537,18 +521,19 @@ if ($noti_result) {
                     <h6>查看場地租借情況</h6>
                     <p>查看各場地的租借狀態。</p>
                 </div>
-                <div class="action-card" style="opacity: 0.6; cursor: not-allowed;">
+                <div class="action-card" onclick="location.href='equipment.php'">
                     <div class="action-top">
-                        <span>場協意願</span>
-                        <div class="action-icon"><i class="bi bi-lock"></i></div>
+                        <span>器材狀態</span>
+                        <div class="action-icon"><i class="bi bi-tools"></i></div>
                     </div>
-                    <h6>限社團幹部</h6>
-                    <p>只有社團幹部可以登記場協。</p>
+                    <h6>查看器材庫存動態</h6>
+                    <p>查詢器材目前借用與可用狀態。</p>
                 </div>
                 <?php endif; ?>
             </div>
 
-            <div class="panel-row">
+            <div class="<?= $can_apply ? 'panel-row' : '' ?>">
+                <?php if ($can_apply): ?>
                 <section class="panel-full">
                     <h5>近期活動列表</h5>
                     <div class="event-list">
@@ -609,6 +594,7 @@ if ($noti_result) {
                         <?php endif; ?>
                     </div>
                 </section>
+                <?php endif; ?>
                 <section class="panel-full">
                     <h5>最新通知</h5>
                     <div class="notification-list">

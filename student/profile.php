@@ -2,6 +2,7 @@
 
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 // 檢查登入
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
@@ -35,6 +36,7 @@ if (!$user) {
 }
 
 $user_id = $user['user_id'];
+$current_club_id = null;
 
 // 獲取用戶所屬的所有社團
 $user_clubs = array();
@@ -66,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $new_club_id = $_POST['club_id']; 
         
         // 【修正】除了驗證權限，順便把 c.club_name, cm.is_officer, cm.officer_title 撈出來
-        $check_sql = "SELECT cm.club_id, c.club_name, cm.is_officer, cm.officer_title 
+        $check_sql = "SELECT cm.club_id, c.club_name, cm.is_officer, cm.officer_title, cm.officer_confirmation_date
                       FROM club_members cm
                       JOIN clubs c ON cm.club_id = c.club_id
                       WHERE cm.user_id = ? AND cm.club_id = ?";
@@ -82,18 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $_SESSION['current_club_id'] = $new_club_id;
                 $current_club_id = $new_club_id;
                 
-                // 2. 【核心修復】同步更新 dashboard.php 所需的身分 Session
-                if ($check_row['is_officer'] == 1) {
-                    // 如果是幹部，寫入對應的社團名稱與職稱
-                    $_SESSION['active_club_id']   = $check_row['club_id'];
-                    $_SESSION['active_club_name'] = $check_row['club_name'];
-                    $_SESSION['active_position']  = $check_row['officer_title'] ?: '幹部';
-                } else {
-                    // 如果切換過去只是一般成員，要把幹部權限洗掉，以免保有上一個社團的幹部權限
-                    $_SESSION['active_club_id']   = $check_row['club_id'];
-                    $_SESSION['active_club_name'] = $check_row['club_name'];
-                    $_SESSION['active_position']  = null; 
-                }
+                // 2. 同步更新 dashboard.php 與側邊欄所需的身分 Session
+                $_SESSION['active_club_id']   = $check_row['club_id'];
+                $_SESSION['active_club_name'] = $check_row['club_name'];
+                $_SESSION['active_position']  = student_membership_label($check_row);
+                $_SESSION['active_can_apply'] = student_can_apply_with_membership($check_row) ? 1 : 0;
                 
                 // 重新載入頁面以更新資料，防止 POST 重複提交
                 header("Location: " . $_SERVER['PHP_SELF']);
@@ -493,8 +488,7 @@ foreach ($user_clubs as $club) {
                             // 取得社團名稱
                             echo htmlspecialchars($officer_status['club_name'] ?? ''); 
                             echo " ";
-                            // 判斷是否為幹部，若是則顯示職稱，否則顯示一般成員
-                            echo htmlspecialchars($officer_status['is_officer'] ? ($officer_status['officer_title'] ?: '幹部') : '一般成員');
+                            echo htmlspecialchars(student_membership_label($officer_status));
                         } else {
                             echo "尚未選擇社團";
                         }
@@ -519,6 +513,21 @@ foreach ($user_clubs as $club) {
                     </div>
                 </div>
 
+                <?php if (!student_can_apply_with_membership($officer_status)): ?>
+                <div class="info-section">
+                    <h5>功能限制</h5>
+                    <div class="info-item">
+                        <div class="info-label">
+                            <i class="bi bi-lock"></i>
+                            幹部專屬功能
+                        </div>
+                        <p style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem;">
+                            您並非本學年有效社團幹部，須由社長允許並加入幹部身分，即可使用幹部專屬之功能。若為新學年之幹部身分，需要再由新社長提名。
+                        </p>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <!-- 社團身分切換 -->
                 <?php if (!empty($user_clubs)): ?>
                 <div class="info-section">
@@ -537,7 +546,7 @@ foreach ($user_clubs as $club) {
                                         // 顯示格式：[社團名稱] [職稱/成員]
                                         echo htmlspecialchars($club['club_name']); 
                                         echo " ";
-                                        echo htmlspecialchars($club['is_officer'] ? ($club['officer_title'] ?: '幹部') : '一般成員');
+                                        echo htmlspecialchars(student_membership_label($club));
                                         ?>
                                     </button>
                                 </form>
@@ -555,40 +564,51 @@ foreach ($user_clubs as $club) {
                         
                         // 檢查是否需要重新確認
                         $needs_reconfirm = false;
+                        $membership_is_current = student_membership_is_current($officer_status);
+                        $membership_can_apply = student_can_apply_with_membership($officer_status);
                         if ($officer_status['officer_confirmation_date']) {
                             $confirm_date = strtotime($officer_status['officer_confirmation_date']);
                             $days_since_confirm = floor(($today - $confirm_date) / (60 * 60 * 24));
                             $needs_reconfirm = ($days_since_confirm >= 365);
                         }
 
-                        // 此身份有效學年度：以幹部確認日期為準（若無則用入社時間），民國學年度＝西元年-1911
-                        $acad_year_date = $officer_status['officer_confirmation_date'] ?: $officer_status['join_date'];
-                        $valid_academic_year = (int)date('Y', strtotime($acad_year_date)) - 1911;
+                        $valid_academic_year = student_membership_academic_year($officer_status);
+                        $valid_until = student_membership_valid_until($officer_status);
                         ?>
                         <div class="info-row">
                             <div class="info-item">
                                 <div class="info-label">身分</div>
                                 <div class="info-value">
-                                    <?php if ($officer_status['is_officer']): ?>
+                                    <?php if ($membership_is_current && $officer_status['is_officer']): ?>
                                         <span class="officer-badge">
                                             <i class="bi bi-star"></i>
                                             <?php echo htmlspecialchars($officer_status['officer_title'] ?: '社團幹部'); ?>
                                         </span>
+                                    <?php elseif ($membership_is_current && !empty($officer_status['officer_confirmation_date'])): ?>
+                                        <span class="officer-badge">
+                                            <i class="bi bi-person-check"></i>
+                                            一般成員
+                                        </span>
                                     <?php else: ?>
                                         <span class="officer-badge non-officer">
                                             <i class="bi bi-person"></i>
-                                            一般成員
+                                            一般社員
                                         </span>
                                     <?php endif; ?>
                                 </div>
                             </div>
                             <div class="info-item">
                                 <div class="info-label">此身份有效學年度</div>
-                                <div class="info-value"><?php echo $valid_academic_year; ?>學年度</div>
+                                <div class="info-value">
+                                    <?php echo $valid_academic_year ? htmlspecialchars($valid_academic_year . '學年度') : '—'; ?>
+                                    <?php if ($valid_until): ?>
+                                        <span style="color:#6b7280;font-size:.85rem;">（至 <?= htmlspecialchars($valid_until) ?>）</span>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
 
-                        <?php if ($officer_status['is_officer']): ?>
+                        <?php if ($membership_is_current && $officer_status['is_officer']): ?>
                             <div class="info-item">
                                 <div class="info-label">
                                     <i class="bi bi-info-circle"></i>
@@ -614,15 +634,15 @@ foreach ($user_clubs as $club) {
                                     <?php endif; ?>
                                 </div>
                             </div>
-                        <?php else: ?>
+                        <?php elseif ($membership_can_apply && !empty($officer_status['officer_confirmation_date'])): ?>
                             <div class="info-item">
                                 <div class="info-label">
                                     <i class="bi bi-info-circle"></i>
-                                    功能限制
+                                    功能權限
                                 </div>
-                                <p style="font-size: 0.9rem; color: #6b7280; margin-top: 0.5rem;">
-                                    <i class="bi bi-lock"></i>
-                                    一般成員只能查看場地租借情況，無法申請活動、器材和場地協助。
+                                <p style="font-size: 0.9rem; color: #0f5132; margin-top: 0.5rem;">
+                                    <i class="bi bi-person-check"></i>
+                                    您已由社長提名並通過審核，可使用活動、場地、器材與場協申請功能。
                                 </p>
                             </div>
                         <?php endif; ?>

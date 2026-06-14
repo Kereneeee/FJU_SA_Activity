@@ -4,11 +4,14 @@ session_start();
 
 
 require_once(__DIR__ . "/../DB/db_config.php");
+require_once(__DIR__ . "/../includes/student_permissions.php");
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
     header('Location: ../login.php');
     exit();
 }
+
+student_require_application_access($conn, (int)$_SESSION['user_id'], $_SESSION['current_club_id'] ?? ($_SESSION['active_club_id'] ?? null));
 
 $event_id = $_GET['event_id'] ?? null;
 $error = null;
