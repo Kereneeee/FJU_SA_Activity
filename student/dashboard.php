@@ -395,7 +395,10 @@ if ($noti_result) {
         .notification-card .badge-update { background: #198754; }
         .notification-card .badge-alert { background: #dc3545; }
         .notification-card .meta {
-            white-space: pre-line;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
             line-height: 1.55;
             color: #64748b !important;
         }
@@ -635,7 +638,7 @@ if ($noti_result) {
                                                 <div class="title fw-bold text-dark"><?php echo htmlspecialchars($noti['title']); ?></div>
                                                 <?= $notice_badge ?>
                                             </div>
-                                            <div class="meta small"><?php echo htmlspecialchars(mb_substr($noti['content'], 0, 110)); ?><?= mb_strlen($noti['content']) > 110 ? '...' : '' ?></div>
+                                            <div class="meta small"><?php echo htmlspecialchars(mb_substr(preg_replace('/\s+/u', ' ', trim($noti['content'])), 0, 52)); ?><?= mb_strlen(preg_replace('/\s+/u', ' ', trim($noti['content']))) > 52 ? '...' : '' ?></div>
                                             <div class="notice-date"><i class="bi bi-clock"></i><?= date('Y/m/d H:i', strtotime($noti['created_at'])) ?></div>
                                         </div>
                                     </div>
