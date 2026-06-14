@@ -249,7 +249,7 @@ if ($stmt) {
         .query-card h3 { margin-bottom: 0.5rem; flex-wrap: wrap; }
         .query-card .text-muted { margin-bottom: 0.6rem; font-size: 0.85rem; }
         .query-card .alert-warning { padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
-        .borrow-reminder { display:flex; align-items:flex-start; gap:.65rem; background:#fff7ed; border:1px solid #fed7aa; border-left:5px solid #f59e0b; color:#7c2d12; border-radius:12px; padding:.75rem .9rem; margin:.7rem 0 .85rem; font-size:.88rem; line-height:1.6; }
+        .borrow-reminder { display:flex; align-items:center; gap:.5rem; background:#fff7ed; border:1px solid #fed7aa; border-left:5px solid #f59e0b; color:#7c2d12; border-radius:10px; padding:.48rem .8rem; margin:.55rem 0 .7rem; font-size:.84rem; line-height:1.45; }
         .borrow-reminder a { color:#1e4d6b; font-weight:800; text-decoration:none; white-space:nowrap; }
         .borrow-reminder a:hover { text-decoration:underline; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 1rem; }
