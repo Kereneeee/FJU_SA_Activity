@@ -12,14 +12,6 @@ $user_name = $_SESSION['user_name'] ?? '管理員';
 $message = '';
 $message_type = '';
 
-function next_admin_student_id(mysqli $conn): int {
-    $base = 900000000;
-    $res = $conn->query("SELECT MAX(student_id) AS max_id FROM users WHERE role='admin' AND student_id >= {$base}");
-    $row = $res ? $res->fetch_assoc() : null;
-    $max = isset($row['max_id']) ? intval($row['max_id']) : 0;
-    return max($base, $max + 1);
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $name = trim($_POST['name'] ?? '');
@@ -28,43 +20,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
-    if ($action === 'create_admin') {
-        if ($name === '' || $email === '' || $password === '') {
-            $message = '請填寫姓名、Email 與初始密碼。';
-            $message_type = 'danger';
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $message = 'Email 格式不正確。';
-            $message_type = 'danger';
-        } elseif (strlen($password) < 6) {
-            $message = '密碼至少需要 6 個字元。';
-            $message_type = 'danger';
-        } elseif ($password !== $confirm_password) {
-            $message = '兩次輸入的密碼不一致。';
+    if ($action === 'promote_admin') {
+        $target_user_id = intval($_POST['target_user_id'] ?? 0);
+        if ($target_user_id <= 0) {
+            $message = '請選擇一個已註冊的一般帳號。';
             $message_type = 'danger';
         } else {
-            $chk = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
-            $chk->bind_param("s", $email);
-            $chk->execute();
-            $exists = $chk->get_result()->num_rows > 0;
-            $chk->close();
-
-            if ($exists) {
-                $message = '這個 Email 已經被使用。';
-                $message_type = 'warning';
-            } else {
-                $student_id = next_admin_student_id($conn);
-                $username = $email;
-                $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $conn->prepare(
-                    "INSERT INTO users (name, student_id, email, phone, password, role, username)
-                     VALUES (?, ?, ?, ?, ?, 'admin', ?)"
-                );
-                $stmt->bind_param("sissss", $name, $student_id, $email, $phone, $hashed, $username);
-                $ok = $stmt->execute();
-                $message = $ok ? '管理員帳號已新增。' : '新增失敗：' . $stmt->error;
-                $message_type = $ok ? 'success' : 'danger';
-                $stmt->close();
-            }
+            $stmt = $conn->prepare("UPDATE users SET role='admin' WHERE user_id=? AND role='student'");
+            $stmt->bind_param("i", $target_user_id);
+            $stmt->execute();
+            $ok = $stmt->affected_rows > 0;
+            $message = $ok ? '已將該帳號加入管理員。' : '加入失敗，該帳號可能已經是管理員。';
+            $message_type = $ok ? 'success' : 'warning';
+            $stmt->close();
         }
     }
 
@@ -118,6 +86,12 @@ $admins = [];
 $res = $conn->query("SELECT user_id, name, email, phone, created_at FROM users WHERE role='admin' ORDER BY created_at DESC, user_id DESC");
 if ($res) {
     $admins = $res->fetch_all(MYSQLI_ASSOC);
+}
+
+$candidate_users = [];
+$res_candidates = $conn->query("SELECT user_id, name, email, student_id FROM users WHERE role='student' ORDER BY name, email");
+if ($res_candidates) {
+    $candidate_users = $res_candidates->fetch_all(MYSQLI_ASSOC);
 }
 ?>
 <!DOCTYPE html>
@@ -190,32 +164,32 @@ if ($res) {
         <div class="card-panel">
             <div class="section-title"><i class="bi bi-person-plus-fill"></i> 新增管理員帳號</div>
             <form method="POST" class="row g-3">
-                <input type="hidden" name="action" value="create_admin">
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">姓名 <span class="text-danger">*</span></label>
-                    <input type="text" name="name" class="form-control" required maxlength="50" placeholder="例如：顧北辰">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">Email <span class="text-danger">*</span></label>
-                    <input type="email" name="email" class="form-control" required maxlength="100" placeholder="example@mail.fju.edu.tw">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">電話</label>
-                    <input type="text" name="phone" class="form-control" maxlength="20" placeholder="選填">
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">初始密碼 <span class="text-danger">*</span></label>
-                    <input type="password" name="password" class="form-control" required minlength="6">
-                    <div class="form-text-note mt-1">至少 6 個字元。</div>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold">確認密碼 <span class="text-danger">*</span></label>
-                    <input type="password" name="confirm_password" class="form-control" required minlength="6">
+                <input type="hidden" name="action" value="promote_admin">
+                <div class="col-md-8">
+                    <label class="form-label fw-semibold">選擇已註冊帳號 <span class="text-danger">*</span></label>
+                    <select name="target_user_id" class="form-select" required>
+                        <option value="">請選擇要加入管理員的帳號</option>
+                        <?php foreach ($candidate_users as $candidate): ?>
+                        <option value="<?= (int)$candidate['user_id'] ?>">
+                            <?= htmlspecialchars($candidate['name'], ENT_QUOTES, 'UTF-8') ?>
+                            ／<?= htmlspecialchars($candidate['email'] ?? '', ENT_QUOTES, 'UTF-8') ?>
+                            <?php if (!empty($candidate['student_id'])): ?>
+                            ／<?= htmlspecialchars((string)$candidate['student_id'], ENT_QUOTES, 'UTF-8') ?>
+                            <?php endif; ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text-note mt-1">請先請對方完成一般帳號註冊，再由管理員在這裡加入管理員權限。</div>
                 </div>
                 <div class="col-md-4 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary btn-primary-custom w-100">
-                        <i class="bi bi-person-plus me-1"></i> 建立管理員
+                    <?php if (empty($candidate_users)): ?>
+                    <button type="button" class="btn btn-secondary w-100" disabled>目前沒有可加入的帳號</button>
+                    <?php else: ?>
+                    <button type="submit" class="btn btn-primary btn-primary-custom w-100"
+                            onclick="return confirm('確定要將此帳號加入管理員嗎？');">
+                        <i class="bi bi-person-plus me-1"></i> 加入管理員
                     </button>
+                    <?php endif; ?>
                 </div>
             </form>
         </div>
