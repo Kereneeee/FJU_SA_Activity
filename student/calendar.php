@@ -249,6 +249,9 @@ if ($stmt) {
         .query-card h3 { margin-bottom: 0.5rem; flex-wrap: wrap; }
         .query-card .text-muted { margin-bottom: 0.6rem; font-size: 0.85rem; }
         .query-card .alert-warning { padding: 0.6rem 1rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
+        .borrow-reminder { display:flex; align-items:flex-start; gap:.65rem; background:#fff7ed; border:1px solid #fed7aa; border-left:5px solid #f59e0b; color:#7c2d12; border-radius:12px; padding:.75rem .9rem; margin:.7rem 0 .85rem; font-size:.88rem; line-height:1.6; }
+        .borrow-reminder a { color:#1e4d6b; font-weight:800; text-decoration:none; white-space:nowrap; }
+        .borrow-reminder a:hover { text-decoration:underline; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 1rem; }
         .day-card { min-height: 98px; border: 2px solid #e5e7eb; border-radius: 14px; padding: 10px; background: white; cursor: pointer; transition: all 0.25s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .day-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(30,77,107,0.1); }
@@ -329,6 +332,13 @@ if ($stmt) {
                     <span><i class="bi bi-search"></i> 查詢教室</span>
                     <small class="text-muted" style="font-size:0.8rem; font-weight:400;">此行事曆包含場地申請與場協登記結果。若場協大會已過，已核准的場協結果會在此顯示為正式借用記錄。</small>
                 </h3>
+                <div class="borrow-reminder">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div>
+                        借用場地請先完成線上預約，並依規定於平日 3 個工作天前、假日 7 天前完成活動跑單；「審核中」不會開門，「已核可」才會開門。
+                        <a href="apply_event.php">查看完整借用規範</a>
+                    </div>
+                </div>
                 <?php if ($is_in_field_coordination_registration && $active_field_coordination_setting): ?>
                 <div class="alert alert-warning" style="border-radius: 12px;">
                     <strong>目前為場協登記期間</strong>，系統允許同一時段的場協登記衝突，但最終場地分配仍以協調結果為準。

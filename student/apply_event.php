@@ -580,6 +580,14 @@ foreach ($venues as $v) {
         .alert-info { background:#dbeafe; border-color:#93c5fd; color:#1e3a5f; }
         .alert-warning { background:#fef3c7; border-color:#fbbf24; color:#78350f; }
         .notice-box { display:flex; align-items:start; gap:0.65rem; background:#f0f6fb; border:1px solid #bcd3e5; border-radius:10px; padding:0.85rem 1rem; font-size:0.88rem; color:#1e4d6b; line-height:1.6; }
+        .borrow-rules { border:1px solid #d8e3ea; border-left:5px solid var(--primary); border-radius:12px; background:#fff; padding:1rem 1.15rem; margin-bottom:1.5rem; box-shadow:0 8px 22px rgba(15,23,42,.05); }
+        .borrow-rules summary { cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; gap:1rem; font-weight:800; color:var(--primary); }
+        .borrow-rules summary::-webkit-details-marker { display:none; }
+        .borrow-rules .summary-title { display:flex; align-items:center; gap:.5rem; }
+        .borrow-rules .summary-hint { font-size:.82rem; color:#6b7280; font-weight:600; }
+        .borrow-rules[open] .summary-hint { display:none; }
+        .borrow-rules ol { margin:.9rem 0 0; padding-left:1.4rem; color:#374151; line-height:1.75; font-size:.92rem; }
+        .borrow-rules li + li { margin-top:.25rem; }
         .btn-submit { background:var(--primary); color:white; border:none; padding:0.9rem 3rem; border-radius:12px; font-weight:600; font-size:1.05rem; cursor:pointer; transition:all 0.25s; display:block; margin:1.75rem auto 0; box-shadow:0 4px 15px rgba(30,77,107,0.2); }
         .btn-submit:hover { background:var(--sidebar); transform:translateY(-2px); box-shadow:0 6px 20px rgba(30,77,107,0.3); }
         .btn-submit:disabled { cursor:not-allowed !important; opacity:.75 !important; transform:none !important; box-shadow:0 4px 15px rgba(30,77,107,.2) !important; }
@@ -606,6 +614,22 @@ foreach ($venues as $v) {
         <?php if ($message): ?>
         <div class="message <?= $message_type ?>"><?= $message ?></div>
         <?php endif; ?>
+
+        <details class="borrow-rules">
+            <summary>
+                <span class="summary-title"><i class="bi bi-info-circle-fill"></i> 場地借用注意事項</span>
+                <span class="summary-hint">點擊查看完整規範</span>
+            </summary>
+            <ol>
+                <li>請各單位線上登記預約後，要在 3 個工作天前完成活動跑單，假日為 7 天前。</li>
+                <li>記得跑單，工友和工讀生會依照黃單內容開門。</li>
+                <li>「審核中」不會開門，「已核可」才會開門。</li>
+                <li>焯炤館四樓音樂教室（四音）跟康樂教室（四康）為音樂性社團優先使用，如要借用請先詢問承憲助教。</li>
+                <li>假日需要借場地請提早一週前跑單，並找秉倪助教繳交場地費。</li>
+                <li>進修部開門請致電：李銘龍大哥（0935-825-979）。</li>
+                <li>文開樓開門請致電：何阿姨（0912-052-811）。</li>
+            </ol>
+        </details>
 
         <?php if (!empty($field_coordination_results)): ?>
         <div class="card">
