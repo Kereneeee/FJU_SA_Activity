@@ -36,6 +36,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($action === 'remove_admin') {
+        $target_user_id = intval($_POST['target_user_id'] ?? 0);
+        if ($target_user_id === (int)$_SESSION['user_id']) {
+            $message = '無法移除自己的管理員權限。';
+            $message_type = 'danger';
+        } else {
+            $stmt = $conn->prepare("UPDATE users SET role='student' WHERE user_id=? AND role='admin'");
+            $stmt->bind_param("i", $target_user_id);
+            $stmt->execute();
+            $ok = $stmt->affected_rows > 0;
+            $message = $ok ? '已移除該帳號的管理員權限，改為一般社員帳號。' : '移除失敗，該帳號可能已不是管理員。';
+            $message_type = $ok ? 'success' : 'warning';
+            $stmt->close();
+        }
+    }
+
     if ($action === 'update_admin') {
         $target_user_id = intval($_POST['user_id'] ?? 0);
         if ($target_user_id <= 0 || $name === '' || $email === '') {
@@ -233,6 +249,15 @@ if ($res_candidates) {
                                         data-phone="<?= htmlspecialchars($admin['phone'] ?? '', ENT_QUOTES, 'UTF-8') ?>">
                                     <i class="bi bi-pencil-square"></i> 編輯
                                 </button>
+                                <?php if ((int)$admin['user_id'] !== (int)$_SESSION['user_id']): ?>
+                                <form method="POST" class="d-inline" onsubmit="return confirm('確定要移除「<?= htmlspecialchars($admin['name'], ENT_QUOTES, 'UTF-8') ?>」的管理員權限嗎？移除後該帳號將變回一般社員帳號。');">
+                                    <input type="hidden" name="action" value="remove_admin">
+                                    <input type="hidden" name="target_user_id" value="<?= (int)$admin['user_id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-person-dash"></i> 移除
+                                    </button>
+                                </form>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
