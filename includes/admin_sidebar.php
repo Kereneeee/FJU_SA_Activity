@@ -101,6 +101,9 @@ if (isset($conn)) {
                 <span class="sidebar-badge red"><?= $_badge_pending_nominations ?></span>
             <?php endif; ?>
         </a>
+        <a class="nav-link <?= $current_page === 'admin_accounts' ? 'active' : '' ?>" href="admin_accounts.php">
+            <i class="bi bi-person-plus-fill"></i> 新增管理員
+        </a>
     </nav>
     <div class="sidebar-section">
         <p class="mb-2">系統操作</p>
