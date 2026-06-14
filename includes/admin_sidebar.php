@@ -13,11 +13,27 @@ if (isset($conn)) {
     if ($r) $_badge_pending_nominations = (int)$r->fetch_assoc()['c'];
 
     $r = $conn->query(
-        "SELECT COUNT(*) AS c
+        "SELECT COUNT(DISTINCT fcr.registration_id) AS c
          FROM field_coordination_registrations fcr
          JOIN field_coordination_settings fcs ON fcs.setting_id = fcr.setting_id
-         WHERE fcr.is_approved IS NULL
-           AND fcs.coordination_meeting_date <= NOW()"
+         JOIN events e ON e.event_id = fcr.event_id
+         LEFT JOIN reservations r1 ON r1.event_id = e.event_id
+         WHERE fcs.coordination_meeting_date <= NOW()
+           AND (
+             fcr.is_approved IS NULL
+             OR EXISTS (
+               SELECT 1
+               FROM field_coordination_registrations fcr2
+               JOIN events e2 ON e2.event_id = fcr2.event_id
+               JOIN reservations r2 ON r2.event_id = e2.event_id
+               WHERE fcr2.setting_id = fcr.setting_id
+                 AND fcr2.registration_id != fcr.registration_id
+                 AND r1.space_id IS NOT NULL
+                 AND r2.space_id = r1.space_id
+                 AND r2.start_time < r1.end_time
+                 AND r1.start_time < r2.end_time
+             )
+           )"
     );
     if ($r) $_badge_pending_field_imports = (int)$r->fetch_assoc()['c'];
 }
