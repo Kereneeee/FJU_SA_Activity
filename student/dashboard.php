@@ -339,6 +339,53 @@ if ($noti_result) {
             grid-template-columns: 1fr auto;
             gap: 1rem;
             align-items: flex-start;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(148,163,184,.28) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 8px 20px rgba(15,23,42,.05) !important;
+            transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .notification-list .notification-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 28px rgba(15,23,42,.08) !important;
+        }
+        .notification-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            background: #0d6efd;
+        }
+        .notification-card.type-update::before { background: #198754; }
+        .notification-card.type-alert::before { background: #dc3545; }
+        .notice-summary {
+            display: flex;
+            gap: .85rem;
+            min-width: 0;
+        }
+        .notice-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            background: #e8f0f5;
+            color: #1e4d6b;
+            font-size: 1.05rem;
+        }
+        .notification-card.type-update .notice-icon { background:#e7f6ed; color:#198754; }
+        .notification-card.type-alert .notice-icon { background:#fdecec; color:#dc3545; }
+        .notice-title-row {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+            margin-bottom: .2rem;
         }
         .notification-card .badge {
             font-size: 0.8rem;
@@ -349,18 +396,31 @@ if ($noti_result) {
         .notification-card .badge-alert { background: #dc3545; }
         .notification-card .meta {
             white-space: pre-line;
+            line-height: 1.55;
+            color: #64748b !important;
         }
         .notice-detail-link {
-            color: #1e4d6b;
+            color: white;
+            background: #1e4d6b;
             text-decoration: none;
             font-size: 0.82rem;
             font-weight: 700;
             display: inline-flex;
             align-items: center;
-            gap: 0.25rem;
-            margin-top: 0.35rem;
+            gap: 0.3rem;
+            padding: .38rem .75rem;
+            border-radius: 8px;
+            white-space: nowrap;
         }
-        .notice-detail-link:hover { text-decoration: underline; }
+        .notice-detail-link:hover { color:white; background:#14394f; }
+        .notice-date {
+            color: #94a3b8;
+            font-size: .78rem;
+            display: inline-flex;
+            align-items: center;
+            gap: .25rem;
+            margin-top: .45rem;
+        }
         .footer-note {
             margin-top: 0.75rem;
             color: #6b7280;
@@ -551,25 +611,37 @@ if ($noti_result) {
                     <div class="notification-list">
                         <?php if (!empty($notifications)): ?>
                             <?php foreach ($notifications as $noti): ?>
-                                <div class="notification-card p-3 mb-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-start">
-                                    <div style="flex: 1; padding-right: 10px;">
-                                        <div class="title fw-bold text-dark mb-1"><?php echo htmlspecialchars($noti['title']); ?></div>
-                                        <div class="meta text-secondary small"><?php echo htmlspecialchars(mb_substr($noti['content'], 0, 90)); ?><?= mb_strlen($noti['content']) > 90 ? '...' : '' ?></div>
-                                        <a class="notice-detail-link" href="notification_detail.php?id=<?= (int)$noti['id'] ?>">
-                                            詳細資料 <i class="bi bi-chevron-right"></i>
-                                        </a>
-                                    </div>
                                     <?php 
-                                    // 根據 type 顯示不同的 Badge 顏色與文字
                                     $type = $noti['type'];
                                     if ($type === 'update' || $type === '更新') {
-                                        echo '<span class="badge bg-success text-white px-2 py-1 small">更新</span>';
+                                        $notice_class = 'type-update';
+                                        $notice_icon = 'bi-arrow-repeat';
+                                        $notice_badge = '<span class="badge bg-success text-white px-2 py-1 small">更新</span>';
                                     } elseif ($type === 'alert' || $type === '提醒' || $type === '緊急') {
-                                        echo '<span class="badge bg-danger text-white px-2 py-1 small">提醒</span>';
+                                        $notice_class = 'type-alert';
+                                        $notice_icon = 'bi-exclamation-triangle-fill';
+                                        $notice_badge = '<span class="badge bg-danger text-white px-2 py-1 small">提醒</span>';
                                     } else {
-                                        echo '<span class="badge bg-primary text-white px-2 py-1 small">新消息</span>';
+                                        $notice_class = 'type-new';
+                                        $notice_icon = 'bi-megaphone-fill';
+                                        $notice_badge = '<span class="badge bg-primary text-white px-2 py-1 small">新消息</span>';
                                     }
                                     ?>
+                                <div class="notification-card <?= $notice_class ?> p-3 mb-2 bg-white">
+                                    <div class="notice-summary">
+                                        <div class="notice-icon"><i class="bi <?= $notice_icon ?>"></i></div>
+                                        <div style="min-width:0;">
+                                            <div class="notice-title-row">
+                                                <div class="title fw-bold text-dark"><?php echo htmlspecialchars($noti['title']); ?></div>
+                                                <?= $notice_badge ?>
+                                            </div>
+                                            <div class="meta small"><?php echo htmlspecialchars(mb_substr($noti['content'], 0, 110)); ?><?= mb_strlen($noti['content']) > 110 ? '...' : '' ?></div>
+                                            <div class="notice-date"><i class="bi bi-clock"></i><?= date('Y/m/d H:i', strtotime($noti['created_at'])) ?></div>
+                                        </div>
+                                    </div>
+                                    <a class="notice-detail-link" href="notification_detail.php?id=<?= (int)$noti['id'] ?>">
+                                        詳細資料 <i class="bi bi-chevron-right"></i>
+                                    </a>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
