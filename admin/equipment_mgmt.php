@@ -140,7 +140,7 @@ foreach ($equipment_list as $eq) {
 
 // 取得借用中的器材詳情（連結學生端），支援排序與社團篩選
 $borrowing_details = [];
-$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.equipment_id, eb.quantity,
+$sql_borrow = "SELECT eb.borrow_id, eb.event_id, eb.request_id, eb.equipment_id, eb.quantity,
                       COALESCE(e.status, 'pending') AS event_status, eq.name as equipment_name,
                       e.event_name, e.club_name, e.start_time, e.end_time, e.created_at,
                       u.name as student_name, u.email
@@ -547,6 +547,10 @@ foreach ($borrowing_details as $borrow) {
             min-width: 700px;
         }
         .borrowing-table td { white-space: nowrap; }
+        .borrowing-table tbody tr.borrow-group-alt td { background: #f6f7f9; }
+        .borrowing-table tbody tr.borrow-group-base td { background: #ffffff; }
+        .borrowing-table tbody tr.borrow-group-alt:hover td,
+        .borrowing-table tbody tr.borrow-group-base:hover td { background: #eef4f7; }
         .borrow-status {
             display: inline-flex;
             align-items: center;
@@ -590,6 +594,36 @@ foreach ($borrowing_details as $borrow) {
         }
         .sort-btn:hover { border-color: var(--primary); color: var(--primary); }
         .sort-btn.sort-active { border-color: var(--primary); background: var(--primary); color: white; }
+        .borrow-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: .75rem;
+            flex-wrap: wrap;
+            margin-top: .9rem;
+            color: #6b7280;
+            font-size: .85rem;
+        }
+        .borrow-page-controls {
+            display: inline-flex;
+            gap: .35rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .borrow-page-btn {
+            min-width: 34px;
+            height: 34px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            color: #374151;
+            border-radius: 7px;
+            font-size: .82rem;
+            cursor: pointer;
+            transition: all .18s;
+        }
+        .borrow-page-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+        .borrow-page-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .borrow-page-btn:disabled { opacity: .45; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -673,8 +707,11 @@ foreach ($borrowing_details as $borrow) {
                             <?php foreach ($borrowing_details as $borrow):
                                 $b_event_ts = !empty($borrow['start_time'])  ? strtotime($borrow['start_time'])  : 0;
                                 $b_apply_ts = !empty($borrow['created_at'])  ? strtotime($borrow['created_at'])  : 0;
+                                $borrow_group = !empty($borrow['request_id'])
+                                    ? 'request-' . intval($borrow['request_id'])
+                                    : 'event-' . intval($borrow['event_id']);
                             ?>
-                            <tr data-event-ts="<?= $b_event_ts ?>" data-apply-ts="<?= $b_apply_ts ?>">
+                            <tr data-event-ts="<?= $b_event_ts ?>" data-apply-ts="<?= $b_apply_ts ?>" data-borrow-group="<?= htmlspecialchars($borrow_group) ?>">
                                 <td><?php echo htmlspecialchars($borrow['event_name'] ?? '未知活動'); ?></td>
                                 <td><?php echo htmlspecialchars($borrow['club_name'] ?? '未知社團'); ?></td>
                                 <td><?php echo htmlspecialchars($borrow['equipment_name'] ?? '未知器材'); ?></td>
@@ -699,6 +736,10 @@ foreach ($borrowing_details as $borrow) {
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
+                <div class="borrow-pagination" id="borrowPagination">
+                    <span id="borrowPageInfo"></span>
+                    <div class="borrow-page-controls" id="borrowPageControls"></div>
                 </div>
                 <?php else: ?>
                 <p class="text-muted mb-0"><i class="bi bi-inbox"></i> 目前無符合條件的借用記錄</p>
@@ -876,6 +917,111 @@ foreach ($borrowing_details as $borrow) {
     <script>
         var equipSortKey = 'event';
         var equipSortDir = 'desc';
+        var borrowCurrentPage = 1;
+        var borrowRowsPerPage = 10;
+
+        function getBorrowRows() {
+            var tbody = document.querySelector('.borrowing-table tbody');
+            return tbody ? Array.from(tbody.querySelectorAll('tr[data-event-ts]')) : [];
+        }
+
+        function applyBorrowGroupStripes(rows) {
+            var lastGroup = null;
+            var groupIndex = -1;
+            rows.forEach(function(row) {
+                var group = row.dataset.borrowGroup || '';
+                if (group !== lastGroup) {
+                    groupIndex++;
+                    lastGroup = group;
+                }
+                row.classList.toggle('borrow-group-alt', groupIndex % 2 === 1);
+                row.classList.toggle('borrow-group-base', groupIndex % 2 === 0);
+            });
+        }
+
+        function buildBorrowPages(rows) {
+            var groups = [];
+            var currentGroup = null;
+
+            rows.forEach(function(row) {
+                var groupKey = row.dataset.borrowGroup || '';
+                if (!currentGroup || currentGroup.key !== groupKey) {
+                    currentGroup = { key: groupKey, rows: [] };
+                    groups.push(currentGroup);
+                }
+                currentGroup.rows.push(row);
+            });
+
+            var pages = [];
+            var currentPage = [];
+            groups.forEach(function(group) {
+                var wouldOverflow = currentPage.length > 0 && currentPage.length + group.rows.length > borrowRowsPerPage;
+                if (wouldOverflow) {
+                    pages.push(currentPage);
+                    currentPage = [];
+                }
+                currentPage = currentPage.concat(group.rows);
+            });
+
+            if (currentPage.length > 0 || pages.length === 0) {
+                pages.push(currentPage);
+            }
+
+            return pages;
+        }
+
+        function renderBorrowPagination() {
+            var rows = getBorrowRows();
+            var totalRows = rows.length;
+            var pageRows = buildBorrowPages(rows);
+            var totalPages = pageRows.length;
+            if (borrowCurrentPage > totalPages) borrowCurrentPage = totalPages;
+            if (borrowCurrentPage < 1) borrowCurrentPage = 1;
+
+            var visibleRows = pageRows[borrowCurrentPage - 1] || [];
+            var visibleSet = new Set(visibleRows);
+            rows.forEach(function(row) {
+                row.style.display = visibleSet.has(row) ? '' : 'none';
+            });
+
+            var info = document.getElementById('borrowPageInfo');
+            if (info) {
+                var firstVisible = visibleRows.length ? rows.indexOf(visibleRows[0]) + 1 : 0;
+                var lastVisible = visibleRows.length ? rows.indexOf(visibleRows[visibleRows.length - 1]) + 1 : 0;
+                var from = totalRows === 0 ? 0 : firstVisible;
+                var to = totalRows === 0 ? 0 : lastVisible;
+                info.textContent = '顯示 ' + from + '–' + to + ' 筆，共 ' + totalRows + ' 筆';
+            }
+
+            var controls = document.getElementById('borrowPageControls');
+            if (!controls) return;
+
+            var html = '';
+            html += '<button type="button" class="borrow-page-btn" onclick="goBorrowPage(' + (borrowCurrentPage - 1) + ')" ' + (borrowCurrentPage === 1 ? 'disabled' : '') + '>上一頁</button>';
+
+            var pages = [];
+            for (var page = 1; page <= totalPages; page++) {
+                if (page === 1 || page === totalPages || Math.abs(page - borrowCurrentPage) <= 2) {
+                    pages.push(page);
+                }
+            }
+            var lastPage = 0;
+            pages.forEach(function(page) {
+                if (page - lastPage > 1) {
+                    html += '<span style="padding:0 .25rem;">...</span>';
+                }
+                html += '<button type="button" class="borrow-page-btn ' + (page === borrowCurrentPage ? 'active' : '') + '" onclick="goBorrowPage(' + page + ')">' + page + '</button>';
+                lastPage = page;
+            });
+            html += '<button type="button" class="borrow-page-btn" onclick="goBorrowPage(' + (borrowCurrentPage + 1) + ')" ' + (borrowCurrentPage === totalPages ? 'disabled' : '') + '>下一頁</button>';
+            controls.innerHTML = html;
+        }
+
+        function goBorrowPage(page) {
+            borrowCurrentPage = page;
+            renderBorrowPagination();
+        }
+
         function sortEquipTable(key, toggle) {
             if (toggle === undefined) toggle = true;
             if (equipSortKey === key) {
@@ -890,7 +1036,7 @@ foreach ($borrowing_details as $borrow) {
             document.getElementById('equipSortApplyDir').textContent = equipSortKey === 'apply' ? (equipSortDir === 'desc' ? '↓' : '↑') : '↓';
             var tbody = document.querySelector('.borrowing-table tbody');
             if (!tbody) return;
-            var rows = Array.from(tbody.querySelectorAll('tr[data-event-ts]'));
+            var rows = getBorrowRows();
             var attr = equipSortKey === 'event' ? 'eventTs' : 'applyTs';
             rows.sort(function(a, b) {
                 var av = parseInt(a.dataset[attr]) || 0;
@@ -898,6 +1044,9 @@ foreach ($borrowing_details as $borrow) {
                 return equipSortDir === 'desc' ? bv - av : av - bv;
             });
             rows.forEach(function(r) { tbody.appendChild(r); });
+            applyBorrowGroupStripes(rows);
+            borrowCurrentPage = 1;
+            renderBorrowPagination();
         }
         document.addEventListener('DOMContentLoaded', function() { sortEquipTable('event', false); });
     </script>

@@ -206,6 +206,17 @@ class FieldCoordinationManager {
                   AND fcr.is_approved = 1
                   AND NOW() > fcs.coordination_meeting_date
                   AND e.start_time >= NOW()
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM field_coordination_registrations fcr2
+                      JOIN events e2 ON fcr2.event_id = e2.event_id
+                      JOIN reservations r2 ON e2.event_id = r2.event_id
+                      WHERE fcr2.setting_id = fcr.setting_id
+                        AND fcr2.registration_id != fcr.registration_id
+                        AND r2.space_id = r.space_id
+                        AND r2.start_time < r.end_time
+                        AND r.start_time < r2.end_time
+                  )
                 ORDER BY e.start_time ASC";
 
         $stmt = $this->conn->prepare($sql);

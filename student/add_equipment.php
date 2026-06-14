@@ -274,34 +274,20 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$error) {
             // 寄信通知所有管理員
             try {
                 require_once __DIR__ . '/../includes/mailer.php';
-                $admins = $conn->query("SELECT email, name FROM users WHERE role='admin' AND email IS NOT NULL");
+                $admins = $conn->query("SELECT email FROM users WHERE role='admin' AND email IS NOT NULL");
                 if ($admins) {
-                    // 整理已申請器材名稱清單
-                    $eq_names = [];
-                    foreach ($equipment_selections as $eid => $qty) {
-                        $qty = intval($qty);
-                        if ($qty > 0) {
-                            $nr = $conn->prepare("SELECT name FROM equipment WHERE equipment_id = ?");
-                            $nr->bind_param("i", $eid);
-                            $nr->execute();
-                            $nr_row = $nr->get_result()->fetch_assoc();
-                            $nr->close();
-                            if ($nr_row) $eq_names[] = htmlspecialchars($nr_row['name']) . " × {$qty}";
-                        }
-                    }
-                    $eq_list_html = implode('<br>', $eq_names);
-                    $eq_list_text = implode('、', $eq_names);
-
+                    $admin_emails = [];
                     while ($adm = $admins->fetch_assoc()) {
-                        sendApplicationSubmittedMail($adm['email'], $adm['name'], [
-                            'event_id'     => $parent_event_id,
-                            'event_name'   => $event_info['event_name'] . '（追加器材申請）',
-                            'club_name'    => $event_info['club_name'],
-                            'student_name' => $_SESSION['student_name'] ?? '學生',
-                            'start_time'   => $borrow_start_final,
-                            'end_time'     => $borrow_end_final,
-                        ]);
+                        $admin_emails[] = $adm['email'];
                     }
+                    sendApplicationSubmittedMailToAdmins($admin_emails, [
+                        'event_id'     => $parent_event_id,
+                        'event_name'   => $event_info['event_name'] . '（追加器材申請）',
+                        'club_name'    => $event_info['club_name'],
+                        'student_name' => $_SESSION['student_name'] ?? '學生',
+                        'start_time'   => $borrow_start_final,
+                        'end_time'     => $borrow_end_final,
+                    ]);
                 }
             } catch (\Throwable $e) {
                 error_log('[add_equipment mail] ' . $e->getMessage());
@@ -622,7 +608,7 @@ $current_page = 'my_applications';
                     <h3>追加申請器材</h3>
                     <p style="color: #6b7280; margin-bottom: 1.5rem;">以下資訊已固定，您只需選擇要申請的器材並上傳單據</p>
 
-                    <form method="POST">
+                    <form method="POST" onsubmit="return handleAddEquipmentSubmit(this)">
                         <div class="form-section">
                             <div class="form-section-title">活動信息</div>
                             
@@ -830,6 +816,15 @@ $current_page = 'my_applications';
     </main>
     <script>
         // ── 器材數量控制 ─────────────────────────────────────────
+        function handleAddEquipmentSubmit(form) {
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>處理中…';
+            }
+            return true;
+        }
+
         function getEffectiveMax(input) {
             return parseInt(input.getAttribute('max'))||0;
         }

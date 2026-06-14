@@ -113,7 +113,7 @@ $special_dates_json = json_encode($special_dates);
 
 $bookings = [];
 $sql_bookings = "SELECT r.space_id, r.start_time, r.end_time, e.event_id, e.event_name, e.club_name, u.name AS user_name, u.email AS user_email, e.status, e.is_field_coordination, fcr.is_approved, fcr.registration_id, fcs.coordination_meeting_date,
-       CASE WHEN fcr.is_approved IS NULL AND EXISTS (
+       CASE WHEN fcr.registration_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM field_coordination_registrations fcr2
             JOIN events e2 ON fcr2.event_id = e2.event_id
             JOIN reservations r2 ON e2.event_id = r2.event_id

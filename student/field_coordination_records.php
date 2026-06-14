@@ -349,10 +349,11 @@ foreach ($records as $rec) {
                         $rid       = $rec['registration_id'];
                         $eid       = $rec['event_id'];
                         $statusKey = is_null($rec['is_approved']) ? 'pending' : ((int)$rec['is_approved'] ? 'approved' : 'rejected');
-                        $statusLabel = ['pending'=>'審核中','approved'=>'已核准','rejected'=>'未核准'][$statusKey];
                         $is_conflict = isset($conflicted_rids[$rid]);
+                        $displayStatusKey = $is_conflict ? 'pending' : $statusKey;
+                        $statusLabel = $is_conflict ? '需重新協調' : ['pending'=>'審核中','approved'=>'已核准','rejected'=>'未核准'][$statusKey];
                         $sessions  = $sessions_map[$eid] ?? [];
-                        $can_edit  = ($statusKey !== 'approved');
+                        $can_edit  = ($displayStatusKey !== 'approved');
 
                         $purpose = '';
                         foreach (explode("\n", $rec['description'] ?? '') as $line) {
@@ -362,7 +363,7 @@ foreach ($records as $rec) {
                             }
                         }
                     ?>
-                    <div class="record-card <?= $statusKey ?><?= $is_conflict ? ' conflict' : '' ?>" id="rec_<?= $rid ?>">
+                    <div class="record-card <?= $displayStatusKey ?><?= $is_conflict ? ' conflict' : '' ?>" id="rec_<?= $rid ?>">
                         <?php if ($is_conflict): ?>
                         <div class="mb-2">
                             <button type="button" class="btn-action btn-conflict-toggle" onclick="toggleConflict(<?= $rid ?>)">
@@ -403,7 +404,7 @@ foreach ($records as $rec) {
                             <div>
                                 <h6 class="mb-1 fw-bold">
                                     <?= htmlspecialchars($rec['event_name'], ENT_QUOTES, 'UTF-8') ?>
-                                    <span class="badge-status badge-<?= $statusKey ?>"><?= $statusLabel ?></span>
+                                    <span class="badge-status badge-<?= $displayStatusKey ?>"><?= $statusLabel ?></span>
                                     <?php if ($is_conflict): ?>
                                     <span class="badge-status badge-conflict ms-1"><i class="bi bi-exclamation-triangle me-1"></i>衝突</span>
                                     <?php endif; ?>

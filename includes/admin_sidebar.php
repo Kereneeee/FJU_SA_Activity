@@ -1,15 +1,25 @@
 <?php
 $current_page = $current_page ?? '';
 
-// 查詢待處理數量（供徽章顯示）
 $_badge_pending_events = 0;
 $_badge_pending_nominations = 0;
+$_badge_pending_field_imports = 0;
+
 if (isset($conn)) {
     $r = $conn->query("SELECT COUNT(*) AS c FROM events WHERE status = 'pending'");
     if ($r) $_badge_pending_events = (int)$r->fetch_assoc()['c'];
 
     $r = $conn->query("SELECT COUNT(*) AS c FROM officer_nominations WHERE status = 'pending'");
     if ($r) $_badge_pending_nominations = (int)$r->fetch_assoc()['c'];
+
+    $r = $conn->query(
+        "SELECT COUNT(*) AS c
+         FROM field_coordination_registrations fcr
+         JOIN field_coordination_settings fcs ON fcs.setting_id = fcr.setting_id
+         WHERE fcr.is_approved IS NULL
+           AND fcs.coordination_meeting_date <= NOW()"
+    );
+    if ($r) $_badge_pending_field_imports = (int)$r->fetch_assoc()['c'];
 }
 ?>
 <style>
@@ -52,7 +62,7 @@ if (isset($conn)) {
         </a>
 
         <a class="nav-link <?= $current_page === 'space_mgmt' ? 'active' : '' ?>" href="space_mgmt.php">
-            <i class="bi bi-building"></i> 空間管理
+            <i class="bi bi-building"></i> 場地管理
         </a>
 
         <a class="nav-link <?= $current_page === 'field_coordination_mgmt' ? 'active' : '' ?>" href="field_coordination_mgmt.php">
@@ -61,10 +71,13 @@ if (isset($conn)) {
 
         <a class="nav-link <?= $current_page === 'field_coordination_import' ? 'active' : '' ?>" href="field_coordination_import.php">
             <i class="bi bi-cloud-upload"></i> 場協結果匯入
+            <?php if ($_badge_pending_field_imports > 0): ?>
+                <span class="sidebar-badge red"><?= $_badge_pending_field_imports ?></span>
+            <?php endif; ?>
         </a>
 
         <a class="nav-link <?= $current_page === 'calendar' ? 'active' : '' ?>" href="calendar.php">
-            <i class="bi bi-calendar3"></i> 完整行事曆
+            <i class="bi bi-calendar3"></i> 場地月曆
         </a>
 
         <a class="nav-link <?= $current_page === 'user_mgmt' ? 'active' : '' ?>" href="user_mgmt.php">
@@ -75,7 +88,7 @@ if (isset($conn)) {
         </a>
     </nav>
     <div class="sidebar-section">
-        <p class="mb-2">快捷操作</p>
+        <p class="mb-2">系統操作</p>
         <a class="nav-link" href="../logout.php"><i class="bi bi-box-arrow-right"></i> 登出系統</a>
     </div>
 </div>

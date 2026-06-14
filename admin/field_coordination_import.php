@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $message_type = 'danger';
     }
     $_GET['setting_id'] = $setting_id;
+    $_GET['tab'] = 'all';
 }
 
 // ── 儲存結果（無衝突登記：approve / edited / pending）─────────────
@@ -88,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_results'])) {
     $message = "✅ 套用完成：" . ($msg_parts ? implode('、', $msg_parts) : '無變更');
     $message_type = 'success';
     $_GET['setting_id'] = $setting_id;
+    $_GET['tab'] = 'all';
 }
 
 // ── CSV 匯出（每個場次一行）────────────────────────────────────
@@ -180,19 +182,15 @@ $pending_clean = array_values(array_filter($clean_regs, function($r) {
     return $r['is_approved'] === null;
 }));
 
-$unresolved_groups = [];
-foreach ($conflict_groups as $gi => $group_ids) {
-    $has_pending = false;
-    foreach ($group_ids as $gid) {
-        if ($reg_map[$gid]['is_approved'] === null) { $has_pending = true; break; }
-    }
-    if ($has_pending) $unresolved_groups[$gi] = $group_ids;
-}
+$unresolved_groups = $conflict_groups;
 $unresolved_conflicting_ids = [];
 foreach ($unresolved_groups as $g) { foreach ($g as $gid) { $unresolved_conflicting_ids[] = $gid; } }
 
-$done_regs = array_values(array_filter($registrations, function($r) {
-    return $r['is_approved'] !== null;
+$unresolved_conflicting_lookup = array_flip(array_map('intval', $unresolved_conflicting_ids));
+
+$done_regs = array_values(array_filter($registrations, function($r) use ($unresolved_conflicting_lookup) {
+    return $r['is_approved'] !== null
+        && !isset($unresolved_conflicting_lookup[(int)$r['registration_id']]);
 }));
 
 // ── CSV 匯出（場協大會用：全部登記合併，含衝突標記，可依時間/場地/社團排序）──

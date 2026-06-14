@@ -1298,6 +1298,8 @@ if ($event_id === 0 && $request_id === 0) {
 
         if (!confirm('確定要' + label + '此申請？')) return;
 
+        const reviewButtons = Array.from(document.querySelectorAll('button[onclick^="submitReview"]'));
+        reviewButtons.forEach(btn => btn.disabled = true);
         resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="bi bi-hourglass-split me-1"></i>處理中...</div>';
 
         const payload = request_id > 0
@@ -1316,10 +1318,12 @@ if ($event_id === 0 && $request_id === 0) {
                 setTimeout(() => location.reload(), 1500);
             } else {
                 resultDiv.innerHTML = '<div class="alert alert-danger py-2"><i class="bi bi-x-circle me-1"></i>錯誤：' + (data.message || '未知錯誤') + '</div>';
+                reviewButtons.forEach(btn => btn.disabled = false);
             }
         })
         .catch(() => {
             resultDiv.innerHTML = '<div class="alert alert-danger py-2">網路錯誤，請稍後再試。</div>';
+            reviewButtons.forEach(btn => btn.disabled = false);
         });
     }
 

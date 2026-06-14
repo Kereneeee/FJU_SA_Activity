@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $check_stmt->close();
     
     // 🔴 第三步：檢查是否可以取消（只有審核中和已通過的可以取消）
-    if (!in_array($event['status'], ['pending'])) {
+    if (!in_array($event['status'], ['pending', 'approved', 'rejected'], true)) {
         echo json_encode(['success' => false, 'message' => '該申請狀態無法取消']);
         exit;
     }

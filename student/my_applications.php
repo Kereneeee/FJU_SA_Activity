@@ -904,18 +904,19 @@ function getEquipmentStatusText($equipment_list) {
                                 <?php endif; ?>
                                 
                                 <div class="application-actions">
-                                    <?php if (in_array($effective_status, ['pending', 'approved'])): ?>
+                                    <?php if (in_array($effective_status, ['pending', 'approved', 'rejected'], true)): ?>
+                                        <?php if ($app['status'] === 'rejected'): ?>
+                                            <span style="color: #dc3545; font-size: 0.9rem;">
+                                                <?php if (!empty($app['review_note'])): ?>
+                                                    審核意見：<?php echo htmlspecialchars($app['review_note']); ?>
+                                                <?php else: ?>
+                                                    申請已拒絕
+                                                <?php endif; ?>
+                                            </span>
+                                        <?php endif; ?>
                                         <button class="btn-action btn-cancel" onclick="cancelApplication(<?php echo $app['event_id']; ?>, 'EVENT<?php echo str_pad($app['event_id'], 6, '0', STR_PAD_LEFT); ?>')">取消申請</button>
                                     <?php elseif ($effective_status === 'completed'): ?>
                                         <span style="color:#6b7280;font-size:0.88rem;"><i class="bi bi-check-circle me-1"></i>活動已結束</span>
-                                    <?php elseif ($app['status'] === 'rejected'): ?>
-                                        <span style="color: #dc3545; font-size: 0.9rem;">
-                                            <?php if (!empty($app['review_note'])): ?>
-                                                審核意見：<?php echo htmlspecialchars($app['review_note']); ?>
-                                            <?php else: ?>
-                                                申請已拒絕
-                                            <?php endif; ?>
-                                        </span>
                                     <?php elseif ($app['status'] === 'cancelled'): ?>
                                         <span class="status-badge status-rejected" style="font-size: 0.9rem; padding: 0.4rem 1rem;">
                                             <i class="bi bi-x-circle me-1"></i>已取消

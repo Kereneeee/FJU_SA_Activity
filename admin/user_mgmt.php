@@ -675,7 +675,7 @@ if ($club_id !== '') {
                         </div>
                         <div class="d-flex gap-2 align-items-center flex-wrap">
                             <!-- 核准 -->
-                            <form method="POST" onsubmit="return confirm('確定核准此提名？')">
+                            <form method="POST" onsubmit="if(!confirm('確定核准此提名？'))return false; const btn=this.querySelector('button[type=submit]'); btn.disabled=true; btn.innerHTML='<span class=\'spinner-border spinner-border-sm me-1\'></span>處理中…'; return true;">
                                 <input type="hidden" name="action" value="approve_nomination">
                                 <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
                                 <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">
@@ -726,7 +726,7 @@ if ($club_id !== '') {
                     </div>
                     <!-- 駁回表單 -->
                     <div id="reject-<?= $n['nomination_id'] ?>" class="reject-form">
-                        <form method="POST">
+                        <form method="POST" onsubmit="const btn=this.querySelector('button[type=submit]'); btn.disabled=true; btn.innerHTML='<span class=\'spinner-border spinner-border-sm me-1\'></span>處理中…'; return true;">
                             <input type="hidden" name="action" value="reject_nomination">
                             <input type="hidden" name="nomination_id" value="<?= $n['nomination_id'] ?>">
                             <input type="hidden" name="back_club" value="<?= htmlspecialchars($club_id) ?>">

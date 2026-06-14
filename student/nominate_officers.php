@@ -30,8 +30,10 @@ if ($chk->get_result()->num_rows === 0) {
 }
 $chk->close();
 
-$message      = '';
-$message_type = '';
+$message      = $_SESSION['flash_message'] ?? '';
+$message_type = $_SESSION['flash_message_type'] ?? '';
+unset($_SESSION['flash_message'], $_SESSION['flash_message_type']);
+
 $submit_errors = [];
 $submit_count  = 0;
 
@@ -80,31 +82,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'batch
         }
 
         if ($submit_count > 0) {
-            $message      = "成功送出 {$submit_count} 筆提名申請，請等待管理者審核。";
+            $message      = "成功送出 {$submit_count} 筆提名申請，將由課指組老師審核後加入幹部身分。";
             $message_type = 'success';
-
-            // 寄信通知所有管理員
-            try {
-                require_once __DIR__ . '/../includes/mailer.php';
-                $admins = $conn->query("SELECT email, name FROM users WHERE role='admin' AND email IS NOT NULL");
-                if ($admins) {
-                    while ($adm = $admins->fetch_assoc()) {
-                        sendNominationSubmittedMail($adm['email'], $adm['name'], [
-                            'club_name'      => $club_name,
-                            'nominator_name' => $student_name,
-                            'count'          => $submit_count,
-                        ]);
-                    }
-                }
-            } catch (\Throwable $e) {
-                error_log('[nominate_officers mail] ' . $e->getMessage());
-            }
         }
         if (!empty($submit_errors)) {
             $message     .= ($message ? '<br>' : '') . implode('<br>', $submit_errors);
             $message_type = $submit_count > 0 ? 'warning' : 'danger';
         }
     }
+
+    $_SESSION['flash_message'] = $message;
+    $_SESSION['flash_message_type'] = $message_type ?: 'info';
+    header('Location: nominate_officers.php');
+    exit();
 }
 
 // 撤回提名
@@ -114,9 +104,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
         "DELETE FROM officer_nominations WHERE nomination_id=? AND nominator_user_id=? AND status='pending'"
     );
     $del->bind_param("ii", $nomination_id, $user_id);
-    $message      = $del->execute() ? '已撤回提名。' : '撤回失敗。';
-    $message_type = 'success';
+    $ok = $del->execute();
+    $message      = $ok ? '已撤回提名。' : '撤回失敗。';
+    $message_type = $ok ? 'success' : 'danger';
     $del->close();
+
+    $_SESSION['flash_message'] = $message;
+    $_SESSION['flash_message_type'] = $message_type;
+    header('Location: nominate_officers.php');
+    exit();
 }
 
 // ── 取得提名紀錄 ──────────────────────────────────────────────
@@ -316,10 +312,10 @@ $pend->close();
                         <div id="nomList" class="nom-list">
                             <div class="empty-hint" id="emptyHint"><i class="bi bi-inbox"></i> 尚未加入任何提名，請先查詢學號。</div>
                         </div>
-                        <form method="POST" id="submitForm" style="margin-top:1.25rem;">
+                        <form method="POST" id="submitForm" style="margin-top:1.25rem;" onsubmit="return validateSubmit()">
                             <input type="hidden" name="action" value="batch_nominate">
                             <div id="hiddenFields"></div>
-                            <button type="submit" id="submitBtn" class="btn btn-primary" disabled onclick="return validateSubmit()">
+                            <button type="submit" id="submitBtn" class="btn btn-primary" disabled>
                                 <i class="bi bi-send"></i> 送出所有提名申請
                             </button>
                             <span class="text-muted ms-2" style="font-size:.85rem;">提交後由課外活動指導組審核</span>
@@ -575,7 +571,12 @@ function validateSubmit() {
             return false;
         }
     }
-    return confirm(`確定送出 ${nominationList.length} 筆提名申請？`);
+    if (!confirm(`確定送出 ${nominationList.length} 筆提名申請？`)) return false;
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>送出中…';
+    return true;
 }
 </script>
 </body>
