@@ -18,9 +18,8 @@ if (isset($conn)) {
          JOIN field_coordination_settings fcs ON fcs.setting_id = fcr.setting_id
          JOIN events e ON e.event_id = fcr.event_id
          LEFT JOIN reservations r1 ON r1.event_id = e.event_id
-         WHERE fcs.coordination_meeting_date <= NOW()
-           AND (
-             fcr.is_approved IS NULL
+         WHERE (
+             (fcr.is_approved IS NULL AND fcs.coordination_meeting_date <= NOW())
              OR EXISTS (
                SELECT 1
                FROM field_coordination_registrations fcr2
