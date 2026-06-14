@@ -10,8 +10,50 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 $user_name = $_SESSION['user_name'] ?? '管理員';
 $user_id = $_SESSION['user_id'];
 
+$message = $_SESSION['dashboard_flash']['message'] ?? '';
+$message_type = $_SESSION['dashboard_flash']['type'] ?? 'success';
+unset($_SESSION['dashboard_flash']);
+
 $pending_count = 0;
 $recent_events = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_notification') {
+    $notification_id = intval($_POST['notification_id'] ?? 0);
+    $title = trim($_POST['title'] ?? '');
+    $content = trim($_POST['content'] ?? '');
+    $type = $_POST['type'] ?? 'new';
+    $allowed_types = ['new', 'update', 'alert'];
+    if (!in_array($type, $allowed_types, true)) $type = 'new';
+
+    if ($title === '' || $content === '') {
+        $_SESSION['dashboard_flash'] = ['type' => 'danger', 'message' => '公告標題與內容都必須填寫。'];
+    } elseif ($notification_id > 0) {
+        $stmt = $conn->prepare("UPDATE notifications SET title = ?, content = ?, type = ? WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("sssi", $title, $content, $type, $notification_id);
+            $_SESSION['dashboard_flash'] = $stmt->execute()
+                ? ['type' => 'success', 'message' => '公告已更新。']
+                : ['type' => 'danger', 'message' => '公告更新失敗。'];
+            $stmt->close();
+        } else {
+            $_SESSION['dashboard_flash'] = ['type' => 'danger', 'message' => '公告更新失敗。'];
+        }
+    } else {
+        $stmt = $conn->prepare("INSERT INTO notifications (title, content, type) VALUES (?, ?, ?)");
+        if ($stmt) {
+            $stmt->bind_param("sss", $title, $content, $type);
+            $_SESSION['dashboard_flash'] = $stmt->execute()
+                ? ['type' => 'success', 'message' => '公告已新增。']
+                : ['type' => 'danger', 'message' => '公告新增失敗。'];
+            $stmt->close();
+        } else {
+            $_SESSION['dashboard_flash'] = ['type' => 'danger', 'message' => '公告新增失敗。'];
+        }
+    }
+
+    header('Location: dashboard.php');
+    exit();
+}
 
 // 1. 待審核申請計數（確認 status 欄位直接在 events 表中）
 $sql_pending = "SELECT COUNT(*) AS cnt FROM events WHERE status = 'pending'";
@@ -36,7 +78,7 @@ if ($result_recent) {
 
 // 獲取最新通知資料
 $notifications = [];
-$noti_sql = "SELECT title, content, type FROM notifications ORDER BY created_at DESC LIMIT 3";
+$noti_sql = "SELECT id, title, content, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 5";
 $noti_result = $conn->query($noti_sql);
 
 if ($noti_result) {
@@ -370,6 +412,28 @@ if ($noti_result) {
         .notification-card .badge-new { background: #0d6efd; }
         .notification-card .badge-update { background: #198754; }
         .notification-card .badge-alert { background: #dc3545; }
+        .notification-card .meta {
+            white-space: pre-line;
+        }
+        .notification-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .btn-notice {
+            border: 0;
+            border-radius: 8px;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .btn-notice.primary { background: #1e4d6b; color: #fff; }
+        .btn-notice.light { background: #e8f0f5; color: #1e4d6b; }
         .footer-note {
             margin-top: 0.75rem;
             color: #6b7280;
@@ -415,6 +479,12 @@ if ($noti_result) {
         </header>
 
         <section class="dashboard-grid">
+            <?php if ($message): ?>
+            <div class="alert alert-<?= htmlspecialchars($message_type) ?> rounded-3 mb-3">
+                <?= htmlspecialchars($message) ?>
+            </div>
+            <?php endif; ?>
+
             <div class="welcome-banner">
                 <div class="welcome-inner">
                     <div>
@@ -539,18 +609,34 @@ if ($noti_result) {
                     </div>
                 </section>
                 <section class="panel-full">
-                    <h5>最新通知</h5>
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <h5 class="mb-0">最新通知</h5>
+                        <button type="button" class="btn-notice primary"
+                                data-bs-toggle="modal"
+                                data-bs-target="#notificationModal"
+                                data-notification-id=""
+                                data-title=""
+                                data-content=""
+                                data-type="new">
+                            <i class="bi bi-plus-circle"></i> 新增公告
+                        </button>
+                    </div>
                     <div class="notification-list">
                         <?php if (!empty($notifications)): ?>
                             <?php foreach ($notifications as $noti): ?>
                                 <div class="notification-card p-3 mb-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-start">
                                     <div style="flex: 1; padding-right: 10px;">
                                         <div class="title fw-bold text-dark mb-1"><?php echo htmlspecialchars($noti['title']); ?></div>
-                                        <div class="meta text-secondary small"><?php echo htmlspecialchars($noti['content']); ?></div>
+                                        <div class="meta text-secondary small"><?php echo htmlspecialchars(mb_substr($noti['content'], 0, 90)); ?><?= mb_strlen($noti['content']) > 90 ? '...' : '' ?></div>
+                                        <div class="text-muted small mt-1">
+                                            <?= date('Y/m/d H:i', strtotime($noti['created_at'])) ?>
+                                        </div>
                                     </div>
+                                    <div class="notification-actions">
                                     <?php 
                                     // 根據 type 顯示不同的 Badge 顏色與文字
                                     $type = $noti['type'];
+                                    $form_type = in_array($type, ['new', 'update', 'alert'], true) ? $type : 'new';
                                     if ($type === 'update' || $type === '更新') {
                                         echo '<span class="badge bg-success text-white px-2 py-1 small">更新</span>';
                                     } elseif ($type === 'alert' || $type === '提醒' || $type === '緊急') {
@@ -559,6 +645,16 @@ if ($noti_result) {
                                         echo '<span class="badge bg-primary text-white px-2 py-1 small">新消息</span>';
                                     }
                                     ?>
+                                        <button type="button" class="btn-notice light"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#notificationModal"
+                                                data-notification-id="<?= (int)$noti['id'] ?>"
+                                                data-title="<?= htmlspecialchars($noti['title'], ENT_QUOTES, 'UTF-8') ?>"
+                                                data-content="<?= htmlspecialchars($noti['content'], ENT_QUOTES, 'UTF-8') ?>"
+                                                data-type="<?= htmlspecialchars($form_type, ENT_QUOTES, 'UTF-8') ?>">
+                                            <i class="bi bi-pencil-square"></i> 編輯
+                                        </button>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -573,6 +669,53 @@ if ($noti_result) {
         </section>
     </main>
 
+    <div class="modal fade" id="notificationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <form method="POST" class="modal-content">
+                <input type="hidden" name="action" value="save_notification">
+                <input type="hidden" name="notification_id" id="notice_id">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="notice_modal_title">新增公告</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="notice_title">公告標題</label>
+                        <input type="text" class="form-control" id="notice_title" name="title" required maxlength="255">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="notice_type">公告類型</label>
+                        <select class="form-select" id="notice_type" name="type">
+                            <option value="new">新消息</option>
+                            <option value="update">更新</option>
+                            <option value="alert">提醒</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label fw-semibold" for="notice_content">公告內容</label>
+                        <textarea class="form-control" id="notice_content" name="content" rows="9" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" style="background:#1e4d6b;border-color:#1e4d6b;">儲存公告</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const notificationModal = document.getElementById('notificationModal');
+        notificationModal.addEventListener('show.bs.modal', event => {
+            const button = event.relatedTarget;
+            const id = button.getAttribute('data-notification-id') || '';
+            document.getElementById('notice_id').value = id;
+            document.getElementById('notice_title').value = button.getAttribute('data-title') || '';
+            document.getElementById('notice_content').value = button.getAttribute('data-content') || '';
+            document.getElementById('notice_type').value = button.getAttribute('data-type') || 'new';
+            document.getElementById('notice_modal_title').textContent = id ? '編輯公告' : '新增公告';
+        });
+    </script>
 </body>
 </html>

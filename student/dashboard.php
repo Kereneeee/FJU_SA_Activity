@@ -80,7 +80,7 @@ if ($act_stmt) {
 
 // 獲取最新通知資料
 $notifications = [];
-$noti_sql = "SELECT title, content, type FROM notifications ORDER BY created_at DESC LIMIT 3";
+$noti_sql = "SELECT id, title, content, type, created_at FROM notifications ORDER BY created_at DESC LIMIT 5";
 $noti_result = $conn->query($noti_sql);
 
 if ($noti_result) {
@@ -347,6 +347,20 @@ if ($noti_result) {
         .notification-card .badge-new { background: #0d6efd; }
         .notification-card .badge-update { background: #198754; }
         .notification-card .badge-alert { background: #dc3545; }
+        .notification-card .meta {
+            white-space: pre-line;
+        }
+        .notice-detail-link {
+            color: #1e4d6b;
+            text-decoration: none;
+            font-size: 0.82rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            margin-top: 0.35rem;
+        }
+        .notice-detail-link:hover { text-decoration: underline; }
         .footer-note {
             margin-top: 0.75rem;
             color: #6b7280;
@@ -540,7 +554,10 @@ if ($noti_result) {
                                 <div class="notification-card p-3 mb-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-start">
                                     <div style="flex: 1; padding-right: 10px;">
                                         <div class="title fw-bold text-dark mb-1"><?php echo htmlspecialchars($noti['title']); ?></div>
-                                        <div class="meta text-secondary small"><?php echo htmlspecialchars($noti['content']); ?></div>
+                                        <div class="meta text-secondary small"><?php echo htmlspecialchars(mb_substr($noti['content'], 0, 90)); ?><?= mb_strlen($noti['content']) > 90 ? '...' : '' ?></div>
+                                        <a class="notice-detail-link" href="notification_detail.php?id=<?= (int)$noti['id'] ?>">
+                                            詳細資料 <i class="bi bi-chevron-right"></i>
+                                        </a>
                                     </div>
                                     <?php 
                                     // 根據 type 顯示不同的 Badge 顏色與文字
